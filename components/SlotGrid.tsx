@@ -91,11 +91,13 @@ const SlotGrid: React.FC<SlotGridProps> = ({ userRole }) => {
     return s.status === filter;
   });
 
-  // Estadísticas de tamaños
+  // Estadísticas de tamaños mejoradas
   const getStats = (sizeName: string) => {
-    const total = slots.filter(s => s.size === sizeName).length;
-    const free = slots.filter(s => s.size === sizeName && s.status === 'empty').length;
-    return { total, free };
+    const subset = slots.filter(s => s.size === sizeName);
+    const total = subset.length;
+    const freeAndScanned = subset.filter(s => s.is_scanned_once && s.status === 'empty').length;
+    const pending = subset.filter(s => !s.is_scanned_once).length;
+    return { total, freeAndScanned, pending };
   };
 
   const sizes = [
@@ -108,17 +110,24 @@ const SlotGrid: React.FC<SlotGridProps> = ({ userRole }) => {
 
   return (
     <div className="space-y-6">
-      {/* TARJETAS DE ESTADÍSTICAS POR TAMAÑO */}
+      {/* TARJETAS DE ESTADÍSTICAS POR TAMAÑO (TOTAL, LIBRES LEÍDOS, PENDIENTES) */}
       <div className="grid grid-cols-3 gap-3">
         {sizes.map(size => {
-          const { total, free } = getStats(size.name);
+          const { total, freeAndScanned, pending } = getStats(size.name);
           return (
-            <div key={size.name} className={`${size.bg} ${size.border} border-2 rounded-3xl p-4 shadow-sm flex flex-col items-center justify-center text-center`}>
-              <span className={`text-[9px] font-black uppercase tracking-widest ${size.color} mb-1`}>{size.name}</span>
-              <div className="text-2xl font-black text-slate-800 leading-none">{total}</div>
-              <div className="mt-2 pt-2 border-t border-white/50 w-full">
-                <span className="text-[10px] font-bold text-slate-500 block leading-tight">LIBRES</span>
-                <span className={`text-sm font-black ${size.color}`}>{free}</span>
+            <div key={size.name} className={`${size.bg} ${size.border} border-2 rounded-[2rem] p-4 shadow-sm flex flex-col items-center justify-center text-center`}>
+              <span className={`text-[8px] font-black uppercase tracking-widest ${size.color} mb-1`}>{size.name}</span>
+              <div className="text-xl font-black text-slate-800 leading-none">{total}</div>
+              
+              <div className="w-full grid grid-cols-1 gap-1 mt-3 pt-2 border-t border-white/60">
+                <div className="flex justify-between items-center px-1">
+                  <span className="text-[7px] font-black text-slate-400 uppercase">LIBRES:</span>
+                  <span className={`text-[10px] font-black ${size.color}`}>{freeAndScanned}</span>
+                </div>
+                <div className="flex justify-between items-center px-1">
+                  <span className="text-[7px] font-black text-slate-400 uppercase">PEND:</span>
+                  <span className="text-[10px] font-black text-rose-500">{pending}</span>
+                </div>
               </div>
             </div>
           );

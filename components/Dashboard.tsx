@@ -13,7 +13,9 @@ const Dashboard: React.FC = () => {
   const [scannerTarget, setScannerTarget] = useState<'cart' | 'slot' | null>(null);
   
   const [showActionModal, setShowActionModal] = useState(false);
-  const [pendingUpdate, setPendingUpdate] = useState<{capacity: 'empty' | 'half' | 'full'} | null>(null);
+  const [isFirstTime, setIsFirstTime] = useState(false);
+  const [selectedSize, setSelectedSize] = useState<string | null>(null);
+  const [step, setStep] = useState<'size' | 'status'>('status');
 
   const slotInputRef = useRef<HTMLInputElement>(null);
 
@@ -24,16 +26,75 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     if (cartId.trim().length >= 4 && slotCode.trim().length >= 4) {
-      setShowActionModal(true);
+      checkIfFirstTime();
     } else {
       setShowActionModal(false);
+      setStep('status');
+      setSelectedSize(null);
     }
   }, [cartId, slotCode]);
 
-  const getQuantityLabel = (capacity: 'empty' | 'half' | 'full') => {
-    if (capacity === 'empty') return '0';
-    if (capacity === 'half') return '50';
-    return '100';
+  const checkIfFirstTime = async () => {
+    const { data } = await supabase.from('warehouse_slots').select('is_scanned_once, size').eq('code', slotCode).single();
+    if (data && !data.is_scanned_once) {
+      setIsFirstTime(true);
+      setStep('size');
+    } else {
+      setIsFirstTime(false);
+      setStep('status');
+      if (data) setSelectedSize(data.size);
+    }
+    setShowActionModal(true);
+  };
+
+  const executeUpdate = async (capacity: 'empty' | 'half' | 'full', forceNoCart = false) => {
+    setLoading(true);
+    setMessage(null);
+    setShowActionModal(false);
+
+    try {
+      const quantityMap = { 'empty': 0, 'half': 50, 'full': 100 };
+      const statusMap = { 'empty': 'empty', 'half': 'occupied', 'full': 'occupied' };
+      
+      const newStatus = statusMap[capacity];
+      const newQuantity = quantityMap[capacity];
+
+      const updateData: any = { 
+        code: slotCode, 
+        status: newStatus,
+        item_name: forceNoCart ? (capacity === 'empty' ? null : 'Ajuste Manual') : (capacity === 'empty' ? null : `Carro: ${cartId}`),
+        quantity: newQuantity,
+        is_scanned_once: true,
+        last_updated: new Date().toISOString()
+      };
+
+      if (isFirstTime && selectedSize) {
+        updateData.size = selectedSize;
+      }
+
+      const { error: slotError } = await supabase
+        .from('warehouse_slots')
+        .upsert(updateData, { onConflict: 'code' });
+
+      if (slotError) throw slotError;
+
+      await supabase.from('movement_logs').insert({
+        operator_name: currentUser.full_name,
+        operator_email: currentUser.email,
+        cart_id: forceNoCart ? 'MANUAL' : cartId,
+        slot_code: slotCode,
+        new_status: newStatus,
+        new_quantity: newQuantity
+      });
+
+      setMessage({ type: 'success', text: `✅ ${slotCode} actualizado correctamente.` });
+      setCartId('');
+      setSlotCode('');
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const openScanner = (target: 'cart' | 'slot') => {
@@ -51,101 +112,45 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  const executeUpdate = async (capacity: 'empty' | 'half' | 'full', forceNoCart = false) => {
-    setLoading(true);
-    setMessage(null);
-    setPendingUpdate(null);
-    setShowActionModal(false);
-
-    try {
-      const quantityMap = { 'empty': 0, 'half': 50, 'full': 100 };
-      const statusMap = { 'empty': 'empty', 'half': 'occupied', 'full': 'occupied' };
-      
-      const newStatus = statusMap[capacity];
-      const newQuantity = quantityMap[capacity];
-
-      // Actualizar el hueco y marcarlo como LEÍDO ALGUNA VEZ
-      const { error: slotError } = await supabase
-        .from('warehouse_slots')
-        .upsert({ 
-          code: slotCode, 
-          status: newStatus,
-          item_name: forceNoCart ? (capacity === 'empty' ? null : 'Ajuste Manual') : (capacity === 'empty' ? null : `Carro: ${cartId}`),
-          quantity: newQuantity,
-          is_scanned_once: true, // Marcamos como escaneado
-          last_updated: new Date().toISOString()
-        }, { onConflict: 'code' });
-
-      if (slotError) throw slotError;
-
-      await supabase.from('movement_logs').insert({
-        operator_name: currentUser.full_name,
-        operator_email: currentUser.email,
-        cart_id: forceNoCart ? 'MANUAL' : cartId,
-        slot_code: slotCode,
-        new_status: newStatus,
-        new_quantity: newQuantity
-      });
-
-      setMessage({ 
-        type: 'success', 
-        text: `✅ ${slotCode} actualizado correctamente.` 
-      });
-      
-      setCartId('');
-      setSlotCode('');
-    } catch (err: any) {
-      setMessage({ type: 'error', text: err.message });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleManualConfirm = (capacity: 'empty' | 'half' | 'full') => {
-    if (!slotCode.trim()) {
-      setMessage({ type: 'error', text: '⚠️ Identifique el HUECO primero.' });
-      return;
-    }
-    setPendingUpdate({ capacity });
-  };
-
   return (
     <div className="max-w-md mx-auto space-y-6">
-      {showActionModal && !pendingUpdate && (
+      {showActionModal && (
         <div className="fixed inset-0 z-[120] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-white rounded-[3rem] p-8 w-full max-w-sm shadow-2xl animate-fade-in">
             <div className="text-center space-y-6">
-              <div className="flex justify-center gap-4 items-center bg-slate-50 p-4 rounded-3xl border border-slate-100">
-                <div className="flex flex-col items-center">
-                  <span className="text-[9px] font-black text-slate-400 uppercase">Carro</span>
-                  <span className="font-black text-amber-600">{cartId}</span>
-                </div>
+              <div className="flex justify-center gap-4 items-center bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                <span className="font-black text-amber-600 text-xs">{cartId}</span>
                 <span className="text-slate-300">➔</span>
-                <div className="flex flex-col items-center">
-                  <span className="text-[9px] font-black text-slate-400 uppercase">Hueco</span>
-                  <span className="font-black text-indigo-600">{slotCode}</span>
-                </div>
+                <span className="font-black text-indigo-600 text-xs">{slotCode}</span>
               </div>
-              <h3 className="text-2xl font-black text-slate-800">¿Estado de Carga?</h3>
-              <div className="grid grid-cols-1 gap-3">
-                <button onClick={() => executeUpdate('full')} className="bg-indigo-600 text-white font-black py-5 rounded-2xl shadow-lg active:scale-95 transition-all">LLENO (100%)</button>
-                <button onClick={() => executeUpdate('half')} className="bg-amber-500 text-white font-black py-5 rounded-2xl shadow-lg active:scale-95 transition-all">MEDIO (50%)</button>
-                <button onClick={() => executeUpdate('empty')} className="bg-emerald-500 text-white font-black py-5 rounded-2xl shadow-lg active:scale-95 transition-all">VACÍO (0%)</button>
-                <button onClick={() => { setCartId(''); setSlotCode(''); }} className="mt-2 text-slate-400 font-bold text-xs uppercase tracking-widest">Cancelar</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {pendingUpdate && (
-        <div className="fixed inset-0 z-[130] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-xs shadow-2xl text-center space-y-4">
-            <h3 className="font-black text-slate-800 text-lg">Confirmar Ajuste Manual</h3>
-            <p className="text-slate-500 text-sm">Hueco <span className="font-bold">{slotCode}</span> al <span className="font-bold">{getQuantityLabel(pendingUpdate.capacity)}%</span></p>
-            <div className="flex flex-col gap-2">
-              <button onClick={() => executeUpdate(pendingUpdate.capacity, true)} className="bg-indigo-600 text-white font-bold py-3 rounded-2xl">CONFIRMAR</button>
-              <button onClick={() => setPendingUpdate(null)} className="bg-slate-100 text-slate-500 font-bold py-3 rounded-2xl">VOLVER</button>
+              {step === 'size' ? (
+                <div className="space-y-4">
+                  <h3 className="text-xl font-black text-slate-800">Primer Escaneo:<br/><span className="text-indigo-600">Define Tamaño</span></h3>
+                  <div className="grid grid-cols-1 gap-2">
+                    {['Pequeño', 'Mediano', 'Grande', 'Palet'].map(size => (
+                      <button 
+                        key={size}
+                        onClick={() => { setSelectedSize(size); setStep('status'); }}
+                        className="bg-slate-50 hover:bg-indigo-50 border-2 border-slate-100 hover:border-indigo-200 py-4 rounded-2xl font-black text-slate-700 transition-all uppercase text-xs"
+                      >
+                        {size}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <h3 className="text-2xl font-black text-slate-800">Estado de Carga</h3>
+                  <div className="grid grid-cols-1 gap-3">
+                    <button onClick={() => executeUpdate('full')} className="bg-indigo-600 text-white font-black py-5 rounded-2xl shadow-lg active:scale-95 transition-all">LLENO (100%)</button>
+                    <button onClick={() => executeUpdate('half')} className="bg-amber-500 text-white font-black py-5 rounded-2xl shadow-lg active:scale-95 transition-all">MEDIO (50%)</button>
+                    <button onClick={() => executeUpdate('empty')} className="bg-emerald-500 text-white font-black py-5 rounded-2xl shadow-lg active:scale-95 transition-all">VACÍO (0%)</button>
+                  </div>
+                </div>
+              )}
+              
+              <button onClick={() => { setCartId(''); setSlotCode(''); }} className="text-slate-400 font-bold text-[10px] uppercase tracking-widest pt-2">Cancelar Operación</button>
             </div>
           </div>
         </div>
@@ -173,13 +178,6 @@ const Dashboard: React.FC = () => {
               <button onClick={() => openScanner('slot')} className="absolute right-3 top-1/2 -translate-y-1/2 bg-white p-2 rounded-xl shadow-sm border border-slate-100">📷</button>
             </div>
           </div>
-          {!cartId && slotCode && (
-            <div className="pt-4 grid grid-cols-3 gap-2">
-              <button onClick={() => handleManualConfirm('empty')} className="bg-emerald-50 text-emerald-700 py-3 rounded-xl font-black text-[9px]">VACÍO</button>
-              <button onClick={() => handleManualConfirm('half')} className="bg-amber-50 text-amber-700 py-3 rounded-xl font-black text-[9px]">MEDIO</button>
-              <button onClick={() => handleManualConfirm('full')} className="bg-indigo-50 text-indigo-700 py-3 rounded-xl font-black text-[9px]">LLENO</button>
-            </div>
-          )}
         </div>
       </div>
       <ScannerModal isOpen={scannerOpen} onClose={() => setScannerOpen(false)} onScan={handleScanResult} title={scannerTarget === 'cart' ? 'Escaneando Carro' : 'Escaneando Hueco'} />
