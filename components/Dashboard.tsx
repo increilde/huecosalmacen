@@ -7,15 +7,23 @@ const Dashboard: React.FC = () => {
   const [cartId, setCartId] = useState('');
   const [slotCode, setSlotCode] = useState('');
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
   
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannerTarget, setScannerTarget] = useState<'cart' | 'slot' | null>(null);
+  
+  const [pendingUpdate, setPendingUpdate] = useState<{capacity: 'empty' | 'half' | 'full'} | null>(null);
 
-  // Simulamos un usuario logueado (En una app real vendría de supabase.auth)
+  // Simulamos un usuario logueado
   const currentUser = {
     full_name: 'Admin Central',
     email: 'admin@almacen.com'
+  };
+
+  const getQuantityLabel = (capacity: 'empty' | 'half' | 'full') => {
+    if (capacity === 'empty') return '0';
+    if (capacity === 'half') return '50';
+    return '100';
   };
 
   const openScanner = (target: 'cart' | 'slot') => {
@@ -31,20 +39,10 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  const handleUpdate = async (capacity: 'empty' | 'half' | 'full') => {
-    // VALIDACIÓN CRÍTICA: El carro es obligatorio
-    if (!cartId.trim()) {
-      setMessage({ type: 'error', text: '⚠️ Error: Debe identificar el CARRO antes de asignar el hueco.' });
-      return;
-    }
-
-    if (!slotCode.trim()) {
-      setMessage({ type: 'error', text: '⚠️ Error: Debe identificar el HUECO de destino.' });
-      return;
-    }
-
+  const executeUpdate = async (capacity: 'empty' | 'half' | 'full', forceNoCart = false) => {
     setLoading(true);
     setMessage(null);
+    setPendingUpdate(null);
 
     try {
       const statusMap = {
@@ -68,7 +66,7 @@ const Dashboard: React.FC = () => {
         .upsert({ 
           code: slotCode, 
           status: newStatus,
-          item_name: capacity === 'empty' ? null : `Carro: ${cartId}`,
+          item_name: forceNoCart ? (capacity === 'empty' ? null : 'Ajuste Manual') : (capacity === 'empty' ? null : `Carro: ${cartId}`),
           quantity: newQuantity,
           last_updated: new Date().toISOString()
         }, { onConflict: 'code' });
@@ -81,7 +79,7 @@ const Dashboard: React.FC = () => {
         .insert({
           operator_name: currentUser.full_name,
           operator_email: currentUser.email,
-          cart_id: cartId,
+          cart_id: forceNoCart ? 'MANUAL' : cartId,
           slot_code: slotCode,
           new_status: newStatus,
           new_quantity: newQuantity,
@@ -91,31 +89,79 @@ const Dashboard: React.FC = () => {
       if (logError) console.error("Error al registrar log:", logError);
 
       setMessage({ 
-        type: 'success', 
-        text: `✅ Correcto: Carro ${cartId} ubicado en ${slotCode} (${newQuantity}%)` 
+        type: forceNoCart ? 'info' : 'success', 
+        text: forceNoCart 
+          ? `ℹ️ Estado de hueco ${slotCode} actualizado correctamente.`
+          : `✅ Ubicación registrada: Carro ${cartId} en ${slotCode} (${newQuantity}%)` 
       });
       
-      // Limpiar campos para la siguiente operación
       setCartId('');
       setSlotCode('');
     } catch (err: any) {
-      setMessage({ type: 'error', text: err.message || 'Error al guardar el movimiento' });
+      setMessage({ type: 'error', text: err.message || 'Error al procesar la solicitud' });
     } finally {
       setLoading(false);
     }
   };
 
+  const handleUpdateClick = (capacity: 'empty' | 'half' | 'full') => {
+    if (!slotCode.trim()) {
+      setMessage({ type: 'error', text: '⚠️ Error: Debe identificar el HUECO de destino.' });
+      return;
+    }
+
+    // Si no hay carro, pedimos confirmación con el nuevo mensaje solicitado
+    if (!cartId.trim()) {
+      setPendingUpdate({ capacity });
+      return;
+    }
+
+    // Si hay carro y hueco, procedemos directamente
+    executeUpdate(capacity);
+  };
+
   return (
     <div className="max-w-md mx-auto space-y-6">
+      {/* Modal de Confirmación para cambio sin carro */}
+      {pendingUpdate && (
+        <div className="fixed inset-0 z-[110] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-xs shadow-2xl animate-fade-in border border-slate-100">
+            <div className="text-center space-y-4">
+              <div className="text-4xl">❓</div>
+              <h3 className="font-black text-slate-800 text-lg leading-tight">Confirmar cambio</h3>
+              <p className="text-slate-500 text-sm">
+                ¿Confirmar que el hueco <span className="font-bold text-indigo-600">{slotCode}</span> tiene una ocupacion del <span className="font-bold text-indigo-600">{getQuantityLabel(pendingUpdate.capacity)}%</span>?
+              </p>
+              <div className="flex flex-col gap-2 pt-2">
+                <button 
+                  onClick={() => executeUpdate(pendingUpdate.capacity, true)}
+                  className="bg-indigo-600 text-white font-bold py-3 rounded-2xl active:scale-95 transition-transform"
+                >
+                  SÍ, CONFIRMAR
+                </button>
+                <button 
+                  onClick={() => setPendingUpdate(null)}
+                  className="bg-slate-100 text-slate-500 font-bold py-3 rounded-2xl active:scale-95 transition-transform"
+                >
+                  CANCELAR
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white p-6 rounded-3xl shadow-xl border border-slate-100">
         <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
-          <span className="text-2xl">📲</span> Captura de Movimiento
+          <span className="text-2xl">📲</span> Gestión de Almacén
         </h2>
 
         {message && (
           <div className={`p-4 rounded-xl mb-6 text-sm font-bold animate-fade-in border ${
             message.type === 'success' 
               ? 'bg-emerald-50 text-emerald-700 border-emerald-100' 
+              : message.type === 'info'
+              ? 'bg-blue-50 text-blue-700 border-blue-100'
               : 'bg-rose-50 text-rose-700 border-rose-100 animate-[shake_0.4s_ease-in-out]'
           }`}>
             {message.text}
@@ -125,8 +171,8 @@ const Dashboard: React.FC = () => {
         <div className="space-y-5">
           <div className="space-y-2">
             <label className="text-xs font-bold text-slate-500 uppercase ml-1 flex justify-between">
-              <span>ID Carro / Lote</span>
-              {!cartId && <span className="text-rose-500 lowercase font-medium">* Obligatorio</span>}
+              <span>ID Carro (Opcional)</span>
+              {!cartId && <span className="text-amber-500 lowercase font-medium italic">Modo manual</span>}
             </label>
             <div className="relative">
               <input
@@ -134,9 +180,7 @@ const Dashboard: React.FC = () => {
                 value={cartId}
                 onChange={(e) => setCartId(e.target.value.toUpperCase())}
                 placeholder="Escanea el carro..."
-                className={`w-full bg-slate-50 border-2 rounded-2xl py-4 px-5 focus:ring-0 transition-all text-lg font-mono uppercase ${
-                  !cartId && message?.type === 'error' ? 'border-rose-200 bg-rose-50/30' : 'border-slate-100 focus:border-indigo-500'
-                }`}
+                className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-5 focus:border-indigo-500 focus:ring-0 transition-all text-lg font-mono uppercase"
               />
               <button 
                 onClick={() => openScanner('cart')}
@@ -155,7 +199,9 @@ const Dashboard: React.FC = () => {
                 value={slotCode}
                 onChange={(e) => setSlotCode(e.target.value.toUpperCase())}
                 placeholder="Escanea el hueco..."
-                className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-5 focus:border-indigo-500 focus:ring-0 transition-all text-lg font-mono uppercase"
+                className={`w-full bg-slate-50 border-2 rounded-2xl py-4 px-5 focus:ring-0 transition-all text-lg font-mono uppercase ${
+                  !slotCode && message?.type === 'error' ? 'border-rose-200 bg-rose-50/30' : 'border-slate-100 focus:border-indigo-500'
+                }`}
               />
               <button 
                 onClick={() => openScanner('slot')}
@@ -167,11 +213,11 @@ const Dashboard: React.FC = () => {
           </div>
 
           <div className="pt-4 space-y-3">
-            <p className="text-xs font-bold text-slate-500 uppercase text-center">Indicar Capacidad Final</p>
+            <p className="text-xs font-bold text-slate-500 uppercase text-center">Definir Capacidad del Hueco</p>
             <div className="grid grid-cols-1 gap-3">
               <button
                 disabled={loading}
-                onClick={() => handleUpdate('empty')}
+                onClick={() => handleUpdateClick('empty')}
                 className="flex items-center justify-between bg-white border-2 border-emerald-500 text-emerald-600 font-bold py-4 px-6 rounded-2xl active:bg-emerald-500 active:text-white transition-all shadow-md shadow-emerald-100 disabled:opacity-50"
               >
                 <span className="text-2xl">⚪</span>
@@ -181,7 +227,7 @@ const Dashboard: React.FC = () => {
               
               <button
                 disabled={loading}
-                onClick={() => handleUpdate('half')}
+                onClick={() => handleUpdateClick('half')}
                 className="flex items-center justify-between bg-white border-2 border-amber-500 text-amber-600 font-bold py-4 px-6 rounded-2xl active:bg-amber-500 active:text-white transition-all shadow-md shadow-amber-100 disabled:opacity-50"
               >
                 <span className="text-2xl">🌗</span>
@@ -191,7 +237,7 @@ const Dashboard: React.FC = () => {
 
               <button
                 disabled={loading}
-                onClick={() => handleUpdate('full')}
+                onClick={() => handleUpdateClick('full')}
                 className="flex items-center justify-between bg-white border-2 border-indigo-600 text-indigo-600 font-bold py-4 px-6 rounded-2xl active:bg-indigo-600 active:text-white transition-all shadow-md shadow-indigo-100 disabled:opacity-50"
               >
                 <span className="text-2xl">⚫</span>
