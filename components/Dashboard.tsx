@@ -59,16 +59,17 @@ const Dashboard: React.FC = () => {
       const newStatus = statusMap[capacity];
       const newQuantity = quantityMap[capacity];
 
+      // Construimos el objeto de actualización asegurando el flag is_scanned_once
       const updateData: any = { 
         code: slotCode, 
         status: newStatus,
         item_name: forceNoCart ? (capacity === 'empty' ? null : 'Ajuste Manual') : (capacity === 'empty' ? null : `Carro: ${cartId}`),
         quantity: newQuantity,
-        is_scanned_once: true,
+        is_scanned_once: true, // Siempre true al realizar una acción
         last_updated: new Date().toISOString()
       };
 
-      if (isFirstTime && selectedSize) {
+      if (selectedSize) {
         updateData.size = selectedSize;
       }
 
@@ -87,7 +88,7 @@ const Dashboard: React.FC = () => {
         new_quantity: newQuantity
       });
 
-      setMessage({ type: 'success', text: `✅ ${slotCode} actualizado correctamente.` });
+      setMessage({ type: 'success', text: `✅ ${slotCode} actualizado y marcado como LEÍDO.` });
       setCartId('');
       setSlotCode('');
     } catch (err: any) {
@@ -126,7 +127,7 @@ const Dashboard: React.FC = () => {
 
               {step === 'size' ? (
                 <div className="space-y-4">
-                  <h3 className="text-xl font-black text-slate-800">Primer Escaneo:<br/><span className="text-indigo-600">Define Tamaño</span></h3>
+                  <h3 className="text-xl font-black text-slate-800">Ubicación Nueva:<br/><span className="text-indigo-600">Selecciona Tamaño</span></h3>
                   <div className="grid grid-cols-1 gap-2">
                     {['Pequeño', 'Mediano', 'Grande', 'Palet'].map(size => (
                       <button 

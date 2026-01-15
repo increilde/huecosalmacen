@@ -19,7 +19,7 @@ const SlotGrid: React.FC<SlotGridProps> = ({ userRole }) => {
 
   useEffect(() => {
     fetchSlots();
-    const channel = supabase.channel('grid-updates').on('postgres_changes', { event: '*', schema: 'public', table: 'warehouse_slots' }, () => {
+    const channel = supabase.channel('grid-updates-v3').on('postgres_changes', { event: '*', schema: 'public', table: 'warehouse_slots' }, () => {
       fetchSlots();
     }).subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -37,12 +37,12 @@ const SlotGrid: React.FC<SlotGridProps> = ({ userRole }) => {
     try {
       const { error } = await supabase
         .from('warehouse_slots')
-        .update({ size: newSize })
+        .update({ size: newSize, is_scanned_once: true })
         .eq('id', selectedSlot.id);
       
       if (error) throw error;
       
-      setSlots(slots.map(s => s.id === selectedSlot.id ? { ...s, size: newSize } : s));
+      setSlots(slots.map(s => s.id === selectedSlot.id ? { ...s, size: newSize, is_scanned_once: true } : s));
       setSelectedSlot(null);
       setSearchQuery('');
     } catch (err: any) {
@@ -54,21 +54,15 @@ const SlotGrid: React.FC<SlotGridProps> = ({ userRole }) => {
 
   const deleteSlot = async () => {
     if (!selectedSlot) return;
-    if (!confirm(`¿Estás seguro de ELIMINAR permanentemente el hueco ${selectedSlot.code}? Esta acción no se puede deshacer.`)) return;
+    if (!confirm(`¿Estás seguro de ELIMINAR el hueco ${selectedSlot.code}?`)) return;
 
     setUpdating(true);
     try {
-      const { error } = await supabase
-        .from('warehouse_slots')
-        .delete()
-        .eq('id', selectedSlot.id);
-
+      const { error } = await supabase.from('warehouse_slots').delete().eq('id', selectedSlot.id);
       if (error) throw error;
-
       setSlots(slots.filter(s => s.id !== selectedSlot.id));
       setSelectedSlot(null);
       setSearchQuery('');
-      alert("Hueco eliminado correctamente.");
     } catch (err: any) {
       alert("Error al eliminar: " + err.message);
     } finally {
@@ -91,26 +85,26 @@ const SlotGrid: React.FC<SlotGridProps> = ({ userRole }) => {
     return s.status === filter;
   });
 
-  // Estadísticas de tamaños mejoradas
   const getStats = (sizeName: string) => {
     const subset = slots.filter(s => s.size === sizeName);
-    const total = subset.length;
-    const freeAndScanned = subset.filter(s => s.is_scanned_once && s.status === 'empty').length;
-    const pending = subset.filter(s => !s.is_scanned_once).length;
-    return { total, freeAndScanned, pending };
+    return {
+      total: subset.length,
+      freeAndScanned: subset.filter(s => s.is_scanned_once && s.status === 'empty').length,
+      pending: subset.filter(s => !s.is_scanned_once).length
+    };
   };
 
   const sizes = [
-    { name: 'Grande', color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100' },
-    { name: 'Mediano', color: 'text-indigo-600', bg: 'bg-indigo-50', border: 'border-indigo-100' },
-    { name: 'Pequeño', color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-100' }
+    { name: 'Grande', color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-200' },
+    { name: 'Mediano', color: 'text-indigo-600', bg: 'bg-indigo-50', border: 'border-indigo-200' },
+    { name: 'Pequeño', color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' }
   ];
 
   if (loading) return <div className="p-20 text-center font-black text-slate-300 animate-pulse text-sm uppercase tracking-widest">Sincronizando Almacén...</div>;
 
   return (
     <div className="space-y-6">
-      {/* TARJETAS DE ESTADÍSTICAS POR TAMAÑO (TOTAL, LIBRES LEÍDOS, PENDIENTES) */}
+      {/* TARJETAS DE ESTADÍSTICAS */}
       <div className="grid grid-cols-3 gap-3">
         {sizes.map(size => {
           const { total, freeAndScanned, pending } = getStats(size.name);
@@ -125,7 +119,7 @@ const SlotGrid: React.FC<SlotGridProps> = ({ userRole }) => {
                   <span className={`text-[10px] font-black ${size.color}`}>{freeAndScanned}</span>
                 </div>
                 <div className="flex justify-between items-center px-1">
-                  <span className="text-[7px] font-black text-slate-400 uppercase">PEND:</span>
+                  <span className="text-[7px] font-black text-slate-400 uppercase">FALTAN:</span>
                   <span className="text-[10px] font-black text-rose-500">{pending}</span>
                 </div>
               </div>
@@ -133,58 +127,6 @@ const SlotGrid: React.FC<SlotGridProps> = ({ userRole }) => {
           );
         })}
       </div>
-
-      {/* FICHA DEL HUECO */}
-      {selectedSlot && (
-        <div className="fixed inset-0 z-[150] bg-slate-900/80 backdrop-blur-md flex items-end sm:items-center justify-center p-4">
-          <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl animate-fade-in border border-slate-100 max-h-[90vh] overflow-y-auto">
-            <div className="text-center space-y-6">
-              <div className="inline-block p-4 bg-indigo-50 rounded-3xl mb-2">
-                <span className="text-3xl">🏗️</span>
-              </div>
-              <div>
-                <h3 className="text-2xl font-black text-slate-800 tracking-tight">{selectedSlot.code}</h3>
-                <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-1">Gestión de Ubicación</p>
-              </div>
-
-              <div className="grid grid-cols-1 gap-2 text-left">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 mb-1">Tamaño Actual: <span className="text-indigo-600">{selectedSlot.size}</span></p>
-                {['Pequeño', 'Mediano', 'Grande', 'Palet'].map((size) => (
-                  <button
-                    key={size}
-                    disabled={updating}
-                    onClick={() => updateSlotSize(size)}
-                    className={`py-3.5 rounded-2xl font-black transition-all border-2 text-xs flex justify-between px-6 items-center ${
-                      selectedSlot.size === size 
-                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' 
-                      : 'bg-slate-50 text-slate-600 border-slate-100 hover:border-indigo-200'
-                    }`}
-                  >
-                    <span>{size.toUpperCase()}</span>
-                    {selectedSlot.size === size && <span>✓</span>}
-                  </button>
-                ))}
-              </div>
-
-              <div className="pt-4 border-t border-slate-100 space-y-3">
-                <button 
-                  onClick={deleteSlot}
-                  disabled={updating}
-                  className="w-full py-4 bg-rose-50 text-rose-600 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-rose-100 transition-all flex items-center justify-center gap-2"
-                >
-                  <span>🗑️</span> ELIMINAR HUECO
-                </button>
-                <button 
-                  onClick={() => { setSelectedSlot(null); setSearchQuery(''); }}
-                  className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-800 transition-all"
-                >
-                  Cerrar
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* BUSCADOR */}
       <div className="relative group">
@@ -209,7 +151,7 @@ const SlotGrid: React.FC<SlotGridProps> = ({ userRole }) => {
               filter === f ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-100'
             }`}
           >
-            {f === 'all' ? 'Todos' : f === 'new' ? 'Nuevos' : f === 'occupied' ? 'Ocupados' : 'Vacíos'}
+            {f === 'all' ? 'Todos' : f === 'new' ? 'Faltan' : f === 'occupied' ? 'Ocupados' : 'Vacíos'}
           </button>
         ))}
       </div>
@@ -220,10 +162,12 @@ const SlotGrid: React.FC<SlotGridProps> = ({ userRole }) => {
           <button 
             key={slot.id} 
             onClick={() => setSelectedSlot(slot)}
-            className="bg-white p-4 rounded-[2rem] border border-slate-100 shadow-sm relative overflow-hidden text-left active:scale-95 transition-all hover:border-indigo-400 hover:shadow-xl"
+            className={`p-4 rounded-[2rem] border relative overflow-hidden text-left active:scale-95 transition-all hover:shadow-xl ${
+              slot.is_scanned_once ? 'bg-white border-slate-100' : 'bg-slate-50 border-dashed border-slate-300'
+            }`}
           >
             {!slot.is_scanned_once && (
-              <div className="absolute top-0 right-0 bg-rose-500 text-white text-[7px] font-black px-2 py-1 rounded-bl-xl uppercase tracking-tighter">NUEVO</div>
+              <div className="absolute top-0 right-0 bg-rose-500 text-white text-[7px] font-black px-2 py-1 rounded-bl-xl uppercase tracking-tighter">FALTA</div>
             )}
             <div className="flex justify-between items-start mb-3">
               <span className="text-xs font-black text-slate-800 tracking-tight">{slot.code}</span>
@@ -240,6 +184,48 @@ const SlotGrid: React.FC<SlotGridProps> = ({ userRole }) => {
           </button>
         ))}
       </div>
+
+      {/* MODAL EDICIÓN */}
+      {selectedSlot && (
+        <div className="fixed inset-0 z-[150] bg-slate-900/80 backdrop-blur-md flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl animate-fade-in border border-slate-100 max-h-[90vh] overflow-y-auto text-center space-y-6">
+            <div className="inline-block p-4 bg-indigo-50 rounded-3xl mb-2">
+              <span className="text-3xl">🏗️</span>
+            </div>
+            <div>
+              <h3 className="text-2xl font-black text-slate-800 tracking-tight">{selectedSlot.code}</h3>
+              <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-1">Gestión de Ubicación</p>
+              {!selectedSlot.is_scanned_once && (
+                <span className="bg-rose-100 text-rose-600 text-[8px] font-black px-3 py-1 rounded-full uppercase mt-2 inline-block">Falta Escaneo Inicial</span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 gap-2 text-left">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 mb-1">Definir Tamaño:</p>
+              {['Pequeño', 'Mediano', 'Grande', 'Palet'].map((size) => (
+                <button
+                  key={size}
+                  disabled={updating}
+                  onClick={() => updateSlotSize(size)}
+                  className={`py-3.5 rounded-2xl font-black transition-all border-2 text-xs flex justify-between px-6 items-center ${
+                    selectedSlot.size === size 
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' 
+                    : 'bg-slate-50 text-slate-600 border-slate-100 hover:border-indigo-200'
+                  }`}
+                >
+                  <span>{size.toUpperCase()}</span>
+                  {selectedSlot.size === size && <span>✓</span>}
+                </button>
+              ))}
+            </div>
+
+            <div className="pt-4 border-t border-slate-100 space-y-3">
+              <button onClick={deleteSlot} className="w-full py-4 bg-rose-50 text-rose-600 rounded-2xl font-black text-xs uppercase hover:bg-rose-100 transition-all">🗑️ Eliminar</button>
+              <button onClick={() => { setSelectedSlot(null); setSearchQuery(''); }} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ScannerModal isOpen={isScannerOpen} onClose={() => setIsScannerOpen(false)} onScan={handleSearch} title="Buscar Ubicación" />
     </div>
