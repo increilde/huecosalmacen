@@ -30,14 +30,13 @@ const App: React.FC = () => {
         
         if (isMounted) {
           if (error) {
-            console.error("Supabase Error:", error);
-            // IMPORTANTE PARA REACT 19: Convertir el error a string plano para evitar Error #31
-            const errorMessage = error.message || (typeof error === 'string' ? error : JSON.stringify(error));
-            const isTableMissing = error.code === 'PGRST116' || errorMessage.includes('relation') || errorMessage.includes('not found');
+            console.error("Supabase Connection Error:", error);
+            const rawMessage = error.message || (typeof error === 'string' ? error : JSON.stringify(error));
+            const isTableMissing = error.code === 'PGRST116' || rawMessage.includes('relation') || rawMessage.includes('not found');
             
             setDbStatus({
               connected: isTableMissing,
-              error: isTableMissing ? 'Conectado a Supabase. Falta crear tabla "warehouse_slots".' : errorMessage
+              error: isTableMissing ? 'Conectado. Por favor, crea la tabla "warehouse_slots" en el SQL Editor.' : String(rawMessage)
             });
           } else {
             setDbStatus({ connected: true, error: null });
@@ -48,7 +47,7 @@ const App: React.FC = () => {
           const catchMsg = err?.message || 'Error de red crítico';
           setDbStatus({ 
             connected: false, 
-            error: typeof catchMsg === 'string' ? catchMsg : JSON.stringify(catchMsg)
+            error: String(catchMsg)
           });
         }
       }
@@ -75,7 +74,7 @@ const App: React.FC = () => {
           </div>
           <div className="flex items-center gap-2">
             <div className="flex flex-col items-end mr-2 hidden xs:flex">
-               <span className="text-[10px] font-bold text-slate-400 uppercase leading-none">Estado DB</span>
+               <span className="text-[10px] font-bold text-slate-400 uppercase leading-none">Estado</span>
                <span className={`text-[10px] font-bold ${dbStatus.connected ? 'text-emerald-500' : 'text-rose-500'}`}>
                  {dbStatus.connected ? 'ONLINE' : dbStatus.error ? 'ERROR' : '...'}
                </span>
@@ -86,7 +85,7 @@ const App: React.FC = () => {
 
         {dbStatus.error && !dbStatus.connected && (
           <div className="mb-6 p-4 bg-rose-50 border border-rose-100 rounded-2xl text-rose-800 text-sm animate-fade-in">
-            <p className="font-bold flex items-center gap-2">⚠️ Error de Sistema:</p>
+            <p className="font-bold">⚠️ Error de Base de Datos:</p>
             <p className="font-mono text-[11px] mt-1 bg-white/50 p-2 rounded-lg border border-rose-200 break-words leading-tight">
               {dbStatus.error}
             </p>
