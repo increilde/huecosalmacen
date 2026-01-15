@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { UserRole, UserProfile } from './types';
 import Sidebar from './components/Sidebar';
@@ -23,14 +24,25 @@ const App: React.FC = () => {
     let isMounted = true;
     const checkConnection = async () => {
       try {
+        // Intento simple de lectura para verificar conectividad y existencia de tabla
         const { error } = await supabase.from('warehouse_slots').select('id').limit(1);
+        
         if (isMounted) {
-          if (error && error.code !== 'PGRST116' && error.code !== '42P01') throw error;
-          setDbConnected(true);
+          if (error) {
+            console.warn("Aviso de Supabase:", error.message);
+            // Si el error es que la tabla no existe, pero hay conexión a la URL
+            if (error.code === 'PGRST116' || error.message.includes('not found')) {
+              setDbConnected(true); // La DB responde, falta la tabla
+            } else {
+              setDbConnected(false);
+            }
+          } else {
+            setDbConnected(true);
+          }
         }
       } catch (err) {
         if (isMounted) {
-          console.error("Error conectando a Supabase:", err);
+          console.error("Fallo crítico de conexión:", err);
           setDbConnected(false);
         }
       }
@@ -59,13 +71,13 @@ const App: React.FC = () => {
           </div>
           <div className="flex items-center gap-2">
             <div className="flex flex-col items-end mr-2 hidden xs:flex">
-               <span className="text-[10px] font-bold text-slate-400 uppercase leading-none">Status</span>
-               <span className={`text-[10px] font-bold ${dbConnected ? 'text-emerald-500' : 'text-rose-500'}`}>
-                 {dbConnected ? 'ONLINE' : 'OFFLINE'}
+               <span className="text-[10px] font-bold text-slate-400 uppercase leading-none">Conectividad</span>
+               <span className={`text-[10px] font-bold ${dbConnected === true ? 'text-emerald-500' : dbConnected === false ? 'text-rose-500' : 'text-amber-500'}`}>
+                 {dbConnected === true ? 'LISTO' : dbConnected === false ? 'ERROR DB' : 'CONECTANDO...'}
                </span>
             </div>
-            <span className={`w-3 h-3 rounded-full border-2 border-white shadow-sm ${dbConnected ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
-            <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-bold text-indigo-700 border border-indigo-200">
+            <span className={`w-3 h-3 rounded-full border-2 border-white shadow-sm ${dbConnected === true ? 'bg-emerald-500' : dbConnected === false ? 'bg-rose-500' : 'bg-amber-500'}`}></span>
+            <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-bold text-indigo-700 border border-indigo-200 ml-2">
               {userInitial}
             </div>
           </div>
