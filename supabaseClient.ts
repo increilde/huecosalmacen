@@ -9,13 +9,19 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 /**
  * IMPORTANTE: EJECUTA ESTO EN EL "SQL EDITOR" DE TU DASHBOARD DE SUPABASE
  * 
- * -- 1. Tabla de Huecos
+ * -- 1. Actualizar Tabla de Huecos con nuevos campos
+ * ALTER TABLE warehouse_slots ADD COLUMN IF NOT EXISTS is_scanned_once BOOLEAN DEFAULT FALSE;
+ * ALTER TABLE warehouse_slots ADD COLUMN IF NOT EXISTS size TEXT DEFAULT 'Standard';
+ * 
+ * -- Tabla Base si no existe
  * CREATE TABLE IF NOT EXISTS warehouse_slots (
  *   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
  *   code TEXT UNIQUE NOT NULL,
  *   status TEXT DEFAULT 'empty',
  *   item_name TEXT,
  *   quantity INTEGER DEFAULT 0,
+ *   is_scanned_once BOOLEAN DEFAULT FALSE,
+ *   size TEXT DEFAULT 'Standard',
  *   last_updated TIMESTAMPTZ DEFAULT NOW()
  * );
  * 
@@ -28,7 +34,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  *   created_at TIMESTAMPTZ DEFAULT NOW()
  * );
  * 
- * -- 3. NUEVA: Tabla de Trazabilidad (Logs de Movimientos)
+ * -- 3. Tabla de Trazabilidad (Logs de Movimientos)
  * CREATE TABLE IF NOT EXISTS movement_logs (
  *   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
  *   operator_name TEXT NOT NULL,
@@ -39,9 +45,4 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  *   new_quantity INTEGER,
  *   created_at TIMESTAMPTZ DEFAULT NOW()
  * );
- * 
- * -- Desactivar RLS temporalmente para pruebas
- * ALTER TABLE warehouse_slots DISABLE ROW LEVEL SECURITY;
- * ALTER TABLE profiles DISABLE ROW LEVEL SECURITY;
- * ALTER TABLE movement_logs DISABLE ROW LEVEL SECURITY;
  */

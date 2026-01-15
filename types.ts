@@ -15,9 +15,11 @@ export interface UserProfile {
 
 export interface WarehouseSlot {
   id: string;
-  code: string; // e.g., A-01-02
+  code: string;
   status: 'empty' | 'occupied' | 'reserved';
   item_name?: string;
   quantity?: number;
+  is_scanned_once: boolean;
+  size: string;
   last_updated: string;
 }
