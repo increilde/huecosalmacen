@@ -1,12 +1,29 @@
 
 import React, { useState } from 'react';
 import { supabase } from '../supabaseClient';
+import ScannerModal from './ScannerModal';
 
 const Dashboard: React.FC = () => {
   const [cartId, setCartId] = useState('');
   const [slotCode, setSlotCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerTarget, setScannerTarget] = useState<'cart' | 'slot' | null>(null);
+
+  const openScanner = (target: 'cart' | 'slot') => {
+    setScannerTarget(target);
+    setScannerOpen(true);
+  };
+
+  const handleScanResult = (result: string) => {
+    if (scannerTarget === 'cart') {
+      setCartId(result);
+    } else if (scannerTarget === 'slot') {
+      setSlotCode(result);
+    }
+  };
 
   const handleUpdate = async (capacity: 'empty' | 'half' | 'full') => {
     if (!cartId || !slotCode) {
@@ -18,7 +35,6 @@ const Dashboard: React.FC = () => {
     setMessage(null);
 
     try {
-      // Mapeamos los botones a los estados de la base de datos
       const statusMap = {
         'empty': 'empty',
         'half': 'occupied',
@@ -61,7 +77,7 @@ const Dashboard: React.FC = () => {
         </h2>
 
         {message && (
-          <div className={`p-4 rounded-xl mb-6 text-sm font-medium animate-bounce ${
+          <div className={`p-4 rounded-xl mb-6 text-sm font-medium animate-fade-in ${
             message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'
           }`}>
             {message.type === 'success' ? '✅' : '❌'} {message.text}
@@ -81,7 +97,7 @@ const Dashboard: React.FC = () => {
                 className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-5 focus:border-indigo-500 focus:ring-0 transition-all text-lg font-mono uppercase"
               />
               <button 
-                onClick={() => alert('Cámara activada para Carro')}
+                onClick={() => openScanner('cart')}
                 className="absolute right-3 top-1/2 -translate-y-1/2 bg-white p-2 rounded-xl shadow-sm border border-slate-200 active:scale-90 transition-transform"
               >
                 📷
@@ -101,7 +117,7 @@ const Dashboard: React.FC = () => {
                 className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-5 focus:border-indigo-500 focus:ring-0 transition-all text-lg font-mono uppercase"
               />
               <button 
-                onClick={() => alert('Cámara activada para Hueco')}
+                onClick={() => openScanner('slot')}
                 className="absolute right-3 top-1/2 -translate-y-1/2 bg-white p-2 rounded-xl shadow-sm border border-slate-200 active:scale-90 transition-transform"
               >
                 📷
@@ -147,7 +163,6 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Instrucciones rápidas */}
       <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100">
         <p className="text-[10px] text-indigo-400 font-bold uppercase tracking-wider mb-1">Guía rápida</p>
         <p className="text-xs text-indigo-700 leading-relaxed">
@@ -156,6 +171,13 @@ const Dashboard: React.FC = () => {
           3. Pulsa el estado de llenado final.
         </p>
       </div>
+
+      <ScannerModal 
+        isOpen={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onScan={handleScanResult}
+        title={scannerTarget === 'cart' ? 'Escaneando Carro' : 'Escaneando Hueco'}
+      />
     </div>
   );
 };
