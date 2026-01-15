@@ -31,13 +31,13 @@ const App: React.FC = () => {
         if (isMounted) {
           if (error) {
             console.error("Supabase Error:", error);
-            // IMPORTANTE: Convertir el objeto error a string para evitar Error #31 de React
-            const msg = typeof error === 'string' ? error : (error.message || JSON.stringify(error));
-            const isTableMissing = error.code === 'PGRST116' || msg.includes('relation') || msg.includes('not found');
+            // IMPORTANTE PARA REACT 19: Convertir el error a string plano para evitar Error #31
+            const errorMessage = error.message || (typeof error === 'string' ? error : JSON.stringify(error));
+            const isTableMissing = error.code === 'PGRST116' || errorMessage.includes('relation') || errorMessage.includes('not found');
             
             setDbStatus({
               connected: isTableMissing,
-              error: isTableMissing ? 'Conexión OK, pero falta la tabla "warehouse_slots" en Supabase.' : msg
+              error: isTableMissing ? 'Conectado a Supabase. Falta crear tabla "warehouse_slots".' : errorMessage
             });
           } else {
             setDbStatus({ connected: true, error: null });
@@ -45,10 +45,10 @@ const App: React.FC = () => {
         }
       } catch (err: any) {
         if (isMounted) {
-          const catchMsg = err?.message || 'Error de red desconocido';
+          const catchMsg = err?.message || 'Error de red crítico';
           setDbStatus({ 
             connected: false, 
-            error: typeof catchMsg === 'object' ? JSON.stringify(catchMsg) : String(catchMsg)
+            error: typeof catchMsg === 'string' ? catchMsg : JSON.stringify(catchMsg)
           });
         }
       }
@@ -75,9 +75,9 @@ const App: React.FC = () => {
           </div>
           <div className="flex items-center gap-2">
             <div className="flex flex-col items-end mr-2 hidden xs:flex">
-               <span className="text-[10px] font-bold text-slate-400 uppercase leading-none">Status</span>
+               <span className="text-[10px] font-bold text-slate-400 uppercase leading-none">Estado DB</span>
                <span className={`text-[10px] font-bold ${dbStatus.connected ? 'text-emerald-500' : 'text-rose-500'}`}>
-                 {dbStatus.connected ? 'OK' : dbStatus.error ? 'ERROR' : '...'}
+                 {dbStatus.connected ? 'ONLINE' : dbStatus.error ? 'ERROR' : '...'}
                </span>
             </div>
             <span className={`w-3 h-3 rounded-full border-2 border-white shadow-sm ${dbStatus.connected ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
@@ -86,9 +86,9 @@ const App: React.FC = () => {
 
         {dbStatus.error && !dbStatus.connected && (
           <div className="mb-6 p-4 bg-rose-50 border border-rose-100 rounded-2xl text-rose-800 text-sm animate-fade-in">
-            <p className="font-bold flex items-center gap-2">⚠️ Error detectado:</p>
-            <p className="font-mono text-[11px] mt-1 bg-white/50 p-2 rounded-lg border border-rose-200 break-words">
-              {String(dbStatus.error)}
+            <p className="font-bold flex items-center gap-2">⚠️ Error de Sistema:</p>
+            <p className="font-mono text-[11px] mt-1 bg-white/50 p-2 rounded-lg border border-rose-200 break-words leading-tight">
+              {dbStatus.error}
             </p>
           </div>
         )}
@@ -104,16 +104,16 @@ const App: React.FC = () => {
       <nav className="md:hidden fixed bottom-4 left-4 right-4 bg-slate-900/95 backdrop-blur-md rounded-3xl shadow-2xl flex items-center justify-around p-3 z-50 border border-slate-800">
         <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center gap-1 ${activeTab === 'dashboard' ? 'text-indigo-400' : 'text-slate-500'}`}>
           <span className="text-xl">📊</span>
-          <span className="text-[10px] font-bold uppercase">Captura</span>
+          <span className="text-[10px] font-bold uppercase tracking-tighter">Captura</span>
         </button>
         <button onClick={() => setActiveTab('slots')} className={`flex flex-col items-center gap-1 ${activeTab === 'slots' ? 'text-indigo-400' : 'text-slate-500'}`}>
           <span className="text-xl">📦</span>
-          <span className="text-[10px] font-bold uppercase">Mapa</span>
+          <span className="text-[10px] font-bold uppercase tracking-tighter">Mapa</span>
         </button>
         {user.role === UserRole.ADMIN && (
           <button onClick={() => setActiveTab('admin')} className={`flex flex-col items-center gap-1 ${activeTab === 'admin' ? 'text-indigo-400' : 'text-slate-500'}`}>
             <span className="text-xl">⚙️</span>
-            <span className="text-[10px] font-bold uppercase">Admin</span>
+            <span className="text-[10px] font-bold uppercase tracking-tighter">Admin</span>
           </button>
         )}
       </nav>
