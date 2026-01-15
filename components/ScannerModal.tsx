@@ -12,16 +12,21 @@ const ScannerModal: React.FC<ScannerModalProps> = ({ isOpen, onClose, onScan, ti
   const scannerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
+  
+  // Ref para manejar la validación de confianza sin re-renders innecesarios
+  const scanBuffer = useRef<{ code: string, count: number }>({ code: '', count: 0 });
 
   useEffect(() => {
     if (isOpen && scannerRef.current) {
       initQuagga();
+      scanBuffer.current = { code: '', count: 0 };
     }
     return () => {
       try {
         Quagga.stop();
+        Quagga.offDetected();
       } catch (e) {
-        // Silencioso si ya está parado
+        // Silencioso
       }
     };
   }, [isOpen]);
@@ -29,16 +34,14 @@ const ScannerModal: React.FC<ScannerModalProps> = ({ isOpen, onClose, onScan, ti
   const initQuagga = () => {
     Quagga.init({
       inputStream: {
-        name: "Live",
+        // Removed 'name' property as it is not part of Quagga's inputStream types and caused a TS error.
         type: "LiveStream",
         target: scannerRef.current!,
         constraints: {
           width: { min: 640 },
           height: { min: 480 },
-          facingMode: "environment",
-          aspectRatio: { min: 1, max: 2 }
+          facingMode: "environment"
         },
-        singleChannel: false 
       },
       locator: {
         patchSize: "medium",
@@ -47,26 +50,36 @@ const ScannerModal: React.FC<ScannerModalProps> = ({ isOpen, onClose, onScan, ti
       decoder: {
         readers: [
           "ean_reader",
-          "ean_8_reader",
           "code_128_reader",
-          "code_39_reader"
+          "code_39_reader",
+          "upc_reader"
         ],
         multiple: false
       },
       locate: true
     }, (err) => {
       if (err) {
-        console.error("Quagga2 init error:", err);
-        setError("Error de cámara. Asegúrate de dar permisos y usar HTTPS.");
+        setError("Error de cámara. Asegúrate de dar permisos.");
         return;
       }
       Quagga.start();
     });
 
     Quagga.onDetected((data) => {
-      if (data && data.codeResult && data.codeResult.code) {
+      if (data?.codeResult?.code) {
         const code = data.codeResult.code.trim();
-        if (code.length > 3) {
+        
+        // --- SISTEMA DE CONFIANZA ---
+        // Para evitar lecturas raras, necesitamos que el mismo código 
+        // aparezca 3 veces seguidas en el flujo de la cámara.
+        if (code === scanBuffer.current.code) {
+          scanBuffer.current.count++;
+        } else {
+          scanBuffer.current.code = code;
+          scanBuffer.current.count = 1;
+        }
+
+        if (scanBuffer.current.count >= 3) {
            handleScanSuccess(code);
         }
       }
@@ -75,16 +88,19 @@ const ScannerModal: React.FC<ScannerModalProps> = ({ isOpen, onClose, onScan, ti
 
   const handleScanSuccess = (code: string) => {
     if (isSuccess) return;
-    
     setIsSuccess(true);
     
-    if (navigator.vibrate) navigator.vibrate(150);
+    // Feedback táctil
+    if (navigator.vibrate) navigator.vibrate(100);
+    
+    // Pausamos Quagga para que no siga detectando mientras cerramos
+    Quagga.offDetected();
     
     setTimeout(() => {
       onScan(code);
       onClose();
       setIsSuccess(false);
-    }, 400);
+    }, 500);
   };
 
   if (!isOpen) return null;
@@ -100,7 +116,7 @@ const ScannerModal: React.FC<ScannerModalProps> = ({ isOpen, onClose, onScan, ti
         </div>
         <button 
           onClick={onClose}
-          className="bg-white/10 hover:bg-white/20 text-white w-10 h-10 rounded-full flex items-center justify-center backdrop-blur-md transition-all border border-white/20 active:scale-90"
+          className="bg-white/10 hover:bg-white/20 text-white w-10 h-10 rounded-full flex items-center justify-center backdrop-blur-md transition-all border border-white/20"
         >
           ✕
         </button>
@@ -114,14 +130,10 @@ const ScannerModal: React.FC<ScannerModalProps> = ({ isOpen, onClose, onScan, ti
         
         {error && (
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-8 text-center bg-slate-900/95 backdrop-blur-lg">
-            <div className="w-16 h-16 bg-rose-500/20 rounded-full flex items-center justify-center mb-4">
-               <span className="text-2xl">⚠️</span>
-            </div>
-            <p className="text-white font-bold mb-2">Acceso denegado</p>
-            <p className="text-white/60 text-sm mb-6 max-w-xs">{error}</p>
+            <p className="text-white font-bold mb-4">{error}</p>
             <button 
               onClick={() => { setError(null); initQuagga(); }}
-              className="bg-white text-slate-900 px-8 py-3 rounded-2xl font-black shadow-xl active:scale-95 transition-all"
+              className="bg-white text-slate-900 px-8 py-3 rounded-2xl font-black"
             >
               REINTENTAR
             </button>
@@ -129,43 +141,30 @@ const ScannerModal: React.FC<ScannerModalProps> = ({ isOpen, onClose, onScan, ti
         )}
 
         <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
-          <div className={`relative w-80 h-48 rounded-[2rem] border-2 transition-all duration-500 ${isSuccess ? 'border-emerald-500 bg-emerald-500/10 scale-110' : 'border-white/30'}`}>
-            <div className={`absolute -top-1 -left-1 w-12 h-12 border-t-4 border-l-4 rounded-tl-3xl transition-colors ${isSuccess ? 'border-emerald-400' : 'border-indigo-500'}`}></div>
-            <div className={`absolute -top-1 -right-1 w-12 h-12 border-t-4 border-r-4 rounded-tr-3xl transition-colors ${isSuccess ? 'border-emerald-400' : 'border-indigo-500'}`}></div>
-            <div className={`absolute -bottom-1 -left-1 w-12 h-12 border-b-4 border-l-4 rounded-bl-3xl transition-colors ${isSuccess ? 'border-emerald-400' : 'border-indigo-500'}`}></div>
-            <div className={`absolute -bottom-1 -right-1 w-12 h-12 border-b-4 border-r-4 rounded-br-3xl transition-colors ${isSuccess ? 'border-emerald-400' : 'border-indigo-500'}`}></div>
+          <div className={`relative w-72 h-48 rounded-[2rem] border-2 transition-all duration-500 ${isSuccess ? 'border-emerald-500 bg-emerald-500/20 scale-110' : 'border-white/30'}`}>
+            <div className="absolute -top-1 -left-1 w-12 h-12 border-t-4 border-l-4 rounded-tl-3xl border-indigo-500"></div>
+            <div className="absolute -top-1 -right-1 w-12 h-12 border-t-4 border-r-4 rounded-tr-3xl border-indigo-500"></div>
+            <div className="absolute -bottom-1 -left-1 w-12 h-12 border-b-4 border-l-4 rounded-bl-3xl border-indigo-500"></div>
+            <div className="absolute -bottom-1 -right-1 w-12 h-12 border-b-4 border-r-4 rounded-br-3xl border-indigo-500"></div>
+            
             {!isSuccess && (
-              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-indigo-500 to-transparent shadow-[0_0_20px_rgba(99,102,241,1)] animate-[laser_1.5s_ease-in-out_infinite]"></div>
-            )}
-            {isSuccess && (
-              <div className="absolute inset-0 flex items-center justify-center animate-bounce">
-                <div className="bg-emerald-500 text-white rounded-full p-4 shadow-2xl shadow-emerald-500/50">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-              </div>
+              <div className="absolute top-0 left-0 w-full h-1 bg-indigo-500 shadow-[0_0_15px_rgba(99,102,241,1)] animate-[laser_2s_infinite]"></div>
             )}
           </div>
-          <div className="mt-8 px-6 py-2 bg-white/10 backdrop-blur-md rounded-full border border-white/10">
-            <p className="text-white/80 text-[10px] font-black uppercase tracking-[0.2em]">Encuadra el código de barras</p>
+          <div className="mt-8 px-6 py-2 bg-black/40 backdrop-blur-md rounded-full border border-white/10">
+            <p className="text-white text-[10px] font-bold uppercase tracking-widest text-center">
+              Mantén el pulso firme<br/>
+              <span className="text-indigo-400">Verificando precisión...</span>
+            </p>
           </div>
         </div>
       </div>
 
       <style>{`
         @keyframes laser {
-          0% { top: 5%; opacity: 0; }
+          0% { top: 10%; opacity: 0; }
           50% { opacity: 1; }
-          100% { top: 95%; opacity: 0; }
-        }
-        .drawingBuffer { 
-          position: absolute; 
-          top: 0; 
-          left: 0; 
-          width: 100%; 
-          height: 100%;
-          pointer-events: none;
+          100% { top: 90%; opacity: 0; }
         }
       `}</style>
     </div>

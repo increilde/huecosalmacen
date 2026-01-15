@@ -12,6 +12,12 @@ const Dashboard: React.FC = () => {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannerTarget, setScannerTarget] = useState<'cart' | 'slot' | null>(null);
 
+  // Simulamos un usuario logueado (En una app real vendría de supabase.auth)
+  const currentUser = {
+    full_name: 'Admin Central',
+    email: 'admin@almacen.com'
+  };
+
   const openScanner = (target: 'cart' | 'slot') => {
     setScannerTarget(target);
     setScannerOpen(true);
@@ -47,19 +53,38 @@ const Dashboard: React.FC = () => {
         'full': 100
       };
 
-      const { error } = await supabase
+      const newStatus = statusMap[capacity];
+      const newQuantity = quantityMap[capacity];
+
+      // 1. Actualizar el hueco
+      const { error: slotError } = await supabase
         .from('warehouse_slots')
         .upsert({ 
           code: slotCode, 
-          status: statusMap[capacity],
+          status: newStatus,
           item_name: `Carro: ${cartId}`,
-          quantity: quantityMap[capacity],
+          quantity: newQuantity,
           last_updated: new Date().toISOString()
         }, { onConflict: 'code' });
 
-      if (error) throw error;
+      if (slotError) throw slotError;
 
-      setMessage({ type: 'success', text: `Hueco ${slotCode} actualizado correctamente` });
+      // 2. Registrar la TRAZABILIDAD
+      const { error: logError } = await supabase
+        .from('movement_logs')
+        .insert({
+          operator_name: currentUser.full_name,
+          operator_email: currentUser.email,
+          cart_id: cartId,
+          slot_code: slotCode,
+          new_status: newStatus,
+          new_quantity: newQuantity,
+          created_at: new Date().toISOString()
+        });
+
+      if (logError) console.error("Error al registrar log:", logError);
+
+      setMessage({ type: 'success', text: `Movimiento registrado: ${slotCode} ahora está al ${newQuantity}%` });
       setCartId('');
       setSlotCode('');
     } catch (err: any) {
@@ -85,7 +110,6 @@ const Dashboard: React.FC = () => {
         )}
 
         <div className="space-y-5">
-          {/* Campo Carro */}
           <div className="space-y-2">
             <label className="text-xs font-bold text-slate-500 uppercase ml-1">ID Carro / Lote</label>
             <div className="relative">
@@ -93,7 +117,7 @@ const Dashboard: React.FC = () => {
                 type="text"
                 value={cartId}
                 onChange={(e) => setCartId(e.target.value.toUpperCase())}
-                placeholder="Escribe o escanea..."
+                placeholder="Escanea el carro..."
                 className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-5 focus:border-indigo-500 focus:ring-0 transition-all text-lg font-mono uppercase"
               />
               <button 
@@ -105,7 +129,6 @@ const Dashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* Campo Hueco */}
           <div className="space-y-2">
             <label className="text-xs font-bold text-slate-500 uppercase ml-1">Hueco de Destino</label>
             <div className="relative">
@@ -113,7 +136,7 @@ const Dashboard: React.FC = () => {
                 type="text"
                 value={slotCode}
                 onChange={(e) => setSlotCode(e.target.value.toUpperCase())}
-                placeholder="Ej: A-01-02"
+                placeholder="Escanea el hueco..."
                 className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-5 focus:border-indigo-500 focus:ring-0 transition-all text-lg font-mono uppercase"
               />
               <button 
@@ -125,9 +148,8 @@ const Dashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* Botones de Capacidad */}
           <div className="pt-4 space-y-3">
-            <p className="text-xs font-bold text-slate-500 uppercase text-center">Indicar Capacidad</p>
+            <p className="text-xs font-bold text-slate-500 uppercase text-center">Indicar Capacidad Final</p>
             <div className="grid grid-cols-1 gap-3">
               <button
                 disabled={loading}
@@ -161,15 +183,6 @@ const Dashboard: React.FC = () => {
             </div>
           </div>
         </div>
-      </div>
-
-      <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100">
-        <p className="text-[10px] text-indigo-400 font-bold uppercase tracking-wider mb-1">Guía rápida</p>
-        <p className="text-xs text-indigo-700 leading-relaxed">
-          1. Escanea el código del carro.<br/>
-          2. Escanea la etiqueta del hueco.<br/>
-          3. Pulsa el estado de llenado final.
-        </p>
       </div>
 
       <ScannerModal 

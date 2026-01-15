@@ -28,7 +28,20 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  *   created_at TIMESTAMPTZ DEFAULT NOW()
  * );
  * 
- * -- 3. Desactivar RLS temporalmente para pruebas (o configurar políticas)
+ * -- 3. NUEVA: Tabla de Trazabilidad (Logs de Movimientos)
+ * CREATE TABLE IF NOT EXISTS movement_logs (
+ *   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+ *   operator_name TEXT NOT NULL,
+ *   operator_email TEXT,
+ *   cart_id TEXT,
+ *   slot_code TEXT NOT NULL,
+ *   new_status TEXT NOT NULL,
+ *   new_quantity INTEGER,
+ *   created_at TIMESTAMPTZ DEFAULT NOW()
+ * );
+ * 
+ * -- Desactivar RLS temporalmente para pruebas
  * ALTER TABLE warehouse_slots DISABLE ROW LEVEL SECURITY;
  * ALTER TABLE profiles DISABLE ROW LEVEL SECURITY;
+ * ALTER TABLE movement_logs DISABLE ROW LEVEL SECURITY;
  */
