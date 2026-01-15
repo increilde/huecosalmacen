@@ -1,6 +1,5 @@
-
 import React, { useRef, useEffect, useState } from 'react';
-import Quagga from 'quagga';
+import Quagga from '@ericblade/quagga2';
 
 interface ScannerModalProps {
   isOpen: boolean;
@@ -39,17 +38,17 @@ const ScannerModal: React.FC<ScannerModalProps> = ({ isOpen, onClose, onScan, ti
           facingMode: "environment",
           aspectRatio: { min: 1, max: 2 }
         },
-        singleChannel: false // false para mejor precisión en color
+        singleChannel: false 
       },
       locator: {
         patchSize: "medium",
-        halfSample: true // Mejora velocidad y permite detectar códigos más pequeños
+        halfSample: true 
       },
       decoder: {
         readers: [
-          "ean_reader",      // EAN-13 principal
-          "ean_8_reader",    // EAN-8
-          "code_128_reader", // Muy común en logística
+          "ean_reader",
+          "ean_8_reader",
+          "code_128_reader",
           "code_39_reader"
         ],
         multiple: false
@@ -57,19 +56,17 @@ const ScannerModal: React.FC<ScannerModalProps> = ({ isOpen, onClose, onScan, ti
       locate: true
     }, (err) => {
       if (err) {
-        console.error("Quagga init error:", err);
+        console.error("Quagga2 init error:", err);
         setError("Error de cámara. Asegúrate de dar permisos y usar HTTPS.");
         return;
       }
       Quagga.start();
     });
 
-    // Filtro para asegurar consistencia en la lectura
     Quagga.onDetected((data) => {
       if (data && data.codeResult && data.codeResult.code) {
-        // En logística a veces el código viene con caracteres extra, limpiamos si es necesario
         const code = data.codeResult.code.trim();
-        if (code.length > 3) { // Evitar ruidos cortos
+        if (code.length > 3) {
            handleScanSuccess(code);
         }
       }
@@ -81,10 +78,8 @@ const ScannerModal: React.FC<ScannerModalProps> = ({ isOpen, onClose, onScan, ti
     
     setIsSuccess(true);
     
-    // Feedback sonoro y táctil
     if (navigator.vibrate) navigator.vibrate(150);
     
-    // El éxito es instantáneo para el usuario
     setTimeout(() => {
       onScan(code);
       onClose();
@@ -133,21 +128,15 @@ const ScannerModal: React.FC<ScannerModalProps> = ({ isOpen, onClose, onScan, ti
           </div>
         )}
 
-        {/* Visor de Escaneo */}
         <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
           <div className={`relative w-80 h-48 rounded-[2rem] border-2 transition-all duration-500 ${isSuccess ? 'border-emerald-500 bg-emerald-500/10 scale-110' : 'border-white/30'}`}>
-            
-            {/* Esquinas estilizadas */}
             <div className={`absolute -top-1 -left-1 w-12 h-12 border-t-4 border-l-4 rounded-tl-3xl transition-colors ${isSuccess ? 'border-emerald-400' : 'border-indigo-500'}`}></div>
             <div className={`absolute -top-1 -right-1 w-12 h-12 border-t-4 border-r-4 rounded-tr-3xl transition-colors ${isSuccess ? 'border-emerald-400' : 'border-indigo-500'}`}></div>
             <div className={`absolute -bottom-1 -left-1 w-12 h-12 border-b-4 border-l-4 rounded-bl-3xl transition-colors ${isSuccess ? 'border-emerald-400' : 'border-indigo-500'}`}></div>
             <div className={`absolute -bottom-1 -right-1 w-12 h-12 border-b-4 border-r-4 rounded-br-3xl transition-colors ${isSuccess ? 'border-emerald-400' : 'border-indigo-500'}`}></div>
-
-            {/* Escáner Láser */}
             {!isSuccess && (
               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-indigo-500 to-transparent shadow-[0_0_20px_rgba(99,102,241,1)] animate-[laser_1.5s_ease-in-out_infinite]"></div>
             )}
-            
             {isSuccess && (
               <div className="absolute inset-0 flex items-center justify-center animate-bounce">
                 <div className="bg-emerald-500 text-white rounded-full p-4 shadow-2xl shadow-emerald-500/50">
@@ -158,21 +147,9 @@ const ScannerModal: React.FC<ScannerModalProps> = ({ isOpen, onClose, onScan, ti
               </div>
             )}
           </div>
-          
           <div className="mt-8 px-6 py-2 bg-white/10 backdrop-blur-md rounded-full border border-white/10">
-            <p className="text-white/80 text-[10px] font-black uppercase tracking-[0.2em]">Encuadra el código EAN</p>
+            <p className="text-white/80 text-[10px] font-black uppercase tracking-[0.2em]">Encuadra el código de barras</p>
           </div>
-        </div>
-
-        {/* Footer info */}
-        <div className="absolute bottom-12 left-0 right-0 flex justify-center">
-           <div className="flex items-center gap-3 text-white/30">
-              <span className="text-xs">AUTOFOCUS</span>
-              <div className="w-1 h-1 bg-white/30 rounded-full"></div>
-              <span className="text-xs">HD SCAN</span>
-              <div className="w-1 h-1 bg-white/30 rounded-full"></div>
-              <span className="text-xs">EAN/QR</span>
-           </div>
         </div>
       </div>
 
