@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { UserRole, UserProfile } from './types';
 import Sidebar from './components/Sidebar';
@@ -21,20 +20,26 @@ const App: React.FC = () => {
   });
 
   useEffect(() => {
+    let isMounted = true;
     const checkConnection = async () => {
       try {
-        // Un simple ping a la base de datos para verificar conexión
         const { error } = await supabase.from('warehouse_slots').select('id').limit(1);
-        // Si el error es que la tabla no existe (42P01), aún así consideramos que hay conexión con Supabase
-        if (error && error.code !== '42P01') throw error;
-        setDbConnected(true);
+        if (isMounted) {
+          if (error && error.code !== 'PGRST116' && error.code !== '42P01') throw error;
+          setDbConnected(true);
+        }
       } catch (err) {
-        console.error("Error conectando a Supabase:", err);
-        setDbConnected(false);
+        if (isMounted) {
+          console.error("Error conectando a Supabase:", err);
+          setDbConnected(false);
+        }
       }
     };
     checkConnection();
+    return () => { isMounted = false; };
   }, []);
+
+  const userInitial = String(user.full_name || '?').charAt(0);
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen bg-slate-50 pb-20 md:pb-0 font-sans">
@@ -61,7 +66,7 @@ const App: React.FC = () => {
             </div>
             <span className={`w-3 h-3 rounded-full border-2 border-white shadow-sm ${dbConnected ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
             <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-bold text-indigo-700 border border-indigo-200">
-              {user.full_name[0]}
+              {userInitial}
             </div>
           </div>
         </header>
@@ -77,14 +82,14 @@ const App: React.FC = () => {
       <nav className="md:hidden fixed bottom-4 left-4 right-4 bg-slate-900/95 backdrop-blur-md rounded-3xl shadow-2xl flex items-center justify-around p-3 z-50 border border-slate-800">
         <button 
           onClick={() => setActiveTab('dashboard')}
-          className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'dashboard' ? 'text-indigo-400 scale-110' : 'text-slate-500 hover:text-slate-400'}`}
+          className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'dashboard' ? 'text-indigo-400 scale-110' : 'text-slate-500'}`}
         >
           <span className="text-xl">📊</span>
           <span className="text-[10px] font-bold uppercase">Captura</span>
         </button>
         <button 
           onClick={() => setActiveTab('slots')}
-          className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'slots' ? 'text-indigo-400 scale-110' : 'text-slate-500 hover:text-slate-400'}`}
+          className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'slots' ? 'text-indigo-400 scale-110' : 'text-slate-500'}`}
         >
           <span className="text-xl">📦</span>
           <span className="text-[10px] font-bold uppercase">Mapa</span>
@@ -92,7 +97,7 @@ const App: React.FC = () => {
         {user.role === UserRole.ADMIN && (
           <button 
             onClick={() => setActiveTab('admin')}
-            className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'admin' ? 'text-indigo-400 scale-110' : 'text-slate-500 hover:text-slate-400'}`}
+            className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'admin' ? 'text-indigo-400 scale-110' : 'text-slate-500'}`}
           >
             <span className="text-xl">⚙️</span>
             <span className="text-[10px] font-bold uppercase">Admin</span>

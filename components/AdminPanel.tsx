@@ -15,7 +15,7 @@ const AdminPanel: React.FC = () => {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {stats.map((stat) => (
           <div key={stat.label} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm">
@@ -53,11 +53,11 @@ const AdminPanel: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <button className="bg-slate-900 text-white p-4 rounded-3xl font-bold text-sm hover:bg-slate-800 transition-colors flex flex-col items-center gap-2">
+        <button className="bg-slate-900 text-white p-4 rounded-3xl font-bold text-sm hover:bg-slate-800 transition-colors flex flex-col items-center gap-2 active:scale-95">
           <span className="text-xl">📊</span>
           Exportar Reporte
         </button>
-        <button className="bg-white text-slate-900 border-2 border-slate-100 p-4 rounded-3xl font-bold text-sm hover:bg-slate-50 transition-colors flex flex-col items-center gap-2">
+        <button className="bg-white text-slate-900 border-2 border-slate-100 p-4 rounded-3xl font-bold text-sm hover:bg-slate-50 transition-colors flex flex-col items-center gap-2 active:scale-95">
           <span className="text-xl">🧹</span>
           Limpiar Historial
         </button>
