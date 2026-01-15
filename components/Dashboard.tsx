@@ -32,8 +32,14 @@ const Dashboard: React.FC = () => {
   };
 
   const handleUpdate = async (capacity: 'empty' | 'half' | 'full') => {
-    if (!cartId || !slotCode) {
-      setMessage({ type: 'error', text: 'Por favor, introduce Carro y Hueco' });
+    // VALIDACIÓN CRÍTICA: El carro es obligatorio
+    if (!cartId.trim()) {
+      setMessage({ type: 'error', text: '⚠️ Error: Debe identificar el CARRO antes de asignar el hueco.' });
+      return;
+    }
+
+    if (!slotCode.trim()) {
+      setMessage({ type: 'error', text: '⚠️ Error: Debe identificar el HUECO de destino.' });
       return;
     }
 
@@ -62,7 +68,7 @@ const Dashboard: React.FC = () => {
         .upsert({ 
           code: slotCode, 
           status: newStatus,
-          item_name: `Carro: ${cartId}`,
+          item_name: capacity === 'empty' ? null : `Carro: ${cartId}`,
           quantity: newQuantity,
           last_updated: new Date().toISOString()
         }, { onConflict: 'code' });
@@ -84,11 +90,16 @@ const Dashboard: React.FC = () => {
 
       if (logError) console.error("Error al registrar log:", logError);
 
-      setMessage({ type: 'success', text: `Movimiento registrado: ${slotCode} ahora está al ${newQuantity}%` });
+      setMessage({ 
+        type: 'success', 
+        text: `✅ Correcto: Carro ${cartId} ubicado en ${slotCode} (${newQuantity}%)` 
+      });
+      
+      // Limpiar campos para la siguiente operación
       setCartId('');
       setSlotCode('');
     } catch (err: any) {
-      setMessage({ type: 'error', text: err.message || 'Error al guardar' });
+      setMessage({ type: 'error', text: err.message || 'Error al guardar el movimiento' });
     } finally {
       setLoading(false);
     }
@@ -102,23 +113,30 @@ const Dashboard: React.FC = () => {
         </h2>
 
         {message && (
-          <div className={`p-4 rounded-xl mb-6 text-sm font-medium animate-fade-in ${
-            message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'
+          <div className={`p-4 rounded-xl mb-6 text-sm font-bold animate-fade-in border ${
+            message.type === 'success' 
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-100' 
+              : 'bg-rose-50 text-rose-700 border-rose-100 animate-[shake_0.4s_ease-in-out]'
           }`}>
-            {message.type === 'success' ? '✅' : '❌'} {message.text}
+            {message.text}
           </div>
         )}
 
         <div className="space-y-5">
           <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-500 uppercase ml-1">ID Carro / Lote</label>
+            <label className="text-xs font-bold text-slate-500 uppercase ml-1 flex justify-between">
+              <span>ID Carro / Lote</span>
+              {!cartId && <span className="text-rose-500 lowercase font-medium">* Obligatorio</span>}
+            </label>
             <div className="relative">
               <input
                 type="text"
                 value={cartId}
                 onChange={(e) => setCartId(e.target.value.toUpperCase())}
                 placeholder="Escanea el carro..."
-                className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-5 focus:border-indigo-500 focus:ring-0 transition-all text-lg font-mono uppercase"
+                className={`w-full bg-slate-50 border-2 rounded-2xl py-4 px-5 focus:ring-0 transition-all text-lg font-mono uppercase ${
+                  !cartId && message?.type === 'error' ? 'border-rose-200 bg-rose-50/30' : 'border-slate-100 focus:border-indigo-500'
+                }`}
               />
               <button 
                 onClick={() => openScanner('cart')}
@@ -191,6 +209,14 @@ const Dashboard: React.FC = () => {
         onScan={handleScanResult}
         title={scannerTarget === 'cart' ? 'Escaneando Carro' : 'Escaneando Hueco'}
       />
+
+      <style>{`
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          25% { transform: translateX(-5px); }
+          75% { transform: translateX(5px); }
+        }
+      `}</style>
     </div>
   );
 };
