@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { UserRole, UserProfile } from './types';
 import Sidebar from './components/Sidebar';
@@ -31,12 +30,14 @@ const App: React.FC = () => {
         
         if (isMounted) {
           if (error) {
-            // Si el error es PGRST116 o 404, es probable que la tabla no exista pero la conexión sea correcta
-            const isTableMissing = error.code === 'PGRST116' || error.message?.includes('relation') || error.message?.includes('not found');
+            console.error("Supabase Error:", error);
+            // IMPORTANTE: Convertir el objeto error a string para evitar Error #31 de React
+            const msg = typeof error === 'string' ? error : (error.message || JSON.stringify(error));
+            const isTableMissing = error.code === 'PGRST116' || msg.includes('relation') || msg.includes('not found');
             
             setDbStatus({
               connected: isTableMissing,
-              error: isTableMissing ? 'Tabla no encontrada. Ejecuta el SQL en Supabase.' : error.message
+              error: isTableMissing ? 'Conexión OK, pero falta la tabla "warehouse_slots" en Supabase.' : msg
             });
           } else {
             setDbStatus({ connected: true, error: null });
@@ -44,15 +45,17 @@ const App: React.FC = () => {
         }
       } catch (err: any) {
         if (isMounted) {
-          setDbStatus({ connected: false, error: err.message || 'Error de red crítico' });
+          const catchMsg = err?.message || 'Error de red desconocido';
+          setDbStatus({ 
+            connected: false, 
+            error: typeof catchMsg === 'object' ? JSON.stringify(catchMsg) : String(catchMsg)
+          });
         }
       }
     };
     checkConnection();
     return () => { isMounted = false; };
   }, []);
-
-  const userInitial = String(user.full_name || '?').charAt(0);
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen bg-slate-50 pb-20 md:pb-0 font-sans">
@@ -72,9 +75,9 @@ const App: React.FC = () => {
           </div>
           <div className="flex items-center gap-2">
             <div className="flex flex-col items-end mr-2 hidden xs:flex">
-               <span className="text-[10px] font-bold text-slate-400 uppercase leading-none">Estado</span>
+               <span className="text-[10px] font-bold text-slate-400 uppercase leading-none">Status</span>
                <span className={`text-[10px] font-bold ${dbStatus.connected ? 'text-emerald-500' : 'text-rose-500'}`}>
-                 {dbStatus.connected ? 'CONECTADO' : dbStatus.error ? 'ERROR' : 'VALIDANDO...'}
+                 {dbStatus.connected ? 'OK' : dbStatus.error ? 'ERROR' : '...'}
                </span>
             </div>
             <span className={`w-3 h-3 rounded-full border-2 border-white shadow-sm ${dbStatus.connected ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
@@ -82,9 +85,11 @@ const App: React.FC = () => {
         </header>
 
         {dbStatus.error && !dbStatus.connected && (
-          <div className="mb-6 p-4 bg-rose-50 border border-rose-100 rounded-2xl text-rose-800 text-sm">
-            <p className="font-bold">Error de conexión:</p>
-            <p className="font-mono text-xs">{dbStatus.error}</p>
+          <div className="mb-6 p-4 bg-rose-50 border border-rose-100 rounded-2xl text-rose-800 text-sm animate-fade-in">
+            <p className="font-bold flex items-center gap-2">⚠️ Error detectado:</p>
+            <p className="font-mono text-[11px] mt-1 bg-white/50 p-2 rounded-lg border border-rose-200 break-words">
+              {String(dbStatus.error)}
+            </p>
           </div>
         )}
 
@@ -105,6 +110,12 @@ const App: React.FC = () => {
           <span className="text-xl">📦</span>
           <span className="text-[10px] font-bold uppercase">Mapa</span>
         </button>
+        {user.role === UserRole.ADMIN && (
+          <button onClick={() => setActiveTab('admin')} className={`flex flex-col items-center gap-1 ${activeTab === 'admin' ? 'text-indigo-400' : 'text-slate-500'}`}>
+            <span className="text-xl">⚙️</span>
+            <span className="text-[10px] font-bold uppercase">Admin</span>
+          </button>
+        )}
       </nav>
     </div>
   );
