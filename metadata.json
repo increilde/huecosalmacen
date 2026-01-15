@@ -1,0 +1,7 @@
+{
+  "name": "Warehouse Slot Control",
+  "description": "An advanced warehouse management system for slot tracking and role-based access control, integrated with Supabase.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
