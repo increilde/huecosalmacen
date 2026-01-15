@@ -91,11 +91,41 @@ const SlotGrid: React.FC<SlotGridProps> = ({ userRole }) => {
     return s.status === filter;
   });
 
+  // Estadísticas de tamaños
+  const getStats = (sizeName: string) => {
+    const total = slots.filter(s => s.size === sizeName).length;
+    const free = slots.filter(s => s.size === sizeName && s.status === 'empty').length;
+    return { total, free };
+  };
+
+  const sizes = [
+    { name: 'Grande', color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100' },
+    { name: 'Mediano', color: 'text-indigo-600', bg: 'bg-indigo-50', border: 'border-indigo-100' },
+    { name: 'Pequeño', color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-100' }
+  ];
+
   if (loading) return <div className="p-20 text-center font-black text-slate-300 animate-pulse text-sm uppercase tracking-widest">Sincronizando Almacén...</div>;
 
   return (
     <div className="space-y-6">
-      {/* FICHA DEL HUECO CON OPCIÓN DE ELIMINAR */}
+      {/* TARJETAS DE ESTADÍSTICAS POR TAMAÑO */}
+      <div className="grid grid-cols-3 gap-3">
+        {sizes.map(size => {
+          const { total, free } = getStats(size.name);
+          return (
+            <div key={size.name} className={`${size.bg} ${size.border} border-2 rounded-3xl p-4 shadow-sm flex flex-col items-center justify-center text-center`}>
+              <span className={`text-[9px] font-black uppercase tracking-widest ${size.color} mb-1`}>{size.name}</span>
+              <div className="text-2xl font-black text-slate-800 leading-none">{total}</div>
+              <div className="mt-2 pt-2 border-t border-white/50 w-full">
+                <span className="text-[10px] font-bold text-slate-500 block leading-tight">LIBRES</span>
+                <span className={`text-sm font-black ${size.color}`}>{free}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* FICHA DEL HUECO */}
       {selectedSlot && (
         <div className="fixed inset-0 z-[150] bg-slate-900/80 backdrop-blur-md flex items-end sm:items-center justify-center p-4">
           <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl animate-fade-in border border-slate-100 max-h-[90vh] overflow-y-auto">
@@ -188,11 +218,13 @@ const SlotGrid: React.FC<SlotGridProps> = ({ userRole }) => {
             )}
             <div className="flex justify-between items-start mb-3">
               <span className="text-xs font-black text-slate-800 tracking-tight">{slot.code}</span>
-              <span className="text-[7px] font-black uppercase px-2 py-1 rounded-lg bg-slate-100 text-slate-500">{slot.size}</span>
+              <span className={`text-[7px] font-black uppercase px-2 py-1 rounded-lg ${
+                slot.size === 'Grande' ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-500'
+              }`}>{slot.size}</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="flex-1 h-2 bg-slate-50 rounded-full overflow-hidden">
-                <div className={`h-full bg-indigo-600`} style={{ width: `${slot.quantity || 0}%` }} />
+                <div className={`h-full ${slot.status === 'empty' ? 'bg-slate-200' : 'bg-indigo-600'}`} style={{ width: `${slot.quantity || 0}%` }} />
               </div>
               <span className="text-[9px] font-black text-slate-800">{slot.quantity}%</span>
             </div>
