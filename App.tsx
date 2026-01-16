@@ -51,7 +51,6 @@ const App: React.FC = () => {
     setLoginError('');
     
     try {
-      // Usamos 'email' como el campo de nombre de usuario en la DB según tu imagen
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -89,8 +88,8 @@ const App: React.FC = () => {
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
         <div className="w-full max-w-md bg-white rounded-[3rem] p-10 shadow-2xl animate-fade-in text-center">
           <div className="bg-indigo-600 w-16 h-16 rounded-3xl flex items-center justify-center text-white text-2xl mx-auto mb-6 shadow-xl shadow-indigo-500/30 font-black">WH</div>
-          <h1 className="text-3xl font-black text-slate-800 tracking-tight mb-2">WHControl</h1>
-          <p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.3em] mb-10">Control de Almacén</p>
+          <h1 className="text-2xl font-black text-slate-800 tracking-tight mb-2">WareHouse Control</h1>
+          <p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.3em] mb-10">by Ilde</p>
           
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-1">
@@ -144,7 +143,7 @@ const App: React.FC = () => {
         <header className="mb-6 flex justify-between items-center bg-white/50 p-3 rounded-2xl backdrop-blur-sm sticky top-0 z-10 border border-white">
           <div className="flex items-center gap-3">
             <div className="bg-indigo-600 w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-xs shadow-lg shadow-indigo-200">WH</div>
-            <h1 className="text-xl font-black text-slate-800 tracking-tight">WHCONTROL</h1>
+            <h1 className="text-lg font-black text-slate-800 tracking-tight uppercase">WH Control <span className="text-indigo-600 font-black">by Ilde</span></h1>
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">

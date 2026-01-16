@@ -22,11 +22,14 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole, on
   return (
     <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col border-r border-slate-800">
       <div className="p-6">
-        <div className="flex items-center gap-3 mb-8">
-          <div className="bg-indigo-500 p-2 rounded-lg">
-            <span className="text-xl">🏭</span>
+        <div className="flex flex-col items-start gap-1 mb-8">
+          <div className="flex items-center gap-3">
+            <div className="bg-indigo-500 p-2 rounded-lg">
+              <span className="text-xl">🏭</span>
+            </div>
+            <h2 className="text-lg font-bold text-white tracking-tight">WHControl</h2>
           </div>
-          <h2 className="text-xl font-bold text-white tracking-tight">WHControl</h2>
+          <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest pl-12">by Ilde</p>
         </div>
 
         <nav className="space-y-1">
