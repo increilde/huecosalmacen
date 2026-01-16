@@ -7,42 +7,16 @@ const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 /**
- * IMPORTANTE: EJECUTA ESTO EN EL "SQL EDITOR" DE TU DASHBOARD DE SUPABASE
+ * EJECUTA ESTO EN EL "SQL EDITOR" DE SUPABASE PARA COMPATIBILIDAD:
  * 
- * -- 1. Actualizar Tabla de Huecos con nuevos campos
- * ALTER TABLE warehouse_slots ADD COLUMN IF NOT EXISTS is_scanned_once BOOLEAN DEFAULT FALSE;
- * ALTER TABLE warehouse_slots ADD COLUMN IF NOT EXISTS size TEXT DEFAULT 'Standard';
+ * -- 1. Añadir columna de password si no existe
+ * ALTER TABLE profiles ADD COLUMN IF NOT EXISTS password_plain TEXT;
  * 
- * -- Tabla Base si no existe
- * CREATE TABLE IF NOT EXISTS warehouse_slots (
- *   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
- *   code TEXT UNIQUE NOT NULL,
- *   status TEXT DEFAULT 'empty',
- *   item_name TEXT,
- *   quantity INTEGER DEFAULT 0,
- *   is_scanned_once BOOLEAN DEFAULT FALSE,
- *   size TEXT DEFAULT 'Standard',
- *   last_updated TIMESTAMPTZ DEFAULT NOW()
- * );
+ * -- 2. Crear usuario solicitado (usando el campo email como nombre de usuario)
+ * INSERT INTO profiles (email, password_plain, full_name, role)
+ * VALUES ('ilde', '8019', 'Ilde Admin', 'admin')
+ * ON CONFLICT (email) DO NOTHING;
  * 
- * -- 2. Tabla de Usuarios/Perfiles
- * CREATE TABLE IF NOT EXISTS profiles (
- *   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
- *   email TEXT UNIQUE NOT NULL,
- *   full_name TEXT,
- *   role TEXT DEFAULT 'operator',
- *   created_at TIMESTAMPTZ DEFAULT NOW()
- * );
- * 
- * -- 3. Tabla de Trazabilidad (Logs de Movimientos)
- * CREATE TABLE IF NOT EXISTS movement_logs (
- *   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
- *   operator_name TEXT NOT NULL,
- *   operator_email TEXT,
- *   cart_id TEXT,
- *   slot_code TEXT NOT NULL,
- *   new_status TEXT NOT NULL,
- *   new_quantity INTEGER,
- *   created_at TIMESTAMPTZ DEFAULT NOW()
- * );
+ * -- 3. Asegurar que las políticas RLS permitan lectura/escritura (o desactivarlas para pruebas)
+ * ALTER TABLE profiles DISABLE ROW LEVEL SECURITY;
  */

@@ -6,9 +6,10 @@ interface SidebarProps {
   activeTab: string;
   setActiveTab: (tab: 'dashboard' | 'slots' | 'users' | 'admin') => void;
   userRole: UserRole;
+  onLogout: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole }) => {
+const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole, onLogout }) => {
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: '📊' },
     { id: 'slots', label: 'Huecos Almacén', icon: '📦' },
@@ -47,9 +48,12 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole }) 
       </div>
 
       <div className="mt-auto p-6 border-t border-slate-800">
-        <button className="flex items-center gap-3 text-sm text-slate-400 hover:text-red-400 transition-colors">
+        <button 
+          onClick={onLogout}
+          className="flex items-center gap-3 text-sm text-slate-400 hover:text-red-400 transition-colors w-full px-4"
+        >
           <span>🚪</span>
-          <span>Cerrar Sesión</span>
+          <span className="font-bold uppercase text-[10px] tracking-widest">Cerrar Sesión</span>
         </button>
       </div>
     </aside>
