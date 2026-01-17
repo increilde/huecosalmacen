@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
-import { UserProfile } from '../types';
+import { UserProfile, WarehouseSlot } from '../types';
 import ScannerModal from './ScannerModal';
 
 interface DashboardProps {
@@ -21,9 +21,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
   const [step, setStep] = useState<'size' | 'status'>('size');
 
+  // Estados para la funcionalidad "Buscar Hueco"
+  const [showSearchFinder, setShowSearchFinder] = useState(false);
+  const [finderSize, setFinderSize] = useState<string | null>(null);
+  const [finderOccupancy, setFinderOccupancy] = useState<number | null>(null); // null, 0 o 50
+  const [availableSlots, setAvailableSlots] = useState<WarehouseSlot[]>([]);
+  const [loadingFinder, setLoadingFinder] = useState(false);
+
   const slotInputRef = useRef<HTMLInputElement>(null);
 
-  // Efecto para detectar cuando el código del hueco está listo para procesar
   useEffect(() => {
     if (slotCode.trim().length >= 4) {
       checkSlotAndPrepare();
@@ -59,6 +65,28 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     }
   };
 
+  const fetchAvailableSlots = async (size: string, occupancy: number) => {
+    setLoadingFinder(true);
+    setFinderSize(size);
+    setFinderOccupancy(occupancy);
+    try {
+      const { data, error } = await supabase
+        .from('warehouse_slots')
+        .select('*')
+        .eq('size', size)
+        .eq('quantity', occupancy)
+        .eq('is_scanned_once', true)
+        .limit(12);
+      
+      if (error) throw error;
+      setAvailableSlots(data || []);
+    } catch (err) {
+      console.error("Error fetching slots:", err);
+    } finally {
+      setLoadingFinder(false);
+    }
+  };
+
   const executeUpdate = async (capacity: 'empty' | 'half' | 'full') => {
     setLoading(true);
     setMessage(null);
@@ -90,10 +118,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
       if (slotError) throw slotError;
 
-      // Registrar movimiento con el usuario real
       await supabase.from('movement_logs').insert({
         operator_name: user.full_name,
-        operator_email: user.email, // Aquí guardamos el username/email del login
+        operator_email: user.email,
         cart_id: cartId.trim() || 'MANUAL',
         slot_code: slotCode.toUpperCase().trim(),
         new_status: newStatus,
@@ -135,8 +162,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     setCartId('');
   };
 
+  const resetFinder = () => {
+    setFinderSize(null);
+    setFinderOccupancy(null);
+    setAvailableSlots([]);
+  };
+
   return (
     <div className="max-w-md mx-auto space-y-6">
+      {/* MODAL ACCIÓN (OCUPACIÓN / TAMAÑO) */}
       {showActionModal && (
         <div className="fixed inset-0 z-[120] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-white rounded-[3rem] p-8 w-full max-w-sm shadow-2xl animate-fade-in border border-white/20">
@@ -149,7 +183,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
               {step === 'size' ? (
                 <div className="space-y-4">
-                  <h3 className="text-xl font-black text-slate-800 uppercase">Tamaño del Hueco</h3>
+                  <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">Tamaño del Hueco</h3>
                   <div className="grid grid-cols-1 gap-2">
                     {['Pequeño', 'Mediano', 'Grande', 'Palet'].map(size => (
                       <button 
@@ -164,7 +198,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <h3 className="text-2xl font-black text-slate-800 uppercase">Ocupación</h3>
+                  <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Ocupación</h3>
                   <div className="grid grid-cols-1 gap-3">
                     <button onClick={() => executeUpdate('full')} className="bg-indigo-600 text-white font-black py-5 rounded-2xl shadow-lg active:scale-95 transition-all uppercase tracking-widest text-xs">Lleno (100%)</button>
                     <button onClick={() => executeUpdate('half')} className="bg-amber-500 text-white font-black py-5 rounded-2xl shadow-lg active:scale-95 transition-all uppercase tracking-widest text-xs">Medio (50%)</button>
@@ -178,11 +212,110 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         </div>
       )}
 
+      {/* MODAL BUSCADOR DE HUECOS LIBRES */}
+      {showSearchFinder && (
+        <div className="fixed inset-0 z-[120] bg-slate-950/95 backdrop-blur-lg flex items-center justify-center p-4">
+          <div className="bg-white rounded-[3rem] p-8 w-full max-w-md shadow-2xl animate-fade-in flex flex-col max-h-[90vh]">
+            <div className="text-center mb-6">
+              <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">Buscador de Huecos</h3>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Sigue los pasos para filtrar</p>
+            </div>
+
+            {/* PASO 1: TAMAÑO */}
+            <div className="space-y-3 mb-6">
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">1. Selecciona Tamaño</p>
+              <div className="grid grid-cols-3 gap-2">
+                {['Pequeño', 'Mediano', 'Grande'].map(size => (
+                  <button 
+                    key={size}
+                    onClick={() => { setFinderSize(size); setFinderOccupancy(null); setAvailableSlots([]); }}
+                    className={`py-3 rounded-xl text-[10px] font-black uppercase transition-all border-2 ${finderSize === size ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-500 border-slate-100'}`}
+                  >
+                    {size}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* PASO 2: OCUPACIÓN (Solo si hay tamaño) */}
+            {finderSize && (
+              <div className="space-y-3 mb-6 animate-fade-in">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">2. Filtrar por Ocupación</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button 
+                    onClick={() => fetchAvailableSlots(finderSize, 0)}
+                    className={`py-4 rounded-xl text-[10px] font-black uppercase transition-all border-2 ${finderOccupancy === 0 ? 'bg-emerald-600 text-white border-emerald-600 shadow-lg' : 'bg-slate-50 text-slate-500 border-slate-100'}`}
+                  >
+                    🗙 Vacío (0%)
+                  </button>
+                  <button 
+                    onClick={() => fetchAvailableSlots(finderSize, 50)}
+                    className={`py-4 rounded-xl text-[10px] font-black uppercase transition-all border-2 ${finderOccupancy === 50 ? 'bg-amber-500 text-white border-amber-500 shadow-lg' : 'bg-slate-50 text-slate-500 border-slate-100'}`}
+                  >
+                    🌓 Medio (50%)
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* PASO 3: RESULTADOS */}
+            <div className="flex-1 overflow-y-auto pr-2 no-scrollbar space-y-3 min-h-[150px] border-t border-slate-100 pt-4">
+              {loadingFinder ? (
+                <div className="py-10 text-center font-black text-slate-300 animate-pulse text-[10px] uppercase tracking-widest">Sincronizando...</div>
+              ) : finderOccupancy !== null ? (
+                availableSlots.length > 0 ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    {availableSlots.map(slot => (
+                      <button 
+                        key={slot.id}
+                        onClick={() => {
+                          setSlotCode(slot.code);
+                          setShowSearchFinder(false);
+                          resetFinder();
+                        }}
+                        className="bg-slate-50 border-2 border-slate-100 p-4 rounded-3xl hover:border-indigo-500 transition-all text-left group active:scale-95"
+                      >
+                        <p className="text-xs font-black text-slate-800 group-hover:text-indigo-600">{slot.code}</p>
+                        <p className={`text-[8px] font-black uppercase mt-1 ${slot.quantity === 0 ? 'text-emerald-500' : 'text-amber-500'}`}>
+                          {slot.quantity === 0 ? 'VACÍO' : '50% OCUPADO'}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="py-10 text-center text-[10px] font-black text-rose-400 uppercase tracking-widest">Sin resultados disponibles</div>
+                )
+              ) : (
+                <div className="py-10 text-center text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                  {finderSize ? 'Elige ocupación para ver huecos' : 'Configura los filtros de arriba'}
+                </div>
+              )}
+            </div>
+
+            <button 
+              onClick={() => { setShowSearchFinder(false); resetFinder(); }}
+              className="mt-6 w-full py-4 text-slate-400 font-black text-[10px] uppercase tracking-widest border-t border-slate-100 pt-4"
+            >
+              Cerrar buscador
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100">
-        <h2 className="text-xl font-black text-slate-800 mb-8 flex items-center gap-3">
-          <span className="bg-indigo-600 text-white w-8 h-8 rounded-xl flex items-center justify-center text-sm">📲</span> 
-          Captura
-        </h2>
+        <div className="flex justify-between items-center mb-8">
+          <h2 className="text-xl font-black text-slate-800 flex items-center gap-3">
+            <span className="bg-indigo-600 text-white w-8 h-8 rounded-xl flex items-center justify-center text-sm">📲</span> 
+            Captura
+          </h2>
+          <button 
+            onClick={() => setShowSearchFinder(true)}
+            className="bg-slate-900 text-white px-4 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-lg shadow-slate-200 active:scale-95 transition-all"
+          >
+            🔍 Buscar Hueco
+          </button>
+        </div>
+
         {message && (
           <div className={`p-4 rounded-2xl mb-8 text-xs font-black animate-fade-in ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
             {message.text}
