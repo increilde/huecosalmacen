@@ -8,6 +8,14 @@ interface DashboardProps {
   user: UserProfile;
 }
 
+interface MovementLog {
+  id: string;
+  cart_id: string;
+  slot_code: string;
+  new_quantity: number;
+  created_at: string;
+}
+
 const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [cartId, setCartId] = useState('');
   const [slotCode, setSlotCode] = useState('');
@@ -18,6 +26,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [scannerTarget, setScannerTarget] = useState<'cart' | 'slot' | null>(null);
   
   const [showActionModal, setShowActionModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [myLogs, setMyLogs] = useState<MovementLog[]>([]);
+  
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
   const [oldQuantity, setOldQuantity] = useState<number | null>(null);
   const [step, setStep] = useState<'size' | 'cart_input' | 'status'>('size');
@@ -66,6 +77,27 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     }
   };
 
+  const fetchMyLogs = async () => {
+    setLoading(true);
+    const today = new Date().toISOString().split('T')[0];
+    try {
+      const { data, error } = await supabase
+        .from('movement_logs')
+        .select('id, cart_id, slot_code, new_quantity, created_at')
+        .eq('operator_email', user.email)
+        .gte('created_at', `${today}T00:00:00`)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setMyLogs(data || []);
+      setShowHistoryModal(true);
+    } catch (err) {
+      console.error("Error fetching logs:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleFinalSave = async (newQuantity: number) => {
     if (!cartId || !slotCode || !selectedSize) {
       setMessage({ type: 'error', text: 'Faltan datos para guardar' });
@@ -74,7 +106,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
     setLoading(true);
     try {
-      // 1. Actualizar el hueco
       const { error: slotError } = await supabase
         .from('warehouse_slots')
         .update({
@@ -87,7 +118,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
       if (slotError) throw slotError;
 
-      // 2. Registrar en el historial
       const { error: logError } = await supabase
         .from('movement_logs')
         .insert([{
@@ -107,7 +137,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       setSlotCode('');
       setShowActionModal(false);
       
-      // Limpiar mensaje después de unos segundos
       setTimeout(() => setMessage(null), 3000);
     } catch (err: any) {
       setMessage({ type: 'error', text: 'Error al guardar: ' + err.message });
@@ -226,9 +255,61 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
               />
               <button onClick={() => { setScannerTarget('slot'); setScannerOpen(true); }} className="absolute right-4 top-[44px] bg-white shadow-sm border border-slate-100 p-2.5 rounded-xl active:scale-90 transition-all">📷</button>
             </div>
+
+            <button 
+              onClick={fetchMyLogs}
+              className="w-full mt-4 flex items-center justify-center gap-2 text-slate-400 hover:text-indigo-600 transition-colors py-2 group"
+            >
+              <span className="text-lg group-hover:scale-110 transition-transform">🕒</span>
+              <span className="text-[10px] font-bold uppercase tracking-[0.2em]">Ver mis últimos movimientos</span>
+            </button>
           </div>
         </div>
       </div>
+
+      {showHistoryModal && (
+        <div className="fixed inset-0 z-[200] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-[3rem] p-8 shadow-2xl flex flex-col max-h-[85vh] animate-fade-in relative overflow-hidden">
+             <div className="absolute -right-8 -top-8 text-slate-50 text-9xl font-medium opacity-10 pointer-events-none">🕒</div>
+             <div className="relative z-10 flex flex-col h-full">
+                <div className="text-center mb-8">
+                  <h3 className="text-xl font-semibold text-slate-800 uppercase tracking-tighter">Mis Movimientos</h3>
+                  <p className="text-[9px] font-semibold text-slate-400 uppercase tracking-widest mt-1">Hoy: {new Date().toLocaleDateString()}</p>
+                </div>
+
+                <div className="flex-1 overflow-y-auto no-scrollbar space-y-3 pr-1">
+                  {myLogs.length === 0 ? (
+                    <div className="py-20 text-center">
+                      <p className="text-[10px] font-semibold text-slate-300 uppercase tracking-widest">No has registrado nada hoy</p>
+                    </div>
+                  ) : myLogs.map(log => (
+                    <div key={log.id} className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex items-center justify-between">
+                      <div className="flex flex-col">
+                        <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        <span className="text-xs font-bold text-slate-800 uppercase tracking-tight">{log.slot_code}</span>
+                      </div>
+                      <div className="text-center">
+                        <span className="text-[9px] font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded-lg border border-indigo-100">{log.cart_id}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className={`text-[10px] font-bold ${log.new_quantity === 100 ? 'text-rose-500' : log.new_quantity === 50 ? 'text-amber-500' : 'text-emerald-500'}`}>
+                          {log.new_quantity}%
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <button 
+                  onClick={() => setShowHistoryModal(false)}
+                  className="mt-8 w-full bg-slate-900 text-white py-4 rounded-2xl font-bold uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all"
+                >
+                  Cerrar Historial
+                </button>
+             </div>
+          </div>
+        </div>
+      )}
 
       {showActionModal && (
         <div className="fixed inset-0 z-[150] bg-slate-900/40 backdrop-blur-md flex items-end sm:items-center justify-center p-4">
