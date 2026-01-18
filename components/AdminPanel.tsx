@@ -95,14 +95,12 @@ const AdminPanel: React.FC = () => {
             l.operator_name === profile.full_name
           );
 
-          // Calcular tiempo medio por acción (reubicación)
           let avgTimeString = "---";
           if (opLogs.length > 1) {
             let totalDiff = 0;
             let pairs = 0;
             for (let i = 1; i < opLogs.length; i++) {
               const diff = new Date(opLogs[i].created_at).getTime() - new Date(opLogs[i-1].created_at).getTime();
-              // Solo contar si el tiempo es razonable (menos de 20 min entre acciones)
               if (diff > 0 && diff < 20 * 60 * 1000) {
                 totalDiff += diff;
                 pairs++;
@@ -240,7 +238,7 @@ const AdminPanel: React.FC = () => {
           <div className="bg-white rounded-[2.5rem] border-2 border-slate-100 shadow-sm overflow-hidden overflow-x-auto">
             <table className="w-full text-left text-xs min-w-[600px]">
               <thead className="bg-slate-50 text-[10px] font-semibold text-slate-400 uppercase tracking-widest border-b-2 border-slate-100">
-                <tr><th className="px-8 py-5">Hora</th><th className="px-8 py-5">Operario</th><th className="px-8 py-5">Carro</th><th className="px-8 py-5">Ubicación</th><th className="px-8 py-5 text-right">Ocupación (Ant > Nue)</th></tr>
+                <tr><th className="px-8 py-5">Hora</th><th className="px-8 py-5">Operario</th><th className="px-8 py-5">Carro</th><th className="px-8 py-5">Ubicación</th><th className="px-8 py-5 text-right">Ocupación (Ant &gt; Nue)</th></tr>
               </thead>
               <tbody className="divide-y-2 divide-slate-50">
                 {filteredMainLogs.map(log => (
