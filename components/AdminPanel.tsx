@@ -1,509 +1,487 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
-import { WarehouseSlot } from '../types';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  PieChart, Pie, Cell, Legend, LineChart, Line
-} from 'recharts';
+import { WarehouseSlot, UserProfile } from '../types';
 
 interface MovementLog {
   id: string;
   operator_name: string;
+  operator_email?: string;
   cart_id: string;
   slot_code: string;
   new_status: string;
   new_quantity: number;
+  old_quantity?: number;
   created_at: string;
 }
 
-interface OperatorStats {
-  name: string;
-  count: number;
-  ubicationsCount: number;
-  adjustmentsCount: number;
-  ubications: MovementLog[];
-  adjustments: MovementLog[];
+interface OperatorData extends UserProfile {
+  totalActions: number;
+  logs: MovementLog[];
+  avgTimePerCart: string;
 }
 
-interface SectorStats {
-  name: string;
-  total: number;
-  occupied: number;
-  empty: number;
-  avgQuantity: number;
+interface ZoneCountStats {
+  grande: number;
+  mediano: number;
+  pequeno: number;
+  totalVerificados: number;
 }
 
-type AdminTab = 'movements' | 'stats_slots' | 'stats_operators' | 'reports';
+type AdminTab = 'movements' | 'stats_operators' | 'stats_slots' | 'heatmap' | 'reports';
 
 const AdminPanel: React.FC = () => {
   const [activeSubTab, setActiveSubTab] = useState<AdminTab>('movements');
   const [loading, setLoading] = useState(true);
   
-  // Filtros Globales
   const [dateFrom, setDateFrom] = useState(new Date().toISOString().split('T')[0]);
   const [dateTo, setDateTo] = useState(new Date().toISOString().split('T')[0]);
-  const [searchOperator, setSearchOperator] = useState('all');
-  const [searchCart, setSearchCart] = useState('');
 
-  // Datos
   const [allLogs, setAllLogs] = useState<MovementLog[]>([]);
-  const [operatorsList, setOperatorsList] = useState<string[]>([]);
-  const [dailyStats, setDailyStats] = useState<OperatorStats[]>([]);
-  const [sectorData, setSectorData] = useState<SectorStats[]>([]);
+  const [operators, setOperators] = useState<OperatorData[]>([]);
+  const [allSlotsData, setAllSlotsData] = useState<WarehouseSlot[]>([]);
   
-  // Detalle Seleccionado
-  const [selectedOperator, setSelectedOperator] = useState<OperatorStats | null>(null);
-  const [detailMode, setDetailMode] = useState<'ubications' | 'adjustments'>('ubications');
+  const [slotFilterSize, setSlotFilterSize] = useState('');
+  const [slotFilterOcc, setSlotFilterOcc] = useState('');
+  const [slotFilterCode, setSlotFilterCode] = useState('');
+  
+  const [cartSearchFilter, setCartSearchFilter] = useState('');
+  const [selectedOperator, setSelectedOperator] = useState<OperatorData | null>(null);
+  const [opDetailDate, setOpDetailDate] = useState(new Date().toISOString().split('T')[0]);
 
-  const [showImporter, setShowImporter] = useState(false);
-  const [rawInput, setRawInput] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [heatmapSizeFilter, setHeatmapSizeFilter] = useState<string>('Mediano');
 
   useEffect(() => {
-    fetchData();
-    if (activeSubTab === 'stats_slots') fetchSectorStats();
+    fetchAllAdminData();
   }, [dateFrom, dateTo, activeSubTab]);
 
-  const fetchData = async () => {
+  const fetchAllAdminData = async () => {
     setLoading(true);
     try {
-      const { data: logs } = await supabase
+      const start = `${dateFrom}T00:00:00`;
+      const end = `${dateTo}T23:59:59`;
+
+      const { data: logsData } = await supabase
         .from('movement_logs')
         .select('*')
-        .gte('created_at', `${dateFrom}T00:00:00`)
-        .lte('created_at', `${dateTo}T23:59:59`)
-        .order('created_at', { ascending: false });
+        .gte('created_at', start)
+        .lte('created_at', end)
+        .order('created_at', { ascending: true });
 
-      if (logs) {
-        setAllLogs(logs);
-        const names = Array.from(new Set(logs.map(l => l.operator_name)));
-        setOperatorsList(names);
+      const logs = (logsData || []) as MovementLog[];
+      setAllLogs([...logs].reverse());
 
-        const grouping: Record<string, OperatorStats> = {};
-        logs.forEach(log => {
-          if (!grouping[log.operator_name]) {
-            grouping[log.operator_name] = { 
-              name: log.operator_name, 
-              count: 0, 
-              ubicationsCount: 0,
-              adjustmentsCount: 0,
-              ubications: [], 
-              adjustments: [] 
-            };
-          }
-          grouping[log.operator_name].count++;
-          const isUbi = log.cart_id && log.cart_id !== 'MANUAL';
-          if (isUbi) {
-            grouping[log.operator_name].ubicationsCount++;
-            grouping[log.operator_name].ubications.push(log);
-          } else {
-            grouping[log.operator_name].adjustmentsCount++;
-            grouping[log.operator_name].adjustments.push(log);
-          }
-        });
-
-        const statsArray = Object.values(grouping);
-        setDailyStats(statsArray);
-        if (selectedOperator) {
-          const updated = statsArray.find(s => s.name === selectedOperator.name);
-          if (updated) setSelectedOperator(updated);
-        }
+      const { data: profilesData } = await supabase.from('profiles').select('*');
+      
+      let allSlots: WarehouseSlot[] = [];
+      let from = 0;
+      const step = 1000;
+      let hasMore = true;
+      while (hasMore) {
+        const { data, error } = await supabase.from('warehouse_slots').select('*').order('code').range(from, from + step - 1);
+        if (error) throw error;
+        if (data && data.length > 0) {
+          allSlots = [...allSlots, ...data as WarehouseSlot[]];
+          if (data.length < step) hasMore = false;
+          from += step;
+        } else { hasMore = false; }
       }
-    } finally {
-      setLoading(false);
-    }
+      setAllSlotsData(allSlots);
+
+      if (profilesData) {
+        const enriched = profilesData.map(profile => {
+          const opLogs = logs.filter(l => 
+            l.operator_email === profile.email || 
+            l.operator_name === profile.full_name
+          );
+
+          // Calcular tiempo medio por acción (reubicación)
+          let avgTimeString = "---";
+          if (opLogs.length > 1) {
+            let totalDiff = 0;
+            let pairs = 0;
+            for (let i = 1; i < opLogs.length; i++) {
+              const diff = new Date(opLogs[i].created_at).getTime() - new Date(opLogs[i-1].created_at).getTime();
+              // Solo contar si el tiempo es razonable (menos de 20 min entre acciones)
+              if (diff > 0 && diff < 20 * 60 * 1000) {
+                totalDiff += diff;
+                pairs++;
+              }
+            }
+            if (pairs > 0) {
+              const avgMs = totalDiff / pairs;
+              const mins = Math.floor(avgMs / 60000);
+              const secs = Math.floor((avgMs % 60000) / 1000);
+              avgTimeString = `${mins}m ${secs}s`;
+            }
+          }
+
+          return {
+            ...profile,
+            totalActions: opLogs.length,
+            logs: opLogs,
+            avgTimePerCart: avgTimeString
+          } as OperatorData;
+        });
+        setOperators(enriched);
+      }
+    } catch (err) { console.error(err); } finally { setLoading(false); }
   };
 
-  const fetchSectorStats = async () => {
-    const { data } = await supabase.from('warehouse_slots').select('code, status, quantity');
-    if (data) {
-      const prefixes = ['U01', 'U02'];
-      const stats = prefixes.map(prefix => {
-        const filtered = data.filter(s => s.code.startsWith(prefix));
-        const total = filtered.length;
-        const occupied = filtered.filter(s => s.status === 'occupied').length;
-        const avgQuantity = total > 0 ? filtered.reduce((acc, s) => acc + (s.quantity || 0), 0) / total : 0;
-        return { name: prefix, total, occupied, empty: total - occupied, avgQuantity: Math.round(avgQuantity) };
-      });
-      setSectorData(stats);
-    }
+  const handleCSVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const text = event.target?.result as string;
+      const rows = text.split('\n').slice(1);
+      const slotsToUpsert = rows.map(row => {
+        const parts = row.split(',');
+        const code = parts[0]?.trim().toUpperCase();
+        const size = parts[1]?.trim() || 'Mediano';
+        if (!code) return null;
+        return { code, size, status: 'empty', quantity: 0, is_scanned_once: false };
+      }).filter(Boolean);
+
+      if (slotsToUpsert.length > 0) {
+        const { error } = await supabase.from('warehouse_slots').upsert(slotsToUpsert, { onConflict: 'code' });
+        if (error) alert(error.message);
+        else fetchAllAdminData();
+      }
+    };
+    reader.readAsText(file);
   };
 
-  const handleBulkImport = async () => {
-    if (!rawInput.trim()) return;
-    setIsProcessing(true);
-    try {
-      const lines = rawInput.split('\n').filter(line => line.trim());
-      const slotsToInsert = lines.map(line => ({
-        code: line.trim().toUpperCase(),
-        status: 'empty',
-        size: 'Mediano',
-        is_scanned_once: false,
-        quantity: 0,
-        last_updated: new Date().toISOString()
-      }));
-      const { error } = await supabase.from('warehouse_slots').upsert(slotsToInsert, { onConflict: 'code' });
-      if (error) throw error;
-      alert(`Éxito: ${slotsToInsert.length} huecos procesados.`);
-      setRawInput('');
-      setShowImporter(false);
-      fetchSectorStats();
-    } catch (err: any) {
-      alert("Error: " + err.message);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+  const zonesReports = useMemo(() => {
+    const zones: Record<string, ZoneCountStats> = {};
+    const validated = allSlotsData.filter(s => s.is_scanned_once);
+    const uniqueZones = Array.from(new Set(allSlotsData.map(s => s.code.substring(0, 3))));
 
-  const formatDate = (dateStr: string) => {
-    const d = new Date(dateStr);
-    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  };
-
-  const filteredLogs = useMemo(() => {
-    return allLogs.filter(log => {
-      const matchOp = selectedOperator ? log.operator_name === selectedOperator.name : (searchOperator === 'all' || log.operator_name === searchOperator);
-      const matchCart = searchCart === '' || log.cart_id.toLowerCase().includes(searchCart.toLowerCase());
-      const isAdjustment = !log.cart_id || log.cart_id === 'MANUAL';
-      const matchType = detailMode === 'ubications' ? !isAdjustment : isAdjustment;
-      return matchOp && matchCart && matchType;
+    uniqueZones.forEach(zoneName => {
+      const zoneSlots = validated.filter(s => s.code.startsWith(zoneName));
+      if (zoneSlots.length === 0) return;
+      
+      zones[zoneName] = {
+        grande: zoneSlots.filter(s => s.size === 'Grande').length,
+        mediano: zoneSlots.filter(s => s.size === 'Mediano').length,
+        pequeno: zoneSlots.filter(s => s.size === 'Pequeño').length,
+        totalVerificados: zoneSlots.length
+      };
     });
-  }, [allLogs, selectedOperator, searchOperator, searchCart, detailMode]);
 
-  const COLORS = ['#6366f1', '#cbd5e1'];
+    const totalSlots = allSlotsData.length;
+    const verifiedSlotsCount = validated.length;
+    const verifiedPercent = totalSlots > 0 ? Math.round((verifiedSlotsCount / totalSlots) * 100) : 0;
+
+    return { zones, totalSlots, verifiedSlotsCount, verifiedPercent };
+  }, [allSlotsData]);
+
+  const heatmapData = useMemo(() => {
+    const structure: Record<string, Record<string, WarehouseSlot[]>> = {};
+    const filteredBySelectedSize = allSlotsData.filter(s => s.size === heatmapSizeFilter);
+    filteredBySelectedSize.forEach(s => {
+      const planta = s.code.substring(0, 3);
+      const calle = s.code.substring(3, 5);
+      if (!structure[planta]) structure[planta] = {};
+      if (!structure[planta][calle]) structure[planta][calle] = [];
+      structure[planta][calle].push(s);
+    });
+    Object.keys(structure).forEach(p => {
+      Object.keys(structure[p]).forEach(c => {
+        structure[p][c].sort((a, b) => a.code.localeCompare(b.code));
+      });
+    });
+    return structure;
+  }, [allSlotsData, heatmapSizeFilter]);
+
+  const filteredOpLogs = useMemo(() => {
+    if (!selectedOperator) return [];
+    const start = `${opDetailDate}T00:00:00`;
+    const end = `${opDetailDate}T23:59:59`;
+    return selectedOperator.logs.filter(l => l.created_at >= start && l.created_at <= end).reverse();
+  }, [selectedOperator, opDetailDate]);
+
+  const filteredMainLogs = useMemo(() => {
+    if (!cartSearchFilter) return allLogs;
+    return allLogs.filter(log => log.cart_id.includes(cartSearchFilter.toUpperCase()));
+  }, [allLogs, cartSearchFilter]);
 
   return (
-    <div className="space-y-8 pb-20">
-      {/* SUBMENU NAV */}
-      <div className="flex bg-white p-2 rounded-3xl border border-slate-100 shadow-sm sticky top-0 z-20 backdrop-blur-md bg-white/90 overflow-x-auto no-scrollbar">
-        <div className="flex min-w-max gap-1 w-full">
+    <div className="space-y-6 pb-24 max-w-5xl mx-auto px-2" style={{ fontFamily: 'Inter, sans-serif' }}>
+      <div className="flex bg-slate-900 p-1.5 rounded-3xl shadow-xl sticky top-2 z-30 border border-slate-700 overflow-hidden">
+        <div className="flex w-full gap-1.5 overflow-x-auto no-scrollbar">
           {[
-            { id: 'movements', label: 'Movimientos', icon: '📋' },
-            { id: 'stats_operators', label: 'Est. Operarios', icon: '👥' },
-            { id: 'stats_slots', label: 'Est. Huecos', icon: '📊' },
-            { id: 'reports', label: 'Informes', icon: '📄' }
+            { id: 'movements', label: 'Historial', icon: '📋' },
+            { id: 'stats_operators', label: 'Operarios', icon: '👥' },
+            { id: 'stats_slots', label: 'Sectores', icon: '📊' },
+            { id: 'heatmap', label: 'Plano', icon: '🌡️' },
+            { id: 'reports', label: 'Informe', icon: '📈' }
           ].map((tab) => (
-            <button 
-              key={tab.id}
-              onClick={() => setActiveSubTab(tab.id as AdminTab)}
-              className={`flex-1 px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 whitespace-nowrap ${activeSubTab === tab.id ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-50'}`}
-            >
-              <span>{tab.icon}</span> {tab.label}
+            <button key={tab.id} onClick={() => setActiveSubTab(tab.id as AdminTab)} className={`flex-1 min-w-[70px] flex flex-col items-center justify-center gap-1 py-3 rounded-2xl transition-all ${activeSubTab === tab.id ? 'bg-white text-slate-900 shadow-md' : 'text-slate-400'}`}>
+              <span className="text-sm">{tab.icon}</span>
+              <span className="text-[8px] font-semibold uppercase tracking-widest">{tab.label}</span>
             </button>
           ))}
         </div>
       </div>
 
-      {/* FILTROS GLOBALES (Se muestran en casi todas las pestañas) */}
-      {activeSubTab !== 'stats_slots' && (
-        <section className="bg-slate-950 p-6 rounded-[3rem] shadow-2xl text-white space-y-6">
-          <div className="flex justify-between items-center px-2">
-            <h3 className="text-lg font-black uppercase tracking-tight flex items-center gap-3"><span>🔍</span> Rango de Consulta</h3>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="text-[8px] font-black text-indigo-300 uppercase tracking-widest ml-2">Desde</label>
-              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-full bg-white/10 border-none rounded-2xl px-4 py-3 text-[10px] font-black text-white outline-none" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[8px] font-black text-indigo-300 uppercase tracking-widest ml-2">Hasta</label>
-              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-full bg-white/10 border-none rounded-2xl px-4 py-3 text-[10px] font-black text-white outline-none" />
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* CONTENIDO SEGÚN PESTAÑA */}
       {activeSubTab === 'movements' && (
-        <div className="space-y-8 animate-fade-in">
-          {/* TARJETAS DE EMPLEADOS */}
-          <section className="space-y-4">
-            <div className="flex justify-between items-end px-2">
-              <div>
-                <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest">Personal</h3>
-                <p className="text-2xl font-black text-slate-800 tracking-tight">Actividad en Rango</p>
-              </div>
-              <button onClick={() => setShowImporter(true)} className="text-[9px] font-black bg-indigo-600 text-white px-4 py-2 rounded-xl uppercase tracking-widest shadow-lg">📥 Lote</button>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {dailyStats.map(stat => (
-                <button 
-                  key={stat.name} 
-                  onClick={() => {
-                    const isSame = selectedOperator?.name === stat.name;
-                    setSelectedOperator(isSame ? null : stat);
-                    setSearchOperator(isSame ? 'all' : stat.name);
-                  }}
-                  className={`bg-white p-5 rounded-[2.5rem] border-2 text-left transition-all hover:shadow-xl active:scale-95 ${selectedOperator?.name === stat.name ? 'border-indigo-600 ring-4 ring-indigo-50' : 'border-slate-100'}`}
-                >
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-white font-black ${selectedOperator?.name === stat.name ? 'bg-indigo-600' : 'bg-slate-800'}`}>
-                      {stat.name[0]}
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-black text-slate-800 leading-none">{stat.name}</h4>
-                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-1">Total: {stat.count}</p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="bg-slate-50 p-2 rounded-xl text-center">
-                      <p className="text-[7px] font-black text-slate-400 uppercase">Ubis</p>
-                      <p className="text-sm font-black text-slate-800">{stat.ubicationsCount}</p>
-                    </div>
-                    <div className="bg-indigo-50 p-2 rounded-xl text-center">
-                      <p className="text-[7px] font-black text-indigo-400 uppercase">Regs</p>
-                      <p className="text-sm font-black text-indigo-700">{stat.adjustmentsCount}</p>
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </section>
-
-          {/* TABLA DE MOVIMIENTOS */}
-          <section className="bg-white rounded-[3rem] border border-slate-100 shadow-xl overflow-hidden">
-            <div className="p-8 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4 bg-slate-50/50">
-              <div className="flex bg-white p-1 rounded-2xl border border-slate-200">
-                <button onClick={() => setDetailMode('ubications')} className={`px-6 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${detailMode === 'ubications' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400'}`}>Ubicaciones</button>
-                <button onClick={() => setDetailMode('adjustments')} className={`px-6 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${detailMode === 'adjustments' ? 'bg-amber-500 text-white shadow-lg' : 'text-slate-400'}`}>Regularizaciones</button>
-              </div>
-              <input type="text" value={searchCart} onChange={e => setSearchCart(e.target.value)} placeholder="FILTRAR POR CARRO..." className="bg-white border-2 border-slate-100 rounded-xl px-4 py-2 text-[10px] font-black uppercase outline-none focus:border-indigo-300 w-full md:w-48" />
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="bg-white text-[8px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                  <tr>
-                    <th className="px-10 py-5">Fecha / Hora</th>
-                    {!selectedOperator && <th className="px-10 py-5">Operador</th>}
-                    <th className="px-10 py-5">Nº Carro</th>
-                    <th className="px-10 py-5">Hueco</th>
-                    <th className="px-10 py-5 text-right">Ocupación</th>
+        <div className="space-y-6 animate-fade-in">
+          <div className="bg-white p-6 rounded-[2rem] shadow-sm border-2 border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-4">
+             <div className="flex flex-col">
+                <label className="text-[9px] font-semibold text-slate-400 uppercase mb-1.5 ml-1 tracking-widest">Día Consulta</label>
+                <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setDateTo(e.target.value); }} className="bg-slate-50 p-4 rounded-xl font-medium text-xs outline-none border-2 border-transparent focus:border-indigo-500 transition-all" />
+             </div>
+             <div className="flex flex-col">
+                <label className="text-[9px] font-semibold text-slate-400 uppercase mb-1.5 ml-1 tracking-widest">Buscar Carro</label>
+                <input type="text" placeholder="ID CARRO..." value={cartSearchFilter} onChange={e => setCartSearchFilter(e.target.value.toUpperCase())} className="bg-slate-50 p-4 rounded-xl font-medium text-xs outline-none border-2 border-transparent focus:border-indigo-500 uppercase transition-all" />
+             </div>
+          </div>
+          <div className="bg-white rounded-[2.5rem] border-2 border-slate-100 shadow-sm overflow-hidden overflow-x-auto">
+            <table className="w-full text-left text-xs min-w-[600px]">
+              <thead className="bg-slate-50 text-[10px] font-semibold text-slate-400 uppercase tracking-widest border-b-2 border-slate-100">
+                <tr><th className="px-8 py-5">Hora</th><th className="px-8 py-5">Operario</th><th className="px-8 py-5">Carro</th><th className="px-8 py-5">Ubicación</th><th className="px-8 py-5 text-right">Ocupación (Ant > Nue)</th></tr>
+              </thead>
+              <tbody className="divide-y-2 divide-slate-50">
+                {filteredMainLogs.map(log => (
+                  <tr key={log.id} className="hover:bg-slate-50/50 transition-all">
+                    <td className="px-8 py-4 text-slate-400 font-medium">{new Date(log.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
+                    <td className="px-8 py-4 uppercase text-slate-700 font-medium">{log.operator_name}</td>
+                    <td className="px-8 py-4"><span className="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-lg border border-indigo-100 font-medium text-[9px] uppercase">{log.cart_id}</span></td>
+                    <td className="px-8 py-4 font-medium text-slate-600 text-[11px]">{log.slot_code}</td>
+                    <td className="px-8 py-4 text-right">
+                      <div className="flex items-center justify-end gap-2 font-medium text-[9px]">
+                        <span className="text-slate-400">{log.old_quantity ?? 0}%</span>
+                        <span className="text-slate-300">→</span>
+                        <span className={`${log.new_quantity === 100 ? 'text-rose-600' : log.new_quantity === 50 ? 'text-amber-600' : 'text-emerald-600'}`}>{log.new_quantity}%</span>
+                      </div>
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredLogs.map(log => (
-                    <tr key={log.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-10 py-5 text-[10px] font-black text-slate-400">{formatDate(log.created_at)}</td>
-                      {!selectedOperator && <td className="px-10 py-5 font-black text-slate-700 text-[11px]">{log.operator_name}</td>}
-                      <td className="px-10 py-5">
-                        <span className={`text-[9px] font-black px-3 py-1 rounded-lg ${log.cart_id === 'MANUAL' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-50 text-indigo-700'}`}>{log.cart_id}</span>
-                      </td>
-                      <td className="px-10 py-5 font-mono text-[11px] font-black text-slate-600">{log.slot_code}</td>
-                      <td className="px-10 py-5 text-right font-black text-slate-800 text-[11px] tabular-nums">{log.new_quantity}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
       {activeSubTab === 'stats_operators' && (
-        <section className="space-y-8 animate-fade-in">
-          <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-xl">
-            <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-8">Rendimiento Comparativo</h3>
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={dailyStats}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 900, fill: '#64748b' }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 900, fill: '#64748b' }} />
-                  <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontWeight: 900, fontSize: '10px' }} />
-                  <Legend verticalAlign="top" height={36} wrapperStyle={{ fontWeight: 900, fontSize: '10px', textTransform: 'uppercase' }} />
-                  <Bar dataKey="ubicationsCount" name="Carros Ubicados" fill="#6366f1" radius={[10, 10, 0, 0]} />
-                  <Bar dataKey="adjustmentsCount" name="Huecos Actualizados" fill="#f59e0b" radius={[10, 10, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
+        <div className="space-y-6 animate-fade-in">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {dailyStats.map(stat => (
-              <div key={stat.name} className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-lg">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-12 h-12 rounded-2xl bg-slate-900 flex items-center justify-center text-white font-black text-xl">{stat.name[0]}</div>
+            {operators.map(op => (
+              <button 
+                key={op.id} 
+                onClick={() => { setSelectedOperator(op); setOpDetailDate(dateFrom); }} 
+                className={`bg-white p-6 rounded-[2.5rem] border-2 transition-all shadow-sm flex items-center justify-between group text-left active:scale-95 ${selectedOperator?.id === op.id ? 'border-indigo-600 ring-4 ring-indigo-50' : 'border-slate-100 hover:shadow-xl'}`}
+              >
+                <div className="flex items-center gap-4">
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-white font-medium text-xl shadow-lg transition-colors ${selectedOperator?.id === op.id ? 'bg-indigo-600' : 'bg-slate-900'}`}>
+                    {op.full_name ? op.full_name[0] : '?'}
+                  </div>
                   <div>
-                    <h4 className="text-sm font-black text-slate-800">{stat.name}</h4>
-                    <p className="text-[9px] font-black text-slate-400 uppercase">Resumen de Periodo</p>
+                    <h4 className="font-semibold text-slate-800 text-sm leading-none mb-1 uppercase">{op.full_name}</h4>
+                    <p className="text-[9px] font-semibold text-indigo-500 uppercase tracking-widest leading-relaxed">
+                      {op.totalActions} ACCIONES<br/>
+                      <span className="text-emerald-500">⏳ {op.avgTimePerCart} MEDIO</span>
+                    </p>
                   </div>
                 </div>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center bg-slate-50 p-4 rounded-2xl">
-                    <span className="text-[9px] font-black text-slate-500 uppercase">Carros Ubicados</span>
-                    <span className="text-xl font-black text-indigo-600">{stat.ubicationsCount}</span>
+                <div className="text-right">
+                  <span className="text-xs">{selectedOperator?.id === op.id ? '🔽' : '📋'}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {selectedOperator && (
+            <div className="bg-white rounded-[3rem] p-10 border-2 border-indigo-100 shadow-inner animate-fade-in space-y-6">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b pb-6">
+                <div>
+                  <h3 className="text-xl font-semibold text-slate-800 uppercase tracking-tight">{selectedOperator.full_name}</h3>
+                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Resumen de Actividad</p>
+                </div>
+                <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-2xl border border-slate-100">
+                   <label className="text-[9px] font-semibold text-slate-400 uppercase ml-2">Día:</label>
+                   <input 
+                    type="date" 
+                    value={opDetailDate} 
+                    onChange={e => setOpDetailDate(e.target.value)}
+                    className="bg-transparent p-2 font-medium text-xs outline-none"
+                   />
+                </div>
+              </div>
+              
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs min-w-[400px]">
+                  <thead className="text-[9px] font-semibold text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                    <tr>
+                      <th className="py-4 px-2">HORA</th>
+                      <th className="py-4 px-2">CARRO</th>
+                      <th className="py-4 px-2">UBICACIÓN</th>
+                      <th className="py-4 px-2 text-right">CAMBIO CARGA</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {filteredOpLogs.length === 0 ? (
+                      <tr><td colSpan={4} className="text-center py-10 text-slate-400 font-semibold uppercase text-[10px] tracking-widest">Sin registros este día</td></tr>
+                    ) : filteredOpLogs.map(l => (
+                      <tr key={l.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="py-4 px-2 text-slate-400 font-medium">{new Date(l.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
+                        <td className="py-4 px-2 uppercase font-medium text-indigo-600">{l.cart_id}</td>
+                        <td className="py-4 px-2 font-medium text-slate-700">{l.slot_code}</td>
+                        <td className="py-4 px-2 text-right">
+                          <div className="flex items-center justify-end gap-1.5 font-medium text-[8px]">
+                            <span className="text-slate-400">{l.old_quantity ?? 0}%</span>
+                            <span className="text-slate-300">→</span>
+                            <span className={`${l.new_quantity === 100 ? 'text-rose-600' : l.new_quantity === 50 ? 'text-amber-600' : 'text-emerald-600'}`}>{l.new_quantity}%</span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeSubTab === 'heatmap' && (
+        <div className="space-y-6 animate-fade-in">
+          <div className="bg-white p-8 rounded-[3rem] border-2 border-slate-100 shadow-sm flex flex-col md:flex-row justify-between items-center relative overflow-hidden">
+             <div className="absolute -right-4 -bottom-4 text-indigo-50 text-8xl font-medium opacity-30">🏢</div>
+             <div className="relative z-10 text-center md:text-left">
+               <h3 className="text-xl font-semibold text-slate-800 tracking-tighter uppercase">Mapa de Planta</h3>
+               <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.2em] mt-1">Filtrado por: <span className="text-indigo-600">{heatmapSizeFilter}</span></p>
+             </div>
+             
+             <div className="flex flex-col gap-4 mt-6 md:mt-0 z-10">
+               <div className="flex bg-slate-50 p-1 rounded-xl border-2 border-slate-100 overflow-x-auto no-scrollbar max-w-[320px]">
+                  {['Pequeño', 'Mediano', 'Grande'].map(size => (
+                    <button key={size} onClick={() => setHeatmapSizeFilter(size)} className={`px-4 py-2 rounded-lg text-[8px] font-semibold uppercase tracking-widest transition-all whitespace-nowrap ${heatmapSizeFilter === size ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'text-slate-400 hover:text-slate-600'}`}>{size}</button>
+                  ))}
+               </div>
+               <div className="flex gap-4 justify-center md:justify-end">
+                 <div className="flex items-center gap-2"><div className="w-3 h-3 bg-emerald-500 rounded-full"></div><span className="text-[8px] font-semibold uppercase">0%</span></div>
+                 <div className="flex items-center gap-2"><div className="w-3 h-3 bg-amber-500 rounded-full"></div><span className="text-[8px] font-semibold uppercase">50%</span></div>
+                 <div className="flex items-center gap-2"><div className="w-3 h-3 bg-rose-500 rounded-full"></div><span className="text-[8px] font-semibold uppercase">100%</span></div>
+               </div>
+             </div>
+          </div>
+          <div className="space-y-12">
+            {Object.keys(heatmapData).length === 0 ? (
+              <div className="bg-white p-20 rounded-[3rem] text-center border-2 border-dashed border-slate-200"><p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">No hay huecos de tipo {heatmapSizeFilter} registrados</p></div>
+            ) : Object.keys(heatmapData).sort().map(planta => (
+              <div key={planta} className="space-y-4">
+                <div className="flex items-center gap-3 ml-4"><div className="w-1.5 h-6 bg-slate-900 rounded-full"></div><h4 className="text-xl font-semibold text-slate-800 uppercase tracking-tighter">PLANTA {planta}</h4></div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {Object.keys(heatmapData[planta]).sort().map(calle => (
+                    <div key={calle} className="bg-white p-6 rounded-[2.5rem] border-2 border-slate-50 shadow-sm flex flex-col">
+                      <div className="flex items-center justify-between mb-4 px-2">
+                        <h5 className="text-[10px] font-semibold text-indigo-600 uppercase tracking-widest">Calle {calle}</h5>
+                        <span className="text-[8px] font-semibold text-slate-300 uppercase">{heatmapData[planta][calle].length} HUECOS</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {heatmapData[planta][calle].map(slot => (
+                          <div key={slot.id} className={`w-7 h-7 rounded-lg border border-black/5 flex items-center justify-center text-[8px] font-medium transition-all hover:scale-125 shadow-sm cursor-help ${!slot.is_scanned_once ? 'bg-slate-50 text-slate-200' : slot.quantity === 100 ? 'bg-rose-500 text-white' : slot.quantity === 50 ? 'bg-amber-400 text-amber-900' : 'bg-emerald-500 text-white'}`} title={`${slot.code}: ${slot.quantity}% (${slot.size})`}>{slot.code.slice(-2)}</div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {activeSubTab === 'reports' && (
+        <div className="space-y-12 animate-fade-in">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+             <div className="bg-white p-8 rounded-[3rem] border-2 border-slate-100 shadow-sm flex flex-col justify-center relative overflow-hidden group">
+                <div className="absolute -right-4 -bottom-4 text-slate-50 text-8xl font-medium opacity-40 group-hover:opacity-60 transition-opacity">📦</div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.2em] mb-2 z-10">Total Huecos</p>
+                <h3 className="text-5xl font-semibold text-slate-900 tracking-tighter z-10">{zonesReports.totalSlots}</h3>
+             </div>
+             <div className="bg-white p-8 rounded-[3rem] border-2 border-slate-100 shadow-sm flex flex-col justify-center relative overflow-hidden group">
+                <div className="absolute -right-4 -bottom-4 text-emerald-50 text-8xl font-medium opacity-40 group-hover:opacity-60 transition-opacity">✓</div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.2em] mb-2 z-10">Verificados</p>
+                <h3 className="text-5xl font-semibold text-emerald-600 tracking-tighter z-10">{zonesReports.verifiedSlotsCount}</h3>
+             </div>
+             <div className="bg-indigo-600 p-8 rounded-[3rem] text-white shadow-2xl flex flex-col justify-center relative overflow-hidden group">
+                <div className="absolute -right-4 -bottom-4 text-white/10 text-8xl font-medium opacity-40 group-hover:opacity-60 transition-opacity">%</div>
+                <p className="text-[10px] font-semibold text-indigo-200 uppercase tracking-[0.2em] mb-2 z-10">Control Inventario</p>
+                <h3 className="text-5xl font-semibold tracking-tighter z-10">{zonesReports.verifiedPercent}%</h3>
+                <div className="mt-4 w-full h-2 bg-white/20 rounded-full overflow-hidden z-10"><div className="h-full bg-white transition-all duration-1000" style={{width: `${zonesReports.verifiedPercent}%`}} /></div>
+             </div>
+          </div>
+
+          <div className="space-y-8">
+            {Object.entries(zonesReports.zones).sort().map(([zone, stats]) => (
+              <div key={zone} className="bg-white p-8 rounded-[3rem] border-2 border-slate-100 shadow-sm relative overflow-hidden group hover:shadow-xl transition-all w-full">
+                <div className="absolute -right-6 -top-6 text-slate-50 text-9xl font-medium opacity-30 group-hover:scale-110 transition-transform">{zone}</div>
+                <div className="relative z-10">
+                  <div className="flex items-center gap-3 mb-8">
+                    <div className="w-1.5 h-8 bg-indigo-600 rounded-full"></div>
+                    <h4 className="text-2xl font-semibold text-slate-800 uppercase tracking-tighter">PLANTA {zone}</h4>
                   </div>
-                  <div className="flex justify-between items-center bg-slate-50 p-4 rounded-2xl">
-                    <span className="text-[9px] font-black text-slate-500 uppercase">Ajustes Manuales</span>
-                    <span className="text-xl font-black text-amber-500">{stat.adjustmentsCount}</span>
-                  </div>
-                  <div className="flex justify-between items-center bg-indigo-600 p-4 rounded-2xl text-white">
-                    <span className="text-[9px] font-black uppercase">Total Acciones</span>
-                    <span className="text-xl font-black">{stat.count}</span>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-center">
+                    <div className="md:col-span-3 grid grid-cols-3 gap-4">
+                      <div className="bg-blue-50/50 p-6 rounded-[2rem] border border-blue-100 text-center">
+                        <p className="text-[10px] font-semibold text-blue-400 uppercase mb-2 tracking-widest">Grande</p>
+                        <p className="text-3xl font-semibold text-blue-600">{stats.grande}</p>
+                      </div>
+                      <div className="bg-indigo-50/50 p-6 rounded-[2rem] border border-indigo-100 text-center">
+                        <p className="text-[10px] font-semibold text-indigo-400 uppercase mb-2 tracking-widest">Mediano</p>
+                        <p className="text-3xl font-semibold text-indigo-600">{stats.mediano}</p>
+                      </div>
+                      <div className="bg-emerald-50/50 p-6 rounded-[2rem] border border-emerald-100 text-center">
+                        <p className="text-[10px] font-semibold text-emerald-400 uppercase mb-2 tracking-widest">Pequeño</p>
+                        <p className="text-3xl font-semibold text-emerald-600">{stats.pequeno}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="bg-slate-50 p-6 rounded-[2rem] border border-slate-100 flex flex-col items-center justify-center">
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Verificados</p>
+                      <p className="text-3xl font-semibold text-slate-800">{stats.totalVerificados}</p>
+                    </div>
                   </div>
                 </div>
               </div>
             ))}
           </div>
-        </section>
-      )}
-
-      {activeSubTab === 'stats_slots' && (
-        <section className="space-y-8 animate-fade-in">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-xl">
-              <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-8">Ocupación Media por Sector</h3>
-              <div className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={sectorData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 900, fill: '#64748b' }} />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 900, fill: '#64748b' }} domain={[0, 100]} />
-                    <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontWeight: 900, fontSize: '10px' }} />
-                    <Bar dataKey="avgQuantity" name="Ocupación (%)" fill="#6366f1" radius={[12, 12, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {sectorData.map(s => (
-                <div key={s.name} className="bg-slate-900 text-white p-8 rounded-[3rem] space-y-4">
-                  <h4 className="text-2xl font-black">{s.name}</h4>
-                  <div className="space-y-2 pt-2">
-                    <div className="flex justify-between text-[10px] font-black text-slate-400 uppercase"><span>Total</span><span>{s.total}</span></div>
-                    <div className="flex justify-between text-[10px] font-black text-slate-400 uppercase"><span>Ocupados</span><span className="text-indigo-400">{s.occupied}</span></div>
-                    <div className="flex justify-between text-[10px] font-black text-slate-400 uppercase"><span>Vacíos</span><span className="text-emerald-400">{s.empty}</span></div>
-                  </div>
-                  <div className="w-full h-3 bg-white/10 rounded-full overflow-hidden mt-4">
-                    <div className="h-full bg-indigo-500 transition-all duration-1000" style={{ width: `${s.avgQuantity}%` }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {activeSubTab === 'reports' && (
-        <section className="space-y-8 animate-fade-in print:p-0">
-          <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-xl print:shadow-none print:border-none">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10 print:hidden">
-              <div>
-                <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">Generador de Informes</h3>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Selecciona un empleado para exportar su actividad</p>
-              </div>
-              <div className="flex gap-2">
-                <select 
-                  className="bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-3 text-[11px] font-black uppercase outline-none focus:border-indigo-500"
-                  value={searchOperator}
-                  onChange={(e) => setSearchOperator(e.target.value)}
-                >
-                  <option value="all">TODOS LOS EMPLEADOS</option>
-                  {operatorsList.map(name => <option key={name} value={name}>{name}</option>)}
-                </select>
-                <button 
-                  onClick={() => window.print()}
-                  className="bg-indigo-600 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all"
-                >
-                  🖨️ Imprimir
-                </button>
-              </div>
-            </div>
-
-            {/* VISTA PREVIA DEL INFORME (Optimizado para impresión) */}
-            <div className="space-y-8 border-t border-slate-100 pt-8 print:border-none">
-              <div className="flex justify-between items-start">
-                <div className="space-y-2">
-                  <div className="bg-indigo-600 w-12 h-12 rounded-2xl flex items-center justify-center text-white font-black text-xl">WH</div>
-                  <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Informe de Actividad Almacén</h2>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Periodo: {dateFrom} al {dateTo}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Generado el</p>
-                  <p className="text-xs font-black text-slate-800">{new Date().toLocaleString()}</p>
-                </div>
-              </div>
-
-              {dailyStats.filter(s => searchOperator === 'all' || s.name === searchOperator).map(stat => (
-                <div key={stat.name} className="space-y-6 break-after-page">
-                  <div className="flex justify-between items-end border-b-2 border-slate-900 pb-4">
-                    <h4 className="text-xl font-black text-slate-900 uppercase">Empleado: {stat.name}</h4>
-                    <div className="text-right">
-                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Acciones:</span>
-                      <span className="text-lg font-black text-slate-900 ml-2">{stat.count}</span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="border border-slate-200 p-6 rounded-3xl">
-                      <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Ubicaciones (Carros)</h5>
-                      <p className="text-3xl font-black text-indigo-600">{stat.ubicationsCount}</p>
-                    </div>
-                    <div className="border border-slate-200 p-6 rounded-3xl">
-                      <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Regularizaciones (Manual)</h5>
-                      <p className="text-3xl font-black text-amber-500">{stat.adjustmentsCount}</p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <h5 className="text-[11px] font-black text-slate-900 uppercase tracking-widest">Detalle de Operaciones:</h5>
-                    <table className="w-full text-left text-[9px]">
-                      <thead>
-                        <tr className="border-b border-slate-200 text-slate-400 uppercase font-black">
-                          <th className="py-2">Fecha</th>
-                          <th className="py-2">Carro / Motivo</th>
-                          <th className="py-2">Hueco</th>
-                          <th className="py-2 text-right">Ocupación Resultante</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {stat.ubications.concat(stat.adjustments).sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map(log => (
-                          <tr key={log.id}>
-                            <td className="py-2 font-black text-slate-400">{formatDate(log.created_at)}</td>
-                            <td className="py-2 font-black text-slate-800">{log.cart_id}</td>
-                            <td className="py-2 font-black text-indigo-600">{log.slot_code}</td>
-                            <td className="py-2 font-black text-right">{log.new_quantity}%</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* MODAL IMPORTADOR */}
-      {showImporter && (
-        <div className="fixed inset-0 z-[100] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white p-8 rounded-[3rem] w-full max-w-lg space-y-4 animate-fade-in shadow-2xl">
-            <h3 className="text-xl font-black text-slate-800 uppercase text-center tracking-tight">Importación en Lote</h3>
-            <textarea value={rawInput} onChange={e => setRawInput(e.target.value)} placeholder="U01-01-A..." className="w-full h-48 bg-slate-50 border-2 border-slate-100 rounded-3xl p-6 font-mono text-sm outline-none focus:border-indigo-500 transition-all" />
-            <div className="flex gap-4 pt-2">
-              <button onClick={() => setShowImporter(false)} className="flex-1 py-4 text-slate-400 font-black text-[10px] uppercase tracking-widest">Cancelar</button>
-              <button onClick={handleBulkImport} disabled={isProcessing} className="flex-2 bg-indigo-600 text-white px-10 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl disabled:opacity-50">
-                {isProcessing ? 'Procesando...' : 'Confirmar Importación'}
-              </button>
-            </div>
-          </div>
         </div>
       )}
 
-      <style>{`
-        @media print {
-          body * { visibility: hidden; }
-          .print\:p-0, .print\:p-0 * { visibility: visible; }
-          .print\:p-0 { position: absolute; left: 0; top: 0; width: 100%; }
-          .print\:hidden { display: none !important; }
-          .print\:shadow-none { box-shadow: none !important; }
-          .print\:border-none { border: none !important; }
-          .no-scrollbar { overflow: visible !important; }
-          @page { margin: 1cm; }
-        }
-      `}</style>
+      {activeSubTab === 'stats_slots' && (
+        <div className="space-y-6 animate-fade-in">
+          <div className="bg-white p-8 rounded-[3rem] border-2 border-slate-100 shadow-sm flex justify-between items-center relative overflow-hidden">
+            <div className="absolute -right-4 -bottom-4 text-slate-50 text-8xl font-medium opacity-30">📋</div>
+            <div className="z-10"><h3 className="font-semibold text-slate-800 uppercase tracking-tighter text-lg">Sectores</h3><p className="text-[10px] font-semibold text-slate-400 uppercase mt-1 tracking-widest">Inventario Maestro</p></div>
+            <label className="bg-slate-900 text-white px-8 py-3 rounded-2xl font-semibold text-[10px] uppercase cursor-pointer shadow-lg hover:bg-indigo-600 transition-all tracking-widest z-10">Cargar CSV<input type="file" accept=".csv" onChange={handleCSVUpload} className="hidden" /></label>
+          </div>
+          <div className="bg-white p-4 rounded-[2rem] border-2 border-slate-100 grid grid-cols-1 md:grid-cols-3 gap-3 shadow-sm">
+            <input type="text" placeholder="BUSCAR CÓDIGO..." value={slotFilterCode} onChange={e => setSlotFilterCode(e.target.value.toUpperCase())} className="bg-slate-50 p-4 rounded-xl font-medium text-xs outline-none border-2 border-transparent focus:border-indigo-500 uppercase shadow-inner transition-all" />
+            <select value={slotFilterSize} onChange={e => setSlotFilterSize(e.target.value)} className="bg-slate-50 p-4 rounded-xl font-medium text-xs outline-none border-2 border-transparent focus:border-indigo-500 uppercase shadow-inner transition-all"><option value="">TAMAÑO</option>{['Pequeño', 'Mediano', 'Grande'].map(s => <option key={s} value={s}>{s.toUpperCase()}</option>)}</select>
+            <select value={slotFilterOcc} onChange={e => setSlotFilterOcc(e.target.value)} className="bg-slate-50 p-4 rounded-xl font-medium text-xs outline-none border-2 border-transparent focus:border-indigo-500 uppercase shadow-inner transition-all"><option value="">OCUPACIÓN</option><option value="0">VACÍO (0%)</option><option value="50">MEDIO (50%)</option><option value="100">LLENO (100%)</option></select>
+          </div>
+          <div className="bg-white rounded-[2.5rem] border-2 border-slate-100 overflow-hidden shadow-sm overflow-x-auto">
+            <table className="w-full text-left text-xs min-w-[500px]">
+              <thead className="bg-slate-50 text-[10px] font-semibold text-slate-400 uppercase tracking-widest border-b-2 border-slate-100"><tr><th className="px-8 py-5">Ubicación</th><th className="px-8 py-5">Tipo</th><th className="px-8 py-5">Nivel Carga</th><th className="px-8 py-5 text-right">Verificado</th></tr></thead>
+              <tbody className="divide-y-2 divide-slate-50">
+                {allSlotsData.filter(s => s.code.includes(slotFilterCode) && (!slotFilterSize || s.size === slotFilterSize) && (!slotFilterOcc || String(s.quantity) === slotFilterOcc)).slice(0, 100).map(slot => (
+                  <tr key={slot.id} className="text-slate-800 hover:bg-slate-50/50 transition-colors">
+                    <td className="px-8 py-4 font-medium text-indigo-600">{slot.code}</td>
+                    <td className="px-8 py-4 uppercase text-slate-400 font-medium text-[9px]">{slot.size}</td>
+                    <td className="px-8 py-4"><div className="flex items-center gap-3"><div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden shadow-inner"><div className={`h-full ${slot.quantity === 100 ? 'bg-rose-500' : slot.quantity === 50 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{width: `${slot.quantity}%`}} /></div><span className="font-medium text-[9px] opacity-70">{slot.quantity}%</span></div></td>
+                    <td className="px-8 py-4 text-right"><span className={`px-3 py-1 rounded-lg text-[9px] font-medium uppercase ${slot.is_scanned_once ? 'text-emerald-600' : 'text-slate-300'}`}>{slot.is_scanned_once ? '✓' : '—'}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
