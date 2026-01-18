@@ -33,21 +33,21 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const slotInputRef = useRef<HTMLInputElement>(null);
   const cartInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (slotCode.trim().length >= 4 && origin === 'manual') {
-      checkSlotAndPrepare();
-    }
-  }, [slotCode]);
-
   const checkSlotAndPrepare = async () => {
+    const codeToSearch = slotCode.trim().toUpperCase();
+    if (!codeToSearch) return;
+    
+    setLoading(true);
     try {
       const { data, error } = await supabase
         .from('warehouse_slots')
         .select('is_scanned_once, size, quantity')
-        .eq('code', slotCode.toUpperCase().trim())
+        .eq('code', codeToSearch)
         .single();
 
-      if (error && error.code !== 'PGRST116') throw error;
+      if (error && error.code !== 'PGRST116') {
+        throw error;
+      }
 
       if (!data || !data.is_scanned_once) {
         setStep('size');
@@ -61,6 +61,58 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       setShowActionModal(true);
     } catch (err) {
       console.error("Error checking slot:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFinalSave = async (newQuantity: number) => {
+    if (!cartId || !slotCode || !selectedSize) {
+      setMessage({ type: 'error', text: 'Faltan datos para guardar' });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // 1. Actualizar el hueco
+      const { error: slotError } = await supabase
+        .from('warehouse_slots')
+        .update({
+          quantity: newQuantity,
+          size: selectedSize,
+          is_scanned_once: true,
+          last_updated: new Date().toISOString()
+        })
+        .eq('code', slotCode.toUpperCase().trim());
+
+      if (slotError) throw slotError;
+
+      // 2. Registrar en el historial
+      const { error: logError } = await supabase
+        .from('movement_logs')
+        .insert([{
+          operator_name: user.full_name,
+          operator_email: user.email,
+          cart_id: cartId.toUpperCase().trim(),
+          slot_code: slotCode.toUpperCase().trim(),
+          new_quantity: newQuantity,
+          old_quantity: oldQuantity || 0,
+          new_status: newQuantity > 0 ? 'occupied' : 'empty'
+        }]);
+
+      if (logError) throw logError;
+
+      setMessage({ type: 'success', text: `UBICACIÓN ${slotCode} ACTUALIZADA AL ${newQuantity}%` });
+      setCartId('');
+      setSlotCode('');
+      setShowActionModal(false);
+      
+      // Limpiar mensaje después de unos segundos
+      setTimeout(() => setMessage(null), 3000);
+    } catch (err: any) {
+      setMessage({ type: 'error', text: 'Error al guardar: ' + err.message });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -70,7 +122,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     setSelectedSize(slot.size);
     setOrigin('finder');
     setShowSearchFinder(false);
-    if (cartId.trim()) { setStep('status'); } else { setStep('cart_input'); }
+    if (cartId.trim()) { 
+      setStep('status'); 
+    } else { 
+      setStep('cart_input'); 
+    }
     setShowActionModal(true);
   };
 
@@ -103,7 +159,26 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     } 
     else if (scannerTarget === 'slot') { 
       setSlotCode(formatted); 
-      setOrigin('manual'); 
+      setOrigin('manual');
+      setTimeout(() => checkSlotAndPrepare(), 200);
+    }
+  };
+
+  const handleCartKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (cartId.trim()) {
+        slotInputRef.current?.focus();
+      }
+    }
+  };
+
+  const handleSlotKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (slotCode.trim()) {
+        checkSlotAndPrepare();
+      }
     }
   };
 
@@ -131,19 +206,75 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                 type="text" 
                 value={cartId} 
                 onChange={(e) => setCartId(e.target.value.toUpperCase())} 
-                placeholder="ESCANEAR" 
+                onKeyDown={handleCartKeyDown}
+                placeholder="ESCANEAR CARRO" 
                 className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-5 px-6 focus:border-indigo-500 font-semibold text-lg outline-none uppercase transition-all text-center" 
               />
               <button onClick={() => { setScannerTarget('cart'); setScannerOpen(true); }} className="absolute right-4 top-[44px] bg-white shadow-sm border border-slate-100 p-2.5 rounded-xl active:scale-90 transition-all">📷</button>
             </div>
             <div className="relative group">
               <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Ubicación</label>
-              <input ref={slotInputRef} type="text" value={slotCode} onChange={(e) => { setSlotCode(e.target.value.toUpperCase()); setOrigin('manual'); }} placeholder="ESCRIBE O ESCANEA" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-5 px-6 focus:border-indigo-500 font-semibold text-lg outline-none uppercase transition-all text-center" />
+              <input 
+                ref={slotInputRef} 
+                type="text" 
+                value={slotCode} 
+                onChange={(e) => { setSlotCode(e.target.value.toUpperCase()); setOrigin('manual'); }} 
+                onKeyDown={handleSlotKeyDown}
+                placeholder="ESCANEAR HUECO" 
+                className={`w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-5 px-6 focus:border-indigo-500 font-semibold text-lg outline-none uppercase transition-all text-center ${loading ? 'opacity-50' : ''}`}
+                disabled={loading}
+              />
               <button onClick={() => { setScannerTarget('slot'); setScannerOpen(true); }} className="absolute right-4 top-[44px] bg-white shadow-sm border border-slate-100 p-2.5 rounded-xl active:scale-90 transition-all">📷</button>
             </div>
           </div>
         </div>
       </div>
+
+      {showActionModal && (
+        <div className="fixed inset-0 z-[150] bg-slate-900/40 backdrop-blur-md flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl space-y-8 animate-fade-in border border-white">
+            <div className="text-center">
+               <h3 className="text-2xl font-semibold text-slate-900 tracking-tighter uppercase">{slotCode}</h3>
+               <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mt-1">
+                 {step === 'size' ? 'DEFINIR TAMAÑO' : step === 'cart_input' ? 'ID CARRO REQUERIDO' : 'ESTADO DE CARGA'}
+               </p>
+            </div>
+
+            {step === 'size' && (
+              <div className="grid grid-cols-1 gap-2">
+                {['Pequeño', 'Mediano', 'Grande'].map(size => (
+                  <button key={size} onClick={() => { setSelectedSize(size); setStep(cartId ? 'status' : 'cart_input'); }} className="py-4 rounded-2xl font-semibold border-2 border-slate-100 text-[11px] uppercase tracking-widest hover:border-indigo-500 hover:text-indigo-600 transition-all">{size}</button>
+                ))}
+              </div>
+            )}
+
+            {step === 'cart_input' && (
+              <div className="space-y-4">
+                <input 
+                  autoFocus
+                  type="text" 
+                  value={cartId} 
+                  onChange={e => setCartId(e.target.value.toUpperCase())}
+                  onKeyDown={e => e.key === 'Enter' && cartId && setStep('status')}
+                  placeholder="ID CARRO" 
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 font-semibold text-center uppercase outline-none focus:border-indigo-500"
+                />
+                <button onClick={() => cartId && setStep('status')} className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-semibold uppercase text-[11px] tracking-widest">Siguiente</button>
+              </div>
+            )}
+
+            {step === 'status' && (
+              <div className="grid grid-cols-1 gap-3">
+                <button onClick={() => handleFinalSave(0)} className="py-5 rounded-2xl font-bold bg-emerald-50 text-emerald-600 border-2 border-emerald-100 text-[11px] uppercase tracking-widest hover:bg-emerald-100 transition-all">Vacío (0%)</button>
+                <button onClick={() => handleFinalSave(50)} className="py-5 rounded-2xl font-bold bg-amber-50 text-amber-600 border-2 border-amber-100 text-[11px] uppercase tracking-widest hover:bg-amber-100 transition-all">Medio (50%)</button>
+                <button onClick={() => handleFinalSave(100)} className="py-5 rounded-2xl font-bold bg-rose-50 text-rose-600 border-2 border-rose-100 text-[11px] uppercase tracking-widest hover:bg-rose-100 transition-all">Lleno (100%)</button>
+              </div>
+            )}
+
+            <button onClick={() => setShowActionModal(false)} className="w-full py-4 text-slate-400 font-semibold text-[10px] uppercase tracking-widest hover:text-slate-800">Cancelar</button>
+          </div>
+        </div>
+      )}
 
       {showSearchFinder && (
         <div className="fixed inset-0 z-[120] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4">
