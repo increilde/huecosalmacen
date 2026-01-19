@@ -175,6 +175,7 @@ const AdminPanel: React.FC = () => {
   }, [allSlotsData]);
 
   const heatmapData = useMemo(() => {
+    // FIX: Define explicit type for heatmap structure to avoid 'unknown' index errors
     const structure: Record<string, Record<string, WarehouseSlot[]>> = {};
     const filteredBySelectedSize = allSlotsData.filter(s => s.size === heatmapSizeFilter);
     filteredBySelectedSize.forEach(s => {
@@ -414,7 +415,8 @@ const AdminPanel: React.FC = () => {
           </div>
 
           <div className="space-y-8">
-            {Object.entries(zonesReports.zones).sort().map(([zone, stats]) => (
+            {/* FIX: Ensure proper typing for zones iteration to avoid Property '...' does not exist on type 'unknown' */}
+            {Object.entries(zonesReports.zones as Record<string, ZoneCountStats>).sort().map(([zone, stats]) => (
               <div key={zone} className="bg-white p-8 rounded-[3rem] border-2 border-slate-100 shadow-sm relative overflow-hidden group hover:shadow-xl transition-all w-full">
                 <div className="absolute -right-6 -top-6 text-slate-50 text-9xl font-medium opacity-30 group-hover:scale-110 transition-transform">{zone}</div>
                 <div className="relative z-10">

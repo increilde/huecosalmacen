@@ -27,6 +27,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   
   const [showActionModal, setShowActionModal] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [historyDate, setHistoryDate] = useState(new Date().toISOString().split('T')[0]);
   const [myLogs, setMyLogs] = useState<MovementLog[]>([]);
   
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
@@ -77,25 +78,37 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     }
   };
 
-  const fetchMyLogs = async () => {
+  const fetchMyLogs = async (dateStr: string) => {
     setLoading(true);
-    const today = new Date().toISOString().split('T')[0];
     try {
       const { data, error } = await supabase
         .from('movement_logs')
         .select('id, cart_id, slot_code, new_quantity, created_at')
         .eq('operator_email', user.email)
-        .gte('created_at', `${today}T00:00:00`)
+        .gte('created_at', `${dateStr}T00:00:00`)
+        .lte('created_at', `${dateStr}T23:59:59`)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
       setMyLogs(data || []);
-      setShowHistoryModal(true);
     } catch (err) {
       console.error("Error fetching logs:", err);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleOpenHistory = () => {
+    const today = new Date().toISOString().split('T')[0];
+    setHistoryDate(today);
+    fetchMyLogs(today);
+    setShowHistoryModal(true);
+  };
+
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newDate = e.target.value;
+    setHistoryDate(newDate);
+    fetchMyLogs(newDate);
   };
 
   const handleFinalSave = async (newQuantity: number) => {
@@ -257,7 +270,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
             </div>
 
             <button 
-              onClick={fetchMyLogs}
+              onClick={handleOpenHistory}
               className="w-full mt-4 flex items-center justify-center gap-2 text-slate-400 hover:text-indigo-600 transition-colors py-2 group"
             >
               <span className="text-lg group-hover:scale-110 transition-transform">🕒</span>
@@ -272,15 +285,27 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
           <div className="bg-white w-full max-w-sm rounded-[3rem] p-8 shadow-2xl flex flex-col max-h-[85vh] animate-fade-in relative overflow-hidden">
              <div className="absolute -right-8 -top-8 text-slate-50 text-9xl font-medium opacity-10 pointer-events-none">🕒</div>
              <div className="relative z-10 flex flex-col h-full">
-                <div className="text-center mb-8">
+                <div className="text-center mb-6">
                   <h3 className="text-xl font-semibold text-slate-800 uppercase tracking-tighter">Mis Movimientos</h3>
-                  <p className="text-[9px] font-semibold text-slate-400 uppercase tracking-widest mt-1">Hoy: {new Date().toLocaleDateString()}</p>
+                  <div className="mt-3 inline-flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-xl border border-slate-100">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase">Fecha:</span>
+                    <input 
+                      type="date" 
+                      value={historyDate} 
+                      onChange={handleDateChange}
+                      className="bg-transparent text-[11px] font-bold text-slate-700 outline-none"
+                    />
+                  </div>
                 </div>
 
                 <div className="flex-1 overflow-y-auto no-scrollbar space-y-3 pr-1">
-                  {myLogs.length === 0 ? (
+                  {loading ? (
+                    <div className="py-20 text-center animate-pulse">
+                      <p className="text-[10px] font-semibold text-slate-300 uppercase tracking-widest">Cargando...</p>
+                    </div>
+                  ) : myLogs.length === 0 ? (
                     <div className="py-20 text-center">
-                      <p className="text-[10px] font-semibold text-slate-300 uppercase tracking-widest">No has registrado nada hoy</p>
+                      <p className="text-[10px] font-semibold text-slate-300 uppercase tracking-widest">Sin registros este día</p>
                     </div>
                   ) : myLogs.map(log => (
                     <div key={log.id} className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex items-center justify-between">
