@@ -187,7 +187,7 @@ const AdminPanel: React.FC = () => {
   };
 
   const zonesReports = useMemo(() => {
-    // FIX: Using explicit Record typing to avoid "unknown" index error
+    // FIX: Typed as Record<string, ZoneCountStats> to resolve "Type 'unknown' cannot be used as an index type"
     const zones: Record<string, ZoneCountStats> = {};
     const validated = allSlotsData.filter(s => s.is_scanned_once);
     const uniqueZones = Array.from(new Set(allSlotsData.map(s => s.code.substring(0, 3))));
@@ -453,6 +453,7 @@ const AdminPanel: React.FC = () => {
           </div>
 
           <div className="space-y-8">
+            {/* FIX: Using explicit Record typing for Entry to avoid index error */}
             {Object.entries(zonesReports.zones as Record<string, ZoneCountStats>).sort().map(([zone, stats]) => (
               <div key={zone} className="bg-white p-8 rounded-[3rem] border-2 border-slate-100 shadow-sm relative overflow-hidden group hover:shadow-xl transition-all w-full">
                 <div className="absolute -right-6 -top-6 text-slate-50 text-9xl font-medium opacity-30 group-hover:scale-110 transition-transform">{zone}</div>

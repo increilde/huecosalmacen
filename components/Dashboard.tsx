@@ -61,9 +61,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         throw error;
       }
 
-      // Lógica solicitada: Si el campo cartId está vacío, omitimos el paso de pedir carro siempre.
-      const isQuickUpdate = !cartId.trim();
-
       if (!data || !data.is_scanned_once) {
         setStep('size');
         setSelectedSize(null);
@@ -71,7 +68,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       } else {
         setSelectedSize(data.size);
         setOldQuantity(data.quantity ?? 0);
-        // Si no hay carro, saltamos directamente a status. Si hay carro, vamos a status (ya que el carro ya está puesto).
         setStep('status');
       }
       setShowActionModal(true);
@@ -135,7 +131,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
       if (slotError) throw slotError;
 
-      // Usamos el ID de carro si existe, si no ponemos "S/C" (Sin Carro) o vacío
       const finalCartId = cartId.trim() ? cartId.toUpperCase().trim() : 'S/C';
 
       const { error: logError } = await supabase
@@ -172,11 +167,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     setOrigin('finder');
     setShowSearchFinder(false);
     
-    // Si el cartId está vacío, vamos directo a status según la nueva regla
     if (!cartId.trim()) {
       setStep('status');
     } else {
-      setStep('status'); // Si ya tiene algo, también a status
+      setStep('status');
     }
     setShowActionModal(true);
   };
@@ -318,14 +312,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                     </div>
                   ) : myLogs.map(log => (
                     <div key={log.id} className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex items-center justify-between">
-                      <div className="flex flex-col">
+                      <div className="flex flex-col flex-1">
                         <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                        <span className="text-xs font-bold text-slate-800 uppercase tracking-tight">{log.slot_code}</span>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[9px] font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-100 uppercase">{log.cart_id}</span>
+                          <span className="text-slate-300 text-xs">→</span>
+                          <span className="text-xs font-bold text-slate-800 uppercase tracking-tight">{log.slot_code}</span>
+                        </div>
                       </div>
-                      <div className="text-center">
-                        <span className="text-[9px] font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded-lg border border-indigo-100">{log.cart_id}</span>
-                      </div>
-                      <div className="text-right">
+                      <div className="text-right ml-2">
                         <span className={`text-[10px] font-bold ${log.new_quantity === 100 ? 'text-rose-500' : log.new_quantity === 50 ? 'text-amber-500' : 'text-emerald-500'}`}>
                           {log.new_quantity}%
                         </span>
