@@ -129,28 +129,65 @@ const AdminPanel: React.FC = () => {
   const handleCSVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    
+    setLoading(true);
     const reader = new FileReader();
     reader.onload = async (event) => {
-      const text = event.target?.result as string;
-      const rows = text.split('\n').slice(1);
-      const slotsToUpsert = rows.map(row => {
-        const parts = row.split(',');
-        const code = parts[0]?.trim().toUpperCase();
-        const size = parts[1]?.trim() || 'Mediano';
-        if (!code) return null;
-        return { code, size, status: 'empty', quantity: 0, is_scanned_once: false };
-      }).filter(Boolean);
+      try {
+        const text = event.target?.result as string;
+        // Detectamos si el separador es coma o punto y coma
+        const rows = text.split(/\r?\n/).filter(row => row.trim() !== '');
+        
+        // Saltamos la cabecera
+        const dataRows = rows.slice(1);
+        
+        const slotsToUpsert = dataRows.map(row => {
+          // Intentamos separar por punto y coma si hay más de uno, si no por coma
+          const separator = row.includes(';') ? ';' : ',';
+          const parts = row.split(separator);
+          
+          const code = parts[0]?.trim().toUpperCase();
+          const size = parts[1]?.trim() || 'Mediano';
+          
+          if (!code) return null;
+          
+          return { 
+            code, 
+            size, 
+            status: 'empty', 
+            quantity: 0, 
+            is_scanned_once: false,
+            last_updated: new Date().toISOString()
+          };
+        }).filter(Boolean);
 
-      if (slotsToUpsert.length > 0) {
-        const { error } = await supabase.from('warehouse_slots').upsert(slotsToUpsert, { onConflict: 'code' });
-        if (error) alert(error.message);
-        else fetchAllAdminData();
+        if (slotsToUpsert.length > 0) {
+          const { error } = await supabase
+            .from('warehouse_slots')
+            .upsert(slotsToUpsert, { onConflict: 'code' });
+          
+          if (error) {
+            alert("Error al subir: " + error.message);
+          } else {
+            alert(`Se han cargado/actualizado ${slotsToUpsert.length} huecos correctamente.`);
+            fetchAllAdminData();
+          }
+        } else {
+          alert("No se encontraron datos válidos en el archivo.");
+        }
+      } catch (err: any) {
+        alert("Error procesando el archivo: " + err.message);
+      } finally {
+        setLoading(false);
+        // Limpiamos el input para permitir subir el mismo archivo si se desea
+        e.target.value = '';
       }
     };
     reader.readAsText(file);
   };
 
   const zonesReports = useMemo(() => {
+    // FIX: Using explicit Record typing to avoid "unknown" index error
     const zones: Record<string, ZoneCountStats> = {};
     const validated = allSlotsData.filter(s => s.is_scanned_once);
     const uniqueZones = Array.from(new Set(allSlotsData.map(s => s.code.substring(0, 3))));
@@ -175,7 +212,7 @@ const AdminPanel: React.FC = () => {
   }, [allSlotsData]);
 
   const heatmapData = useMemo(() => {
-    // FIX: Define explicit type for heatmap structure to avoid 'unknown' index errors
+    // Corrected typing for the heatmap structure: Record<Planta, Record<Calle, WarehouseSlot[]>>
     const structure: Record<string, Record<string, WarehouseSlot[]>> = {};
     const filteredBySelectedSize = allSlotsData.filter(s => s.size === heatmapSizeFilter);
     filteredBySelectedSize.forEach(s => {
@@ -185,6 +222,7 @@ const AdminPanel: React.FC = () => {
       if (!structure[planta][calle]) structure[planta][calle] = [];
       structure[planta][calle].push(s);
     });
+    // Sort slots within each street
     Object.keys(structure).forEach(p => {
       Object.keys(structure[p]).forEach(c => {
         structure[p][c].sort((a, b) => a.code.localeCompare(b.code));
@@ -415,7 +453,6 @@ const AdminPanel: React.FC = () => {
           </div>
 
           <div className="space-y-8">
-            {/* FIX: Ensure proper typing for zones iteration to avoid Property '...' does not exist on type 'unknown' */}
             {Object.entries(zonesReports.zones as Record<string, ZoneCountStats>).sort().map(([zone, stats]) => (
               <div key={zone} className="bg-white p-8 rounded-[3rem] border-2 border-slate-100 shadow-sm relative overflow-hidden group hover:shadow-xl transition-all w-full">
                 <div className="absolute -right-6 -top-6 text-slate-50 text-9xl font-medium opacity-30 group-hover:scale-110 transition-transform">{zone}</div>

@@ -61,6 +61,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         throw error;
       }
 
+      // Lógica solicitada: Si el campo cartId está vacío, omitimos el paso de pedir carro siempre.
+      const isQuickUpdate = !cartId.trim();
+
       if (!data || !data.is_scanned_once) {
         setStep('size');
         setSelectedSize(null);
@@ -68,6 +71,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       } else {
         setSelectedSize(data.size);
         setOldQuantity(data.quantity ?? 0);
+        // Si no hay carro, saltamos directamente a status. Si hay carro, vamos a status (ya que el carro ya está puesto).
         setStep('status');
       }
       setShowActionModal(true);
@@ -112,7 +116,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   };
 
   const handleFinalSave = async (newQuantity: number) => {
-    if (!cartId || !slotCode || !selectedSize) {
+    if (!slotCode || !selectedSize) {
       setMessage({ type: 'error', text: 'Faltan datos para guardar' });
       return;
     }
@@ -131,12 +135,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
       if (slotError) throw slotError;
 
+      // Usamos el ID de carro si existe, si no ponemos "S/C" (Sin Carro) o vacío
+      const finalCartId = cartId.trim() ? cartId.toUpperCase().trim() : 'S/C';
+
       const { error: logError } = await supabase
         .from('movement_logs')
         .insert([{
           operator_name: user.full_name,
           operator_email: user.email,
-          cart_id: cartId.toUpperCase().trim(),
+          cart_id: finalCartId,
           slot_code: slotCode.toUpperCase().trim(),
           new_quantity: newQuantity,
           old_quantity: oldQuantity || 0,
@@ -164,10 +171,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     setSelectedSize(slot.size);
     setOrigin('finder');
     setShowSearchFinder(false);
-    if (cartId.trim()) { 
-      setStep('status'); 
-    } else { 
-      setStep('cart_input'); 
+    
+    // Si el cartId está vacío, vamos directo a status según la nueva regla
+    if (!cartId.trim()) {
+      setStep('status');
+    } else {
+      setStep('status'); // Si ya tiene algo, también a status
     }
     setShowActionModal(true);
   };
@@ -242,7 +251,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
           <div className="space-y-6">
             <div className="relative group">
-              <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">ID Carro</label>
+              <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">ID Carro (Opcional)</label>
               <input 
                 ref={cartInputRef}
                 type="text" 
@@ -349,7 +358,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
             {step === 'size' && (
               <div className="grid grid-cols-1 gap-2">
                 {['Pequeño', 'Mediano', 'Grande'].map(size => (
-                  <button key={size} onClick={() => { setSelectedSize(size); setStep(cartId ? 'status' : 'cart_input'); }} className="py-4 rounded-2xl font-semibold border-2 border-slate-100 text-[11px] uppercase tracking-widest hover:border-indigo-500 hover:text-indigo-600 transition-all">{size}</button>
+                  <button key={size} onClick={() => { setSelectedSize(size); setStep('status'); }} className="py-4 rounded-2xl font-semibold border-2 border-slate-100 text-[11px] uppercase tracking-widest hover:border-indigo-500 hover:text-indigo-600 transition-all">{size}</button>
                 ))}
               </div>
             )}
