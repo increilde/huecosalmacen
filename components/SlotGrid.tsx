@@ -19,7 +19,12 @@ const SlotGrid: React.FC<SlotGridProps> = ({ userRole }) => {
   const [globalStats, setGlobalStats] = useState({
     totalAbsolute: 0,
     occupancyPercent: 0,
-    pendingInitialScan: 0
+    pendingInitialScan: 0,
+    sizeStats: {
+      Grande: { percent: 0, count: 0 },
+      Mediano: { percent: 0, count: 0 },
+      Pequeño: { percent: 0, count: 0 }
+    }
   });
 
   const [occupancyFilter, setOccupancyFilter] = useState<'all' | 'empty' | 'occupied' | 'pending'>('all');
@@ -49,10 +54,24 @@ const SlotGrid: React.FC<SlotGridProps> = ({ userRole }) => {
       }
       setSlots(allSlots);
       const active = allSlots.filter(s => s.is_scanned_once);
+      
+      // Cálculo de ocupación por tamaño (solo leídos)
+      const calculateSizeOccupancy = (size: string) => {
+        const sizeSlots = active.filter(s => s.size === size);
+        if (sizeSlots.length === 0) return { percent: 0, count: 0 };
+        const percent = Math.round(sizeSlots.reduce((acc, s) => acc + (s.quantity || 0), 0) / sizeSlots.length);
+        return { percent, count: sizeSlots.length };
+      };
+
       setGlobalStats({
         totalAbsolute: allSlots.length,
         occupancyPercent: active.length > 0 ? Math.round(active.reduce((acc, s) => acc + (s.quantity || 0), 0) / active.length) : 0,
-        pendingInitialScan: allSlots.filter(s => !s.is_scanned_once).length
+        pendingInitialScan: allSlots.filter(s => !s.is_scanned_once).length,
+        sizeStats: {
+          Grande: calculateSizeOccupancy('Grande'),
+          Mediano: calculateSizeOccupancy('Mediano'),
+          Pequeño: calculateSizeOccupancy('Pequeño')
+        }
       });
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
@@ -107,6 +126,28 @@ const SlotGrid: React.FC<SlotGridProps> = ({ userRole }) => {
           <p className="text-[10px] font-semibold uppercase text-slate-400 tracking-[0.2em] mb-2 z-10">Pendientes Scan</p>
           <h3 className="text-4xl font-semibold text-rose-500 tracking-tight z-10">{globalStats.pendingInitialScan}</h3>
         </button>
+      </div>
+
+      {/* Nuevas estadísticas por tamaño */}
+      <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm">
+        <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em] mb-4 ml-2">Ocupación por tamaño (Solo leídos)</p>
+        <div className="grid grid-cols-3 gap-3">
+          <div className="bg-slate-50 p-4 rounded-2xl text-center border border-slate-100 flex flex-col justify-center">
+            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Grande</p>
+            <p className="text-xl font-black text-indigo-600 leading-none">{globalStats.sizeStats.Grande.percent}%</p>
+            <p className="text-[7px] font-bold text-slate-400 uppercase mt-2 tracking-tighter">sobre {globalStats.sizeStats.Grande.count} huecos</p>
+          </div>
+          <div className="bg-slate-50 p-4 rounded-2xl text-center border border-slate-100 flex flex-col justify-center">
+            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Mediano</p>
+            <p className="text-xl font-black text-indigo-600 leading-none">{globalStats.sizeStats.Mediano.percent}%</p>
+            <p className="text-[7px] font-bold text-slate-400 uppercase mt-2 tracking-tighter">sobre {globalStats.sizeStats.Mediano.count} huecos</p>
+          </div>
+          <div className="bg-slate-50 p-4 rounded-2xl text-center border border-slate-100 flex flex-col justify-center">
+            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Pequeño</p>
+            <p className="text-xl font-black text-indigo-600 leading-none">{globalStats.sizeStats.Pequeño.percent}%</p>
+            <p className="text-[7px] font-bold text-slate-400 uppercase mt-2 tracking-tighter">sobre {globalStats.sizeStats.Pequeño.count} huecos</p>
+          </div>
+        </div>
       </div>
 
       <div className="space-y-4">

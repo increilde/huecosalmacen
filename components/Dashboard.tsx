@@ -210,7 +210,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   };
 
   const handleCartKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
       if (cartId.trim()) {
         slotInputRef.current?.focus();
@@ -219,7 +219,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   };
 
   const handleSlotKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
       if (slotCode.trim()) {
         checkSlotAndPrepare();
@@ -365,7 +365,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                   type="text" 
                   value={cartId} 
                   onChange={e => setCartId(e.target.value.toUpperCase())}
-                  onKeyDown={e => e.key === 'Enter' && cartId && setStep('status')}
+                  onKeyDown={e => (e.key === 'Enter' || e.key === 'Tab') && cartId && setStep('status')}
                   placeholder="ID CARRO" 
                   className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 font-semibold text-center uppercase outline-none focus:border-indigo-500"
                 />

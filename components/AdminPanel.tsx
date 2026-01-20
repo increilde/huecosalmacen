@@ -187,7 +187,6 @@ const AdminPanel: React.FC = () => {
   };
 
   const zonesReports = useMemo(() => {
-    // FIX: Typed as Record<string, ZoneCountStats> to resolve "Type 'unknown' cannot be used as an index type"
     const zones: Record<string, ZoneCountStats> = {};
     const validated = allSlotsData.filter(s => s.is_scanned_once);
     const uniqueZones = Array.from(new Set(allSlotsData.map(s => s.code.substring(0, 3))));
@@ -196,6 +195,7 @@ const AdminPanel: React.FC = () => {
       const zoneSlots = validated.filter(s => s.code.startsWith(zoneName));
       if (zoneSlots.length === 0) return;
       
+      // Fix: Ensured index is of type string for Record<string, ZoneCountStats>
       zones[zoneName] = {
         grande: zoneSlots.filter(s => s.size === 'Grande').length,
         mediano: zoneSlots.filter(s => s.size === 'Mediano').length,
@@ -453,8 +453,8 @@ const AdminPanel: React.FC = () => {
           </div>
 
           <div className="space-y-8">
-            {/* FIX: Using explicit Record typing for Entry to avoid index error */}
-            {Object.entries(zonesReports.zones as Record<string, ZoneCountStats>).sort().map(([zone, stats]) => (
+            {/* Fix: Explicitly type the entry to avoid unknown property errors on stats */}
+            {(Object.entries(zonesReports.zones) as [string, ZoneCountStats][]).sort().map(([zone, stats]) => (
               <div key={zone} className="bg-white p-8 rounded-[3rem] border-2 border-slate-100 shadow-sm relative overflow-hidden group hover:shadow-xl transition-all w-full">
                 <div className="absolute -right-6 -top-6 text-slate-50 text-9xl font-medium opacity-30 group-hover:scale-110 transition-transform">{zone}</div>
                 <div className="relative z-10">
