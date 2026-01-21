@@ -21,11 +21,19 @@ interface OperatorData extends UserProfile {
   avgTimePerCart: string;
 }
 
+interface SizeOccupancy {
+  occ100: number;
+  occ50: number;
+  occ0: number;
+  total: number;
+}
+
 interface ZoneCountStats {
-  grande: number;
-  mediano: number;
-  pequeno: number;
+  grande: SizeOccupancy;
+  mediano: SizeOccupancy;
+  pequeno: SizeOccupancy;
   totalVerificados: number;
+  occupancyPercent: number;
 }
 
 type AdminTab = 'movements' | 'stats_operators' | 'stats_slots' | 'heatmap' | 'reports';
@@ -135,22 +143,14 @@ const AdminPanel: React.FC = () => {
     reader.onload = async (event) => {
       try {
         const text = event.target?.result as string;
-        // Detectamos si el separador es coma o punto y coma
         const rows = text.split(/\r?\n/).filter(row => row.trim() !== '');
-        
-        // Saltamos la cabecera
         const dataRows = rows.slice(1);
-        
         const slotsToUpsert = dataRows.map(row => {
-          // Intentamos separar por punto y coma si hay más de uno, si no por coma
           const separator = row.includes(';') ? ';' : ',';
           const parts = row.split(separator);
-          
           const code = parts[0]?.trim().toUpperCase();
           const size = parts[1]?.trim() || 'Mediano';
-          
           if (!code) return null;
-          
           return { 
             code, 
             size, 
@@ -165,7 +165,6 @@ const AdminPanel: React.FC = () => {
           const { error } = await supabase
             .from('warehouse_slots')
             .upsert(slotsToUpsert, { onConflict: 'code' });
-          
           if (error) {
             alert("Error al subir: " + error.message);
           } else {
@@ -179,7 +178,6 @@ const AdminPanel: React.FC = () => {
         alert("Error procesando el archivo: " + err.message);
       } finally {
         setLoading(false);
-        // Limpiamos el input para permitir subir el mismo archivo si se desea
         e.target.value = '';
       }
     };
@@ -191,28 +189,43 @@ const AdminPanel: React.FC = () => {
     const validated = allSlotsData.filter(s => s.is_scanned_once);
     const uniqueZones = Array.from(new Set(allSlotsData.map(s => s.code.substring(0, 3))));
 
+    const getSizeOccupancy = (slots: WarehouseSlot[], size: string): SizeOccupancy => {
+      const filtered = slots.filter(s => s.size === size);
+      return {
+        total: filtered.length,
+        occ100: filtered.filter(s => s.quantity === 100).length,
+        occ50: filtered.filter(s => s.quantity === 50).length,
+        occ0: filtered.filter(s => s.quantity === 0).length
+      };
+    };
+
     uniqueZones.forEach(zoneName => {
       const zoneSlots = validated.filter(s => s.code.startsWith(zoneName));
       if (zoneSlots.length === 0) return;
       
-      // Fix: Ensured index is of type string for Record<string, ZoneCountStats>
+      const sumQuantity = zoneSlots.reduce((acc, s) => acc + (s.quantity || 0), 0);
+      const avgOcc = Math.round(sumQuantity / zoneSlots.length);
+
       zones[zoneName] = {
-        grande: zoneSlots.filter(s => s.size === 'Grande').length,
-        mediano: zoneSlots.filter(s => s.size === 'Mediano').length,
-        pequeno: zoneSlots.filter(s => s.size === 'Pequeño').length,
-        totalVerificados: zoneSlots.length
+        grande: getSizeOccupancy(zoneSlots, 'Grande'),
+        mediano: getSizeOccupancy(zoneSlots, 'Mediano'),
+        pequeno: getSizeOccupancy(zoneSlots, 'Pequeño'),
+        totalVerificados: zoneSlots.length,
+        occupancyPercent: avgOcc
       };
     });
 
     const totalSlots = allSlotsData.length;
     const verifiedSlotsCount = validated.length;
     const verifiedPercent = totalSlots > 0 ? Math.round((verifiedSlotsCount / totalSlots) * 100) : 0;
+    
+    const totalSumQuantity = validated.reduce((acc, s) => acc + (s.quantity || 0), 0);
+    const totalOccupancyPercent = validated.length > 0 ? Math.round(totalSumQuantity / validated.length) : 0;
 
-    return { zones, totalSlots, verifiedSlotsCount, verifiedPercent };
+    return { zones, totalSlots, verifiedSlotsCount, verifiedPercent, totalOccupancyPercent };
   }, [allSlotsData]);
 
   const heatmapData = useMemo(() => {
-    // Corrected typing for the heatmap structure: Record<Planta, Record<Calle, WarehouseSlot[]>>
     const structure: Record<string, Record<string, WarehouseSlot[]>> = {};
     const filteredBySelectedSize = allSlotsData.filter(s => s.size === heatmapSizeFilter);
     filteredBySelectedSize.forEach(s => {
@@ -222,7 +235,6 @@ const AdminPanel: React.FC = () => {
       if (!structure[planta][calle]) structure[planta][calle] = [];
       structure[planta][calle].push(s);
     });
-    // Sort slots within each street
     Object.keys(structure).forEach(p => {
       Object.keys(structure[p]).forEach(c => {
         structure[p][c].sort((a, b) => a.code.localeCompare(b.code));
@@ -242,6 +254,30 @@ const AdminPanel: React.FC = () => {
     if (!cartSearchFilter) return allLogs;
     return allLogs.filter(log => log.cart_id.includes(cartSearchFilter.toUpperCase()));
   }, [allLogs, cartSearchFilter]);
+
+  const AvailabilityGrid = ({ title, stats, color }: { title: string, stats: SizeOccupancy, color: string }) => (
+    <div className={`bg-white p-6 rounded-[2.5rem] border-2 border-slate-50 shadow-sm flex flex-col`}>
+      <div className="flex items-center gap-2 mb-4">
+        <div className={`w-1.5 h-4 ${color} rounded-full`}></div>
+        <h5 className="text-[10px] font-bold text-slate-800 uppercase tracking-widest">{title}</h5>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        <div className="bg-rose-50/50 p-3 rounded-2xl text-center border border-rose-100/50">
+          <p className="text-[7px] font-bold text-rose-400 uppercase tracking-tighter mb-0.5">100%</p>
+          <p className="text-sm font-black text-rose-600 leading-none">{stats.occ100}</p>
+        </div>
+        <div className="bg-amber-50/50 p-3 rounded-2xl text-center border border-amber-100/50">
+          <p className="text-[7px] font-bold text-amber-500 uppercase tracking-tighter mb-0.5">50%</p>
+          <p className="text-sm font-black text-amber-600 leading-none">{stats.occ50}</p>
+        </div>
+        <div className="bg-emerald-50/50 p-3 rounded-2xl text-center border border-emerald-100/50">
+          <p className="text-[7px] font-bold text-emerald-500 uppercase tracking-tighter mb-0.5">0%</p>
+          <p className="text-sm font-black text-emerald-600 leading-none">{stats.occ0}</p>
+        </div>
+      </div>
+      <p className="text-[7px] font-bold text-slate-300 uppercase mt-3 text-center tracking-widest">Total: {stats.total} huecos</p>
+    </div>
+  );
 
   return (
     <div className="space-y-6 pb-24 max-w-5xl mx-auto px-2" style={{ fontFamily: 'Inter, sans-serif' }}>
@@ -433,55 +469,84 @@ const AdminPanel: React.FC = () => {
 
       {activeSubTab === 'reports' && (
         <div className="space-y-12 animate-fade-in">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
              <div className="bg-white p-8 rounded-[3rem] border-2 border-slate-100 shadow-sm flex flex-col justify-center relative overflow-hidden group">
                 <div className="absolute -right-4 -bottom-4 text-slate-50 text-8xl font-medium opacity-40 group-hover:opacity-60 transition-opacity">📦</div>
                 <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.2em] mb-2 z-10">Total Huecos</p>
                 <h3 className="text-5xl font-semibold text-slate-900 tracking-tighter z-10">{zonesReports.totalSlots}</h3>
              </div>
+             
              <div className="bg-white p-8 rounded-[3rem] border-2 border-slate-100 shadow-sm flex flex-col justify-center relative overflow-hidden group">
-                <div className="absolute -right-4 -bottom-4 text-emerald-50 text-8xl font-medium opacity-40 group-hover:opacity-60 transition-opacity">✓</div>
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.2em] mb-2 z-10">Verificados</p>
-                <h3 className="text-5xl font-semibold text-emerald-600 tracking-tighter z-10">{zonesReports.verifiedSlotsCount}</h3>
+                <div className="absolute -right-4 -bottom-4 text-indigo-50 text-8xl font-medium opacity-40 group-hover:opacity-60 transition-opacity">U01</div>
+                <p className="text-[10px] font-semibold text-indigo-400 uppercase tracking-[0.2em] mb-2 z-10">Ocupación U01</p>
+                <h3 className="text-5xl font-semibold text-indigo-600 tracking-tighter z-10">
+                  {/* Fixed Type 'unknown' cannot be used as an index type error by casting zones object */}
+                  {(zonesReports.zones as Record<string, ZoneCountStats>)['U01']?.occupancyPercent || 0}%
+                </h3>
              </div>
+
+             <div className="bg-white p-8 rounded-[3rem] border-2 border-slate-100 shadow-sm flex flex-col justify-center relative overflow-hidden group">
+                <div className="absolute -right-4 -bottom-4 text-indigo-50 text-8xl font-medium opacity-40 group-hover:opacity-60 transition-opacity">U02</div>
+                <p className="text-[10px] font-semibold text-indigo-400 uppercase tracking-[0.2em] mb-2 z-10">Ocupación U02</p>
+                <h3 className="text-5xl font-semibold text-indigo-600 tracking-tighter z-10">
+                  {/* Fixed Type 'unknown' cannot be used as an index type error by casting zones object */}
+                  {(zonesReports.zones as Record<string, ZoneCountStats>)['U02']?.occupancyPercent || 0}%
+                </h3>
+             </div>
+
              <div className="bg-indigo-600 p-8 rounded-[3rem] text-white shadow-2xl flex flex-col justify-center relative overflow-hidden group">
                 <div className="absolute -right-4 -bottom-4 text-white/10 text-8xl font-medium opacity-40 group-hover:opacity-60 transition-opacity">%</div>
-                <p className="text-[10px] font-semibold text-indigo-200 uppercase tracking-[0.2em] mb-2 z-10">Control Inventario</p>
-                <h3 className="text-5xl font-semibold tracking-tighter z-10">{zonesReports.verifiedPercent}%</h3>
-                <div className="mt-4 w-full h-2 bg-white/20 rounded-full overflow-hidden z-10"><div className="h-full bg-white transition-all duration-1000" style={{width: `${zonesReports.verifiedPercent}%`}} /></div>
+                <p className="text-[10px] font-semibold text-indigo-200 uppercase tracking-[0.2em] mb-2 z-10">Ocupación Almacén</p>
+                <h3 className="text-5xl font-semibold tracking-tighter z-10">{zonesReports.totalOccupancyPercent}%</h3>
+                <div className="mt-4 w-full h-2 bg-white/20 rounded-full overflow-hidden z-10"><div className="h-full bg-white transition-all duration-1000" style={{width: `${zonesReports.totalOccupancyPercent}%`}} /></div>
              </div>
           </div>
 
-          <div className="space-y-8">
-            {/* Fix: Explicitly type the entry to avoid unknown property errors on stats */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+             <div className="bg-white p-8 rounded-[3rem] border-2 border-slate-100 shadow-sm flex flex-col justify-center relative overflow-hidden group">
+                <div className="absolute -right-4 -bottom-4 text-emerald-50 text-8xl font-medium opacity-40 group-hover:opacity-60 transition-opacity">✓</div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.2em] mb-2 z-10">Huecos Verificados</p>
+                <h3 className="text-5xl font-semibold text-emerald-600 tracking-tighter z-10">{zonesReports.verifiedSlotsCount}</h3>
+             </div>
+             <div className="bg-white p-8 rounded-[3rem] border-2 border-slate-100 shadow-sm flex flex-col justify-center relative overflow-hidden group">
+                <div className="absolute -right-4 -bottom-4 text-slate-50 text-8xl font-medium opacity-40 group-hover:opacity-60 transition-opacity">%</div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.2em] mb-2 z-10">Inventariado Total</p>
+                <h3 className="text-5xl font-semibold text-slate-900 tracking-tighter z-10">{zonesReports.verifiedPercent}%</h3>
+             </div>
+          </div>
+
+          <div className="space-y-12">
             {(Object.entries(zonesReports.zones) as [string, ZoneCountStats][]).sort().map(([zone, stats]) => (
-              <div key={zone} className="bg-white p-8 rounded-[3rem] border-2 border-slate-100 shadow-sm relative overflow-hidden group hover:shadow-xl transition-all w-full">
-                <div className="absolute -right-6 -top-6 text-slate-50 text-9xl font-medium opacity-30 group-hover:scale-110 transition-transform">{zone}</div>
+              <div key={zone} className="bg-white p-10 rounded-[4rem] border-2 border-slate-100 shadow-sm relative overflow-hidden group hover:shadow-xl transition-all w-full">
+                <div className="absolute -right-8 -top-8 text-slate-50 text-[12rem] font-black opacity-30 group-hover:scale-110 transition-transform select-none pointer-events-none">{zone}</div>
                 <div className="relative z-10">
-                  <div className="flex items-center gap-3 mb-8">
-                    <div className="w-1.5 h-8 bg-indigo-600 rounded-full"></div>
-                    <h4 className="text-2xl font-semibold text-slate-800 uppercase tracking-tighter">PLANTA {zone}</h4>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-center">
-                    <div className="md:col-span-3 grid grid-cols-3 gap-4">
-                      <div className="bg-blue-50/50 p-6 rounded-[2rem] border border-blue-100 text-center">
-                        <p className="text-[10px] font-semibold text-blue-400 uppercase mb-2 tracking-widest">Grande</p>
-                        <p className="text-3xl font-semibold text-blue-600">{stats.grande}</p>
-                      </div>
-                      <div className="bg-indigo-50/50 p-6 rounded-[2rem] border border-indigo-100 text-center">
-                        <p className="text-[10px] font-semibold text-indigo-400 uppercase mb-2 tracking-widest">Mediano</p>
-                        <p className="text-3xl font-semibold text-indigo-600">{stats.mediano}</p>
-                      </div>
-                      <div className="bg-emerald-50/50 p-6 rounded-[2rem] border border-emerald-100 text-center">
-                        <p className="text-[10px] font-semibold text-emerald-400 uppercase mb-2 tracking-widest">Pequeño</p>
-                        <p className="text-3xl font-semibold text-emerald-600">{stats.pequeno}</p>
+                  <div className="flex items-center justify-between mb-10 border-b border-slate-50 pb-6">
+                    <div className="flex items-center gap-4">
+                      <div className="w-2 h-10 bg-indigo-600 rounded-full"></div>
+                      <div>
+                        <h4 className="text-3xl font-black text-slate-800 uppercase tracking-tighter">ZONA {zone}</h4>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.3em]">Estado de disponibilidad</p>
                       </div>
                     </div>
-                    
-                    <div className="bg-slate-50 p-6 rounded-[2rem] border border-slate-100 flex flex-col items-center justify-center">
-                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Verificados</p>
-                      <p className="text-3xl font-semibold text-slate-800">{stats.totalVerificados}</p>
+                    <div className="text-right">
+                       <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-1">Ocupación Media</p>
+                       <p className="text-4xl font-black text-indigo-600 tracking-tighter">{stats.occupancyPercent}%</p>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <AvailabilityGrid title="Huecos Grandes" stats={stats.grande} color="bg-blue-500" />
+                    <AvailabilityGrid title="Huecos Medianos" stats={stats.mediano} color="bg-indigo-500" />
+                    <AvailabilityGrid title="Huecos Pequeños" stats={stats.pequeno} color="bg-emerald-500" />
+                  </div>
+
+                  <div className="flex items-center justify-between mt-10 pt-6 border-t border-slate-50 bg-slate-50/50 -mx-10 px-10 -mb-10 pb-10">
+                    <div className="flex flex-col">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Verificación</p>
+                      <p className="text-sm font-bold text-slate-800 uppercase">{stats.totalVerificados} huecos inventariados</p>
+                    </div>
+                    <div className={`px-6 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest ${stats.occupancyPercent > 80 ? 'bg-rose-100 text-rose-600' : stats.occupancyPercent > 50 ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                      {stats.occupancyPercent > 80 ? 'Saturación Alta' : stats.occupancyPercent > 50 ? 'Ocupación Media' : 'Alta Disponibilidad'}
                     </div>
                   </div>
                 </div>
