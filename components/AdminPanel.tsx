@@ -99,8 +99,8 @@ const AdminPanel: React.FC = () => {
       if (profilesData) {
         const enriched = profilesData.map(profile => {
           const opLogs = logs.filter(l => 
-            l.operator_email === profile.email || 
-            l.operator_name === profile.full_name
+            l.operator_email?.toLowerCase() === profile.email?.toLowerCase() || 
+            l.operator_name?.toLowerCase() === profile.full_name?.toLowerCase()
           );
 
           let avgTimeString = "---";
@@ -187,7 +187,8 @@ const AdminPanel: React.FC = () => {
   const zonesReports = useMemo(() => {
     const zones: Record<string, ZoneCountStats> = {};
     const validated = allSlotsData.filter(s => s.is_scanned_once);
-    const uniqueZones = Array.from(new Set(allSlotsData.map(s => s.code.substring(0, 3))));
+    // Fixed: Explicitly type uniqueZones as string[] to ensure zoneName is string in forEach.
+    const uniqueZones: string[] = Array.from(new Set(allSlotsData.map(s => s.code.substring(0, 3))));
 
     const getSizeOccupancy = (slots: WarehouseSlot[], size: string): SizeOccupancy => {
       const filtered = slots.filter(s => s.size === size);
@@ -245,10 +246,10 @@ const AdminPanel: React.FC = () => {
 
   const filteredOpLogs = useMemo(() => {
     if (!selectedOperator) return [];
-    const start = `${opDetailDate}T00:00:00`;
-    const end = `${opDetailDate}T23:59:59`;
-    return selectedOperator.logs.filter(l => l.created_at >= start && l.created_at <= end).reverse();
-  }, [selectedOperator, opDetailDate]);
+    // Buscamos el operador actualizado en la lista para tener los logs recién descargados
+    const currentOp = operators.find(o => o.id === selectedOperator.id) || selectedOperator;
+    return currentOp.logs.filter(l => l.created_at.startsWith(opDetailDate)).reverse();
+  }, [operators, selectedOperator, opDetailDate]);
 
   const filteredMainLogs = useMemo(() => {
     if (!cartSearchFilter) return allLogs;
@@ -377,7 +378,13 @@ const AdminPanel: React.FC = () => {
                    <input 
                     type="date" 
                     value={opDetailDate} 
-                    onChange={e => setOpDetailDate(e.target.value)}
+                    onChange={e => {
+                      const d = e.target.value;
+                      setOpDetailDate(d);
+                      // Sincronizamos con el rango global para forzar re-fetch de datos de ese día
+                      setDateFrom(d);
+                      setDateTo(d);
+                    }}
                     className="bg-transparent p-2 font-medium text-xs outline-none"
                    />
                 </div>
