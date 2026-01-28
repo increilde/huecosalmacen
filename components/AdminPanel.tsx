@@ -22,15 +22,17 @@ const AdminPanel: React.FC = () => {
   const [activeSubTab, setActiveSubTab] = useState<AdminTab>('movements');
   const [loading, setLoading] = useState(true);
   
-  const [dateFrom, setDateFrom] = useState(new Date().toISOString().split('T')[0]);
-  const [dateTo, setDateTo] = useState(new Date().toISOString().split('T')[0]);
+  const todayLocal = new Date().toLocaleDateString('en-CA');
+  const [dateFrom, setDateFrom] = useState(todayLocal);
+  const [dateTo, setDateTo] = useState(todayLocal);
+  const [selectedOperator, setSelectedOperator] = useState<string | null>(null);
+  const [cartSearch, setCartSearch] = useState('');
 
   const [allLogs, setAllLogs] = useState<MovementLog[]>([]);
   const [truckers, setTruckers] = useState<Trucker[]>([]);
   const [showTruckerModal, setShowTruckerModal] = useState(false);
   const [truckerForm, setTruckerForm] = useState({ label: '' });
 
-  // Stats para Sectores
   const [stats, setStats] = useState({
     total: 0,
     occupied: 0,
@@ -44,7 +46,7 @@ const AdminPanel: React.FC = () => {
 
   const fetchData = async () => {
     setLoading(true);
-    if (activeSubTab === 'movements') {
+    if (activeSubTab === 'movements' || activeSubTab === 'reports') {
       const { data } = await supabase
         .from('movement_logs')
         .select('*')
@@ -69,6 +71,37 @@ const AdminPanel: React.FC = () => {
     setLoading(false);
   };
 
+  const getOperatorStats = () => {
+    const map = new Map<string, { name: string, count: number, logs: MovementLog[] }>();
+    allLogs.forEach(log => {
+      const key = log.operator_email || log.operator_name;
+      if (!map.has(key)) map.set(key, { name: log.operator_name, count: 0, logs: [] });
+      const entry = map.get(key)!;
+      entry.count++;
+      entry.logs.push(log);
+    });
+    return Array.from(map.entries());
+  };
+
+  const calculateAvgTime = (logs: MovementLog[]) => {
+    if (logs.length < 2) return '--';
+    const sorted = [...logs].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    let totalDiff = 0;
+    for (let i = 1; i < sorted.length; i++) {
+      totalDiff += new Date(sorted[i].created_at).getTime() - new Date(sorted[i-1].created_at).getTime();
+    }
+    const avgMs = totalDiff / (sorted.length - 1);
+    const mins = Math.floor(avgMs / 60000);
+    const secs = Math.floor((avgMs % 60000) / 1000);
+    return `${mins}m ${secs}s`;
+  };
+
+  const filteredLogs = allLogs.filter(l => {
+    const matchesOperator = selectedOperator ? (l.operator_email || l.operator_name) === selectedOperator : true;
+    const matchesCart = cartSearch ? l.cart_id.toUpperCase().includes(cartSearch.toUpperCase()) : true;
+    return matchesOperator && matchesCart;
+  });
+
   const handleCreateTrucker = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!truckerForm.label) return;
@@ -85,9 +118,8 @@ const AdminPanel: React.FC = () => {
 
   return (
     <div className="space-y-8 animate-fade-in pb-20">
-      {/* Sub-navegación estilo imagen */}
       <div className="flex justify-center">
-        <nav className="bg-slate-950 p-2 rounded-[2.5rem] shadow-2xl flex items-center gap-1 md:gap-2 border border-slate-800">
+        <nav className="bg-slate-950 p-2 rounded-[2.5rem] shadow-2xl flex items-center gap-1 md:gap-2 border border-slate-800 overflow-x-auto no-scrollbar max-w-full">
           {[
             { id: 'movements', label: 'HISTORIAL', icon: '📋' },
             { id: 'operators', label: 'OPERARIOS', icon: '👥' },
@@ -98,7 +130,7 @@ const AdminPanel: React.FC = () => {
             <button
               key={tab.id}
               onClick={() => setActiveSubTab(tab.id as AdminTab)}
-              className={`px-4 md:px-8 py-4 rounded-[2rem] flex flex-col items-center gap-1.5 transition-all min-w-[80px] md:min-w-[120px] ${
+              className={`px-4 md:px-8 py-4 rounded-[2rem] flex flex-col items-center gap-1.5 transition-all min-w-[90px] md:min-w-[120px] ${
                 activeSubTab === tab.id 
                 ? 'bg-white text-slate-900 shadow-xl' 
                 : 'text-slate-500 hover:text-slate-300'
@@ -111,32 +143,79 @@ const AdminPanel: React.FC = () => {
         </nav>
       </div>
 
-      {/* Contenido Dinámico */}
-      <div className="bg-white p-6 md:p-10 rounded-[3.5rem] border border-slate-100 shadow-sm min-h-[500px]">
+      <div className="bg-white p-4 md:p-10 rounded-[3rem] border border-slate-100 shadow-sm min-h-[500px]">
         {activeSubTab === 'movements' && (
-          <div className="space-y-6">
-            <div className="flex flex-col md:flex-row gap-4 items-end">
-               <div className="flex-1 space-y-2">
-                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2">Rango de fechas</label>
-                 <div className="flex gap-2">
-                    <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="bg-slate-50 p-4 rounded-2xl text-xs font-bold outline-none flex-1 border border-slate-100" />
-                    <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="bg-slate-50 p-4 rounded-2xl text-xs font-bold outline-none flex-1 border border-slate-100" />
+          <div className="space-y-8">
+            <div className="flex flex-col lg:flex-row gap-4 items-end justify-between">
+               <div className="w-full flex flex-col md:flex-row gap-4 flex-wrap">
+                 <div className="space-y-2">
+                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2">Rango Histórico</label>
+                   <div className="flex gap-2">
+                      <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="bg-slate-50 p-4 rounded-2xl text-xs font-bold outline-none flex-1 border border-slate-100" />
+                      <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="bg-slate-50 p-4 rounded-2xl text-xs font-bold outline-none flex-1 border border-slate-100" />
+                   </div>
+                 </div>
+                 <div className="space-y-2 min-w-[180px]">
+                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2">Operario</label>
+                   <select 
+                    value={selectedOperator || ''} 
+                    onChange={e => setSelectedOperator(e.target.value || null)}
+                    className="w-full bg-slate-50 p-4 rounded-2xl text-xs font-bold outline-none border border-slate-100 uppercase"
+                   >
+                     <option value="">TODOS LOS EMPLEADOS</option>
+                     {getOperatorStats().map(([key, op]) => (
+                       <option key={key} value={key}>{op.name}</option>
+                     ))}
+                   </select>
+                 </div>
+                 <div className="space-y-2 flex-1 min-w-[180px]">
+                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2">Buscar Carro</label>
+                   <input 
+                    type="text" 
+                    placeholder="ID CARRO..." 
+                    value={cartSearch} 
+                    onChange={e => setCartSearch(e.target.value.toUpperCase())}
+                    className="w-full bg-slate-50 p-4 rounded-2xl text-xs font-bold outline-none border border-slate-100 uppercase"
+                   />
                  </div>
                </div>
+               {(selectedOperator || cartSearch) && (
+                 <button onClick={() => { setSelectedOperator(null); setCartSearch(''); }} className="text-[10px] font-black text-rose-500 uppercase tracking-widest bg-rose-50 px-4 py-2 rounded-xl border border-rose-100 mb-1 whitespace-nowrap">Limpiar Filtros ✕</button>
+               )}
             </div>
-            <div className="overflow-x-auto rounded-3xl border border-slate-50">
+
+            {/* Tarjetas de Operadores */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {getOperatorStats().map(([key, op]) => (
+                <button 
+                  key={key} 
+                  onClick={() => setSelectedOperator(key)}
+                  className={`p-5 rounded-[2rem] border-2 transition-all text-left flex flex-col justify-between h-28 ${selectedOperator === key ? 'bg-indigo-600 border-indigo-600 shadow-lg shadow-indigo-100 text-white' : 'bg-slate-50 border-slate-50 hover:border-indigo-200'}`}
+                >
+                  <div className="flex justify-between items-start">
+                    <span className="text-xl">👷</span>
+                    <span className={`text-[12px] font-black ${selectedOperator === key ? 'text-indigo-100' : 'text-indigo-500'}`}>{op.count}</span>
+                  </div>
+                  <p className={`text-[10px] font-black uppercase tracking-tight leading-tight line-clamp-2 ${selectedOperator === key ? 'text-white' : 'text-slate-800'}`}>{op.name}</p>
+                </button>
+              ))}
+            </div>
+
+            <div className="overflow-x-auto rounded-[2rem] border border-slate-50 shadow-inner">
               <table className="w-full text-left text-[11px]">
-                <thead className="bg-slate-900 text-white font-black uppercase tracking-widest text-[9px]">
+                <thead className="bg-slate-900 text-white font-black uppercase tracking-widest text-[8px]">
                   <tr>
-                    <th className="px-6 py-5">OPERARIO</th>
+                    <th className="px-6 py-5">TRABAJADOR</th>
                     <th className="px-6 py-5">CARRO</th>
                     <th className="px-6 py-5">HUECO</th>
-                    <th className="px-6 py-5">CARGA</th>
-                    <th className="px-6 py-5">FECHA</th>
+                    <th className="px-6 py-5">ESTADO</th>
+                    <th className="px-6 py-5">HORA</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {allLogs.map(log => (
+                  {filteredLogs.length === 0 ? (
+                    <tr><td colSpan={5} className="py-20 text-center text-slate-300 font-black uppercase text-[10px] tracking-widest">No hay movimientos que coincidan</td></tr>
+                  ) : filteredLogs.map(log => (
                     <tr key={log.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-6 py-4 font-bold text-slate-800 uppercase">{log.operator_name}</td>
                       <td className="px-6 py-4 font-black text-indigo-600">{log.cart_id}</td>
@@ -146,7 +225,7 @@ const AdminPanel: React.FC = () => {
                           {log.new_quantity}%
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-slate-400 font-bold uppercase">{new Date(log.created_at).toLocaleString([], {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'})}</td>
+                      <td className="px-6 py-4 text-slate-400 font-bold">{new Date(log.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -163,7 +242,7 @@ const AdminPanel: React.FC = () => {
                <h3 className="text-lg font-black text-slate-800 uppercase tracking-tighter">Transportistas Habituales</h3>
                <button onClick={() => setShowTruckerModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-100">Nuevo Camión</button>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                {truckers.map(t => (
                  <div key={t.id} className="p-6 bg-slate-50 rounded-[2.5rem] border border-slate-100 flex items-center justify-between group">
                     <div>
@@ -215,10 +294,42 @@ const AdminPanel: React.FC = () => {
         )}
 
         {activeSubTab === 'reports' && (
-          <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
-             <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center text-3xl">📈</div>
-             <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Generador de Informes</h3>
-             <p className="text-slate-400 text-xs font-medium max-w-xs">Los informes detallados por PDF y exportación Excel estarán disponibles próximamente.</p>
+          <div className="space-y-8 animate-fade-in">
+             <div className="flex flex-col md:flex-row gap-4 items-end mb-8">
+               <div className="flex-1 space-y-2">
+                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2">Periodo Informe</label>
+                 <div className="flex gap-2">
+                    <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="bg-slate-50 p-4 rounded-2xl text-xs font-bold outline-none flex-1 border border-slate-100" />
+                    <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="bg-slate-50 p-4 rounded-2xl text-xs font-bold outline-none flex-1 border border-slate-100" />
+                 </div>
+               </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {getOperatorStats().map(([key, op]) => (
+                <div key={key} className="p-8 bg-slate-50 rounded-[2.5rem] border border-slate-100 flex items-center justify-between group">
+                  <div className="flex items-center gap-4">
+                    <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center text-xl shadow-sm">👷</div>
+                    <div>
+                      <p className="font-black text-slate-800 uppercase text-xs tracking-tight">{op.name}</p>
+                      <p className="text-[8px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1">{op.count} CAPTURAS REALIZADAS</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-lg font-black text-indigo-600 leading-none">{calculateAvgTime(op.logs)}</p>
+                    <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mt-1">Tiempo Medio</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {getOperatorStats().length === 0 && (
+              <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
+                 <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center text-3xl">📈</div>
+                 <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Sin datos para informe</h3>
+                 <p className="text-slate-400 text-xs font-medium max-w-xs uppercase tracking-widest leading-relaxed">No se han encontrado capturas en el rango seleccionado para calcular rendimientos.</p>
+              </div>
+            )}
           </div>
         )}
       </div>
