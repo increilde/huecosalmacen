@@ -2,7 +2,8 @@
 export enum UserRole {
   ADMIN = 'admin',
   OPERATOR = 'operator',
-  VIEWER = 'viewer'
+  VIEWER = 'viewer',
+  EXPEDITION = 'expedition'
 }
 
 export interface UserProfile {
@@ -11,6 +12,19 @@ export interface UserProfile {
   full_name: string;
   role: UserRole;
   created_at: string;
+}
+
+export interface Trucker {
+  id: string;
+  label: string; // Ejemplo: "115 MXO21"
+  created_at: string;
+}
+
+export interface DailyNote {
+  id: string;
+  note_date: string;
+  content: string;
+  updated_at: string;
 }
 
 export interface WarehouseSlot {
@@ -22,4 +36,15 @@ export interface WarehouseSlot {
   is_scanned_once: boolean;
   size: string;
   last_updated: string;
+}
+
+export interface ExpeditionLog {
+  id: string;
+  dock_id: string;
+  side: 'left' | 'right' | 'single';
+  truck_id: string; // Usaremos este campo para el identificador combinado (ej: 115 MXO21)
+  status: 'loading' | 'completed';
+  operator_name: string;
+  created_at: string;
+  finished_at?: string;
 }

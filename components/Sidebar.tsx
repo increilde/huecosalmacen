@@ -4,18 +4,22 @@ import { UserRole } from '../types';
 
 interface SidebarProps {
   activeTab: string;
-  setActiveTab: (tab: 'dashboard' | 'slots' | 'users' | 'admin') => void;
+  setActiveTab: (tab: 'dashboard' | 'slots' | 'users' | 'admin' | 'expedition') => void;
   userRole: UserRole;
   onLogout: () => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole, onLogout }) => {
   const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-    { id: 'slots', label: 'Huecos Almacén', icon: '📦' },
+    ...(userRole === UserRole.ADMIN || userRole === UserRole.OPERATOR ? [
+      { id: 'dashboard', label: 'Dashboard Captura', icon: '📊' },
+      { id: 'slots', label: 'Huecos Almacén', icon: '📦' }
+    ] : []),
+    ...(userRole === UserRole.ADMIN || userRole === UserRole.EXPEDITION ? [
+      { id: 'expedition', label: 'Control Muelles', icon: '🚛' }
+    ] : []),
     ...(userRole === UserRole.ADMIN ? [
-      { id: 'admin', label: 'Administración', icon: '⚙️' },
-      { id: 'users', label: 'Usuarios', icon: '👥' }
+      { id: 'admin', label: 'Administración', icon: '⚙️' }
     ] : []),
   ];
 

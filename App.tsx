@@ -6,10 +6,11 @@ import Dashboard from './components/Dashboard';
 import SlotGrid from './components/SlotGrid';
 import UserManagement from './components/UserManagement';
 import AdminPanel from './components/AdminPanel';
+import ExpeditionPanel from './components/ExpeditionPanel';
 import { supabase } from './supabaseClient';
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'slots' | 'users' | 'admin'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'slots' | 'users' | 'admin' | 'expedition'>('dashboard');
   const [dbStatus, setDbStatus] = useState<{connected: boolean | null, error: string | null}>({
     connected: null,
     error: null
@@ -23,7 +24,12 @@ const App: React.FC = () => {
   useEffect(() => {
     const savedUser = localStorage.getItem('wh_user');
     if (savedUser) {
-      setUser(JSON.parse(savedUser));
+      const parsed = JSON.parse(savedUser);
+      setUser(parsed);
+      // Si el usuario es perfil expedición, enviarlo directamente allí si estaba en dashboard
+      if (parsed.role === UserRole.EXPEDITION) {
+        setActiveTab('expedition');
+      }
     }
 
     let isMounted = true;
@@ -70,6 +76,12 @@ const App: React.FC = () => {
         };
         setUser(profile);
         localStorage.setItem('wh_user', JSON.stringify(profile));
+        
+        if (profile.role === UserRole.EXPEDITION) {
+          setActiveTab('expedition');
+        } else {
+          setActiveTab('dashboard');
+        }
       }
     } catch (err) {
       setLoginError('Error de conexión con la base de datos');
@@ -133,7 +145,7 @@ const App: React.FC = () => {
       <div className="hidden md:block">
         <Sidebar 
           activeTab={activeTab} 
-          setActiveTab={setActiveTab} 
+          setActiveTab={setActiveTab as any} 
           userRole={user.role} 
           onLogout={logout}
         />
@@ -154,23 +166,34 @@ const App: React.FC = () => {
           </div>
         </header>
 
-        <div className="animate-fade-in max-w-4xl mx-auto">
+        <div className="animate-fade-in max-w-5xl mx-auto">
           {activeTab === 'dashboard' && <Dashboard user={user} />}
           {activeTab === 'slots' && <SlotGrid userRole={user.role} />}
           {activeTab === 'users' && <UserManagement />}
           {activeTab === 'admin' && <AdminPanel />}
+          {activeTab === 'expedition' && <ExpeditionPanel user={user} />}
         </div>
       </main>
 
       <nav className="md:hidden fixed bottom-4 left-4 right-4 bg-slate-900/95 backdrop-blur-md rounded-3xl shadow-2xl flex items-center justify-around p-3 z-50 border border-slate-800">
-        <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center gap-1 ${activeTab === 'dashboard' ? 'text-indigo-400' : 'text-slate-500'}`}>
-          <span className="text-xl">📊</span>
-          <span className="text-[10px] font-bold uppercase tracking-tighter">Captura</span>
-        </button>
-        <button onClick={() => setActiveTab('slots')} className={`flex flex-col items-center gap-1 ${activeTab === 'slots' ? 'text-indigo-400' : 'text-slate-500'}`}>
-          <span className="text-xl">📦</span>
-          <span className="text-[10px] font-bold uppercase tracking-tighter">Mapa</span>
-        </button>
+        {(user.role === UserRole.ADMIN || user.role === UserRole.OPERATOR) && (
+          <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center gap-1 ${activeTab === 'dashboard' ? 'text-indigo-400' : 'text-slate-500'}`}>
+            <span className="text-xl">📊</span>
+            <span className="text-[10px] font-bold uppercase tracking-tighter">Captura</span>
+          </button>
+        )}
+        {(user.role === UserRole.ADMIN || user.role === UserRole.OPERATOR) && (
+          <button onClick={() => setActiveTab('slots')} className={`flex flex-col items-center gap-1 ${activeTab === 'slots' ? 'text-indigo-400' : 'text-slate-500'}`}>
+            <span className="text-xl">📦</span>
+            <span className="text-[10px] font-bold uppercase tracking-tighter">Mapa</span>
+          </button>
+        )}
+        {(user.role === UserRole.ADMIN || user.role === UserRole.EXPEDITION) && (
+          <button onClick={() => setActiveTab('expedition')} className={`flex flex-col items-center gap-1 ${activeTab === 'expedition' ? 'text-indigo-400' : 'text-slate-500'}`}>
+            <span className="text-xl">🚛</span>
+            <span className="text-[10px] font-bold uppercase tracking-tighter">Muelles</span>
+          </button>
+        )}
         {user.role === UserRole.ADMIN && (
           <button onClick={() => setActiveTab('admin')} className={`flex flex-col items-center gap-1 ${activeTab === 'admin' ? 'text-indigo-400' : 'text-slate-500'}`}>
             <span className="text-xl">⚙️</span>

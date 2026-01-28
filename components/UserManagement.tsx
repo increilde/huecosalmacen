@@ -31,7 +31,7 @@ const UserManagement: React.FC = () => {
     setLoading(true);
     try {
       const { error } = await supabase.from('profiles').insert([{
-        email: form.username.toLowerCase().trim(), // Mapeamos username al campo email de tu tabla
+        email: form.username.toLowerCase().trim(),
         password_plain: form.password_plain.trim(),
         full_name: form.full_name.trim(),
         role: form.role
@@ -53,6 +53,15 @@ const UserManagement: React.FC = () => {
     if (!confirm("¿Eliminar este acceso?")) return;
     const { error } = await supabase.from('profiles').delete().eq('id', id);
     if (!error) fetchUsers();
+  };
+
+  const getRoleBadgeColor = (role: string) => {
+    switch (role) {
+      case UserRole.ADMIN: return 'bg-rose-100 text-rose-600';
+      case UserRole.EXPEDITION: return 'bg-indigo-100 text-indigo-600';
+      case UserRole.OPERATOR: return 'bg-slate-100 text-slate-600';
+      default: return 'bg-slate-50 text-slate-400';
+    }
   };
 
   return (
@@ -81,7 +90,7 @@ const UserManagement: React.FC = () => {
                 <h4 className="font-black text-slate-800 text-sm leading-none mb-1">{u.full_name}</h4>
                 <div className="flex items-center gap-2">
                   <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">@{u.email}</span>
-                  <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase ${u.role === 'admin' ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-600'}`}>
+                  <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase ${getRoleBadgeColor(u.role)}`}>
                     {u.role}
                   </span>
                 </div>
@@ -113,7 +122,7 @@ const UserManagement: React.FC = () => {
                 onChange={e => setForm({...form, full_name: e.target.value})}
               />
               <input 
-                placeholder="USUARIO (EL QUE USARÁ PARA LOGUEAR)" 
+                placeholder="USUARIO" 
                 className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-xs outline-none focus:border-indigo-500 transition-all uppercase"
                 value={form.username}
                 onChange={e => setForm({...form, username: e.target.value})}
@@ -125,14 +134,18 @@ const UserManagement: React.FC = () => {
                 value={form.password_plain}
                 onChange={e => setForm({...form, password_plain: e.target.value})}
               />
-              <select 
-                className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-xs outline-none focus:border-indigo-500 transition-all uppercase"
-                value={form.role}
-                onChange={e => setForm({...form, role: e.target.value as UserRole})}
-              >
-                <option value={UserRole.OPERATOR}>OPERARIO</option>
-                <option value={UserRole.ADMIN}>ADMINISTRADOR</option>
-              </select>
+              <div className="space-y-1">
+                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2">Asignar Rol</label>
+                <select 
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-xs outline-none focus:border-indigo-500 transition-all uppercase"
+                  value={form.role}
+                  onChange={e => setForm({...form, role: e.target.value as UserRole})}
+                >
+                  <option value={UserRole.OPERATOR}>OPERARIO (CAPTURAS)</option>
+                  <option value={UserRole.EXPEDITION}>EXPEDICIÓN (MUELLES)</option>
+                  <option value={UserRole.ADMIN}>ADMINISTRADOR (TODO)</option>
+                </select>
+              </div>
             </div>
 
             <div className="pt-4 space-y-3">
