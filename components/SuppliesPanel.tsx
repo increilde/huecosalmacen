@@ -322,39 +322,43 @@ const SuppliesPanel: React.FC = () => {
                 <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">No se encontraron movimientos en este periodo</p>
               </div>
             ) : (
-              Object.entries(groupedLogs).map(([supplyId, { supply, logs }]) => (
-                <div key={supplyId} className="bg-white rounded-[3rem] border-2 border-slate-100 overflow-hidden shadow-sm">
-                  <div className="bg-slate-50 px-8 py-5 border-b-2 border-slate-100 flex justify-between items-center">
-                    <div>
-                      <h3 className="text-sm font-black text-slate-800 uppercase tracking-tighter">{supply.name}</h3>
-                      <span className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em]">{supply.category}</span>
-                    </div>
-                    <div className="text-right">
-                       <p className="text-[8px] font-bold text-slate-400 uppercase">Stock actual</p>
-                       <p className="text-sm font-black text-indigo-600">{supply.quantity} {supply.unit}</p>
-                    </div>
-                  </div>
-                  <div className="p-4 space-y-2">
-                    {logs.map(log => (
-                      <div key={log.id} className="flex flex-col md:flex-row md:items-center justify-between p-4 rounded-2xl hover:bg-slate-50 transition-colors gap-3">
-                        <div className="flex items-center gap-4">
-                           <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black ${log.change_amount > 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
-                             {log.change_amount > 0 ? '+' : ''}{log.change_amount}
-                           </div>
-                           <div>
-                              <p className="text-[9px] font-black text-slate-800 uppercase leading-none mb-1">{log.comment || 'SIN COMENTARIO'}</p>
-                              <p className="text-[7px] font-bold text-slate-400 uppercase tracking-widest">{new Date(log.created_at).toLocaleDateString()} @ {new Date(log.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</p>
-                           </div>
-                        </div>
-                        <div className="text-left md:text-right">
-                           <p className="text-[8px] font-black text-slate-400 uppercase">Realizado por</p>
-                           <p className="text-[9px] font-bold text-slate-600 uppercase">{log.operator_name}</p>
-                        </div>
+              // Fixed: Explicitly casting entry to the correct type to avoid TS errors where entry is inferred as {}
+              Object.values(groupedLogs).map((entry) => {
+                const { supply, logs } = entry as { supply: WarehouseSupply; logs: WarehouseSupplyLog[] };
+                return (
+                  <div key={supply.id} className="bg-white rounded-[3rem] border-2 border-slate-100 overflow-hidden shadow-sm">
+                    <div className="bg-slate-50 px-8 py-5 border-b-2 border-slate-100 flex justify-between items-center">
+                      <div>
+                        <h3 className="text-sm font-black text-slate-800 uppercase tracking-tighter">{supply.name}</h3>
+                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em]">{supply.category}</span>
                       </div>
-                    ))}
+                      <div className="text-right">
+                         <p className="text-[8px] font-bold text-slate-400 uppercase">Stock actual</p>
+                         <p className="text-sm font-black text-indigo-600">{supply.quantity} {supply.unit}</p>
+                      </div>
+                    </div>
+                    <div className="p-4 space-y-2">
+                      {logs.map(log => (
+                        <div key={log.id} className="flex flex-col md:flex-row md:items-center justify-between p-4 rounded-2xl hover:bg-slate-50 transition-colors gap-3">
+                          <div className="flex items-center gap-4">
+                             <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black ${log.change_amount > 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
+                               {log.change_amount > 0 ? '+' : ''}{log.change_amount}
+                             </div>
+                             <div>
+                                <p className="text-[9px] font-black text-slate-800 uppercase leading-none mb-1">{log.comment || 'SIN COMENTARIO'}</p>
+                                <p className="text-[7px] font-bold text-slate-400 uppercase tracking-widest">{new Date(log.created_at).toLocaleDateString()} @ {new Date(log.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</p>
+                             </div>
+                          </div>
+                          <div className="text-left md:text-right">
+                             <p className="text-[8px] font-black text-slate-400 uppercase">Realizado por</p>
+                             <p className="text-[9px] font-bold text-slate-600 uppercase">{log.operator_name}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

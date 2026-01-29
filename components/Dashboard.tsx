@@ -14,6 +14,7 @@ interface MovementLog {
   slot_code: string;
   new_quantity: number;
   created_at: string;
+  operator_name?: string;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ user }) => {
@@ -41,6 +42,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [finderStreets, setFinderStreets] = useState<'low' | 'high' | null>(null);
   const [availableSlots, setAvailableSlots] = useState<WarehouseSlot[]>([]);
   const [loadingFinder, setLoadingFinder] = useState(false);
+
+  // Estados para Búsqueda de Carro
+  const [showCartFinder, setShowCartFinder] = useState(false);
+  const [searchCartId, setSearchCartId] = useState('');
+  const [cartHistory, setCartHistory] = useState<MovementLog[]>([]);
+  const [loadingCartHistory, setLoadingCartHistory] = useState(false);
 
   const slotInputRef = useRef<HTMLInputElement>(null);
   const cartInputRef = useRef<HTMLInputElement>(null);
@@ -95,6 +102,26 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       console.error("Error fetching logs:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchCartHistory = async () => {
+    if (!searchCartId.trim()) return;
+    setLoadingCartHistory(true);
+    try {
+      const { data, error } = await supabase
+        .from('movement_logs')
+        .select('id, cart_id, slot_code, new_quantity, created_at, operator_name')
+        .eq('cart_id', searchCartId.toUpperCase().trim())
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (error) throw error;
+      setCartHistory(data || []);
+    } catch (err) {
+      console.error("Error fetching cart history:", err);
+    } finally {
+      setLoadingCartHistory(false);
     }
   };
 
@@ -232,9 +259,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       <div className="bg-white p-10 rounded-[2.5rem] shadow-xl border border-slate-100 animate-fade-in relative overflow-hidden">
         <div className="absolute -right-8 -top-8 text-slate-50 text-9xl font-medium opacity-10 pointer-events-none">📦</div>
         <div className="relative z-10">
-          <div className="flex justify-between items-center mb-10">
+          <div className="flex flex-col gap-3 mb-10">
             <h2 className="text-xl font-semibold text-slate-800 tracking-tight uppercase">Entrada Datos</h2>
-            <button onClick={() => { setShowSearchFinder(true); setOrigin('finder'); }} className="bg-indigo-600 text-white px-5 py-3 rounded-2xl text-[10px] font-semibold uppercase tracking-widest shadow-lg shadow-indigo-100 active:scale-95 transition-all">Buscar Hueco</button>
+            <div className="flex gap-2">
+              <button onClick={() => { setShowSearchFinder(true); setOrigin('finder'); }} className="flex-1 bg-indigo-600 text-white px-5 py-3 rounded-2xl text-[10px] font-semibold uppercase tracking-widest shadow-lg shadow-indigo-100 active:scale-95 transition-all">Buscar Hueco</button>
+              <button onClick={() => { setShowCartFinder(true); setCartHistory([]); setSearchCartId(''); }} className="flex-1 bg-slate-900 text-white px-5 py-3 rounded-2xl text-[10px] font-semibold uppercase tracking-widest shadow-lg shadow-slate-200 active:scale-95 transition-all">Buscar Carro</button>
+            </div>
           </div>
 
           {message && (
@@ -284,11 +314,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       </div>
 
       {showHistoryModal && (
-        <div className="fixed inset-0 z-[200] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[200] bg-slate-900/95 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-sm rounded-[3rem] p-8 shadow-2xl flex flex-col max-h-[85vh] animate-fade-in relative overflow-hidden">
              <div className="absolute -right-8 -top-8 text-slate-50 text-9xl font-medium opacity-10 pointer-events-none">🕒</div>
-             <div className="relative z-10 flex flex-col h-full">
-                <div className="text-center mb-6">
+             <div className="relative z-10 flex flex-col h-full min-h-0">
+                <div className="text-center mb-6 shrink-0">
                   <h3 className="text-xl font-semibold text-slate-800 uppercase tracking-tighter">Mis Movimientos</h3>
                   <div className="mt-3 inline-flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-xl border border-slate-100">
                     <span className="text-[9px] font-bold text-slate-400 uppercase">Fecha:</span>
@@ -301,7 +331,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto no-scrollbar space-y-3 pr-1">
+                <div className="flex-1 overflow-y-auto space-y-3 pr-1 min-h-0">
                   {loading ? (
                     <div className="py-20 text-center animate-pulse">
                       <p className="text-[10px] font-semibold text-slate-300 uppercase tracking-widest">Cargando...</p>
@@ -331,9 +361,73 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
                 <button 
                   onClick={() => setShowHistoryModal(false)}
-                  className="mt-8 w-full bg-slate-900 text-white py-4 rounded-2xl font-bold uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all"
+                  className="mt-8 shrink-0 w-full bg-slate-900 text-white py-4 rounded-2xl font-bold uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all"
                 >
                   Cerrar Historial
+                </button>
+             </div>
+          </div>
+        </div>
+      )}
+
+      {showCartFinder && (
+        <div className="fixed inset-0 z-[200] bg-slate-900/95 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-[3rem] p-8 shadow-2xl flex flex-col max-h-[85vh] animate-fade-in relative overflow-hidden">
+             <div className="absolute -right-8 -top-8 text-slate-50 text-9xl font-medium opacity-10 pointer-events-none">🚛</div>
+             <div className="relative z-10 flex flex-col h-full min-h-0">
+                <div className="text-center mb-6 shrink-0">
+                  <h3 className="text-xl font-semibold text-slate-800 uppercase tracking-tighter">Rastreador de Carro</h3>
+                  <div className="mt-4 flex gap-2">
+                    <input 
+                      autoFocus
+                      type="text" 
+                      placeholder="IDENTIFICADOR..." 
+                      className="flex-1 bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4 font-bold text-sm text-center uppercase outline-none focus:border-slate-900 transition-all"
+                      value={searchCartId}
+                      onChange={e => setSearchCartId(e.target.value.toUpperCase())}
+                      onKeyDown={e => (e.key === 'Enter') && fetchCartHistory()}
+                    />
+                    <button onClick={fetchCartHistory} className="bg-slate-900 text-white w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg active:scale-90 transition-all">🔍</button>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto space-y-3 pr-1 min-h-0">
+                  {loadingCartHistory ? (
+                    <div className="py-20 text-center animate-pulse">
+                      <p className="text-[10px] font-semibold text-slate-300 uppercase tracking-widest">Buscando carro...</p>
+                    </div>
+                  ) : cartHistory.length === 0 ? (
+                    <div className="py-20 text-center">
+                      <p className="text-[10px] font-semibold text-slate-300 uppercase tracking-widest">Introduce ID para buscar</p>
+                    </div>
+                  ) : cartHistory.map(log => (
+                    <div key={log.id} className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex items-center justify-between relative overflow-hidden">
+                      <div className="absolute top-0 left-0 bottom-0 w-1 bg-indigo-500"></div>
+                      <div className="flex flex-col flex-1 pl-2">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest">
+                            {new Date(log.created_at).toLocaleDateString()} @ {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          <span className="text-[7px] font-black text-indigo-500 uppercase">{log.operator_name || 'Personal'}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-800 uppercase tracking-tight">UBICADO EN: {log.slot_code}</span>
+                        </div>
+                      </div>
+                      <div className="text-right ml-2 shrink-0">
+                        <span className={`text-[9px] font-black ${log.new_quantity === 100 ? 'text-rose-500' : log.new_quantity === 50 ? 'text-amber-500' : 'text-emerald-500'}`}>
+                          {log.new_quantity}%
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <button 
+                  onClick={() => setShowCartFinder(false)}
+                  className="mt-8 shrink-0 w-full bg-slate-900 text-white py-4 rounded-2xl font-bold uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all"
+                >
+                  Cerrar Buscador
                 </button>
              </div>
           </div>

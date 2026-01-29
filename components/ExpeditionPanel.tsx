@@ -356,15 +356,15 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
            <div className="bg-white w-full max-w-lg rounded-[3.5rem] p-6 md:p-10 shadow-2xl animate-fade-in relative overflow-hidden flex flex-col max-h-[90vh]">
               <div className="absolute -right-8 -top-8 text-slate-50 text-9xl font-bold opacity-30 pointer-events-none">🚛</div>
               
-              <div className="relative z-10 flex flex-col h-full">
-                <div className="text-center mb-5">
+              <div className="relative z-10 flex flex-col h-full min-h-0">
+                <div className="text-center mb-5 shrink-0">
                   <h3 className="text-lg md:text-xl font-black text-slate-800 uppercase tracking-tighter">
                     {editingLogId ? 'Actualizar' : 'Asignar Camión'}
                   </h3>
                   <p className="text-[9px] font-black text-indigo-400 tracking-widest mt-1 uppercase">{assigningData.dock}</p>
                 </div>
                 
-                <div className="space-y-5 flex-1 overflow-y-auto no-scrollbar pr-1">
+                <div className="space-y-5 flex-1 overflow-y-auto pr-1 min-h-0">
                   <div className="space-y-2">
                     <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2 block">Habituales</label>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -415,7 +415,7 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
                   </div>
                 </div>
 
-                <div className="mt-6 space-y-2">
+                <div className="mt-6 space-y-2 shrink-0 pb-2">
                   <button 
                     onClick={() => handleAssign()}
                     disabled={loading || !truckId} 
