@@ -40,6 +40,8 @@ const AdminPanel: React.FC = () => {
     pending: 0
   });
 
+  const [warehouseBreakdown, setWarehouseBreakdown] = useState<any[]>([]);
+
   useEffect(() => {
     fetchData();
   }, [dateFrom, dateTo, activeSubTab]);
@@ -47,13 +49,21 @@ const AdminPanel: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     if (activeSubTab === 'movements' || activeSubTab === 'reports') {
-      const { data } = await supabase
+      const { data: logs } = await supabase
         .from('movement_logs')
         .select('*')
         .gte('created_at', `${dateFrom}T00:00:00`)
         .lte('created_at', `${dateTo}T23:59:59`)
         .order('created_at', { ascending: false });
-      setAllLogs(data || []);
+      setAllLogs(logs || []);
+
+      if (activeSubTab === 'reports') {
+        const { data: slots } = await supabase.from('warehouse_slots').select('*');
+        if (slots) {
+          const breakdown = processWarehouseReport(slots);
+          setWarehouseBreakdown(breakdown);
+        }
+      }
     } else if (activeSubTab === 'truckers') {
       const { data } = await supabase.from('truckers').select('*').order('full_name');
       setTruckers(data?.map((t: any) => ({ id: t.id, label: t.full_name, created_at: t.created_at })) || []);
@@ -69,6 +79,35 @@ const AdminPanel: React.FC = () => {
       }
     }
     setLoading(false);
+  };
+
+  const processWarehouseReport = (slots: WarehouseSlot[]) => {
+    const plants = ['U01', 'U02'];
+    const sizes = ['Grande', 'Mediano', 'Pequeño'];
+    
+    return plants.map(plant => {
+      const plantSlots = slots.filter(s => s.code.startsWith(plant));
+      const sizeBreakdown = sizes.map(size => {
+        const sSlots = plantSlots.filter(s => s.size === size && s.is_scanned_once);
+        const total = sSlots.length;
+        const full = sSlots.filter(s => s.quantity === 100).length;
+        const half = sSlots.filter(s => s.quantity === 50).length;
+        const empty = sSlots.filter(s => s.quantity === 0).length;
+        
+        const occupancy = total > 0 
+          ? Math.round(((full * 100) + (half * 50)) / (total * 100) * 100)
+          : 0;
+
+        return { size, total, full, half, empty, occupancy };
+      });
+
+      const totalPlant = plantSlots.filter(s => s.is_scanned_once).length;
+      const avgOccupancy = totalPlant > 0 
+        ? Math.round(plantSlots.filter(s => s.is_scanned_once).reduce((acc, s) => acc + (s.quantity || 0), 0) / totalPlant)
+        : 0;
+
+      return { plant, sizeBreakdown, avgOccupancy, totalScanned: totalPlant };
+    });
   };
 
   const getOperatorStats = () => {
@@ -293,40 +332,96 @@ const AdminPanel: React.FC = () => {
         )}
 
         {activeSubTab === 'reports' && (
-          <div className="space-y-8 animate-fade-in">
+          <div className="space-y-12 animate-fade-in">
              <div className="flex flex-col md:flex-row gap-4 items-end mb-8">
                <div className="flex-1 space-y-2">
-                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2">Periodo Informe</label>
+                 <label className="text-sm font-semibold text-slate-500 uppercase tracking-widest ml-2">Periodo Informe Operarios</label>
                  <div className="flex gap-2">
-                    <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="bg-slate-50 p-4 rounded-2xl text-xs font-bold outline-none flex-1 border border-slate-100" />
-                    <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="bg-slate-50 p-4 rounded-2xl text-xs font-bold outline-none flex-1 border border-slate-100" />
+                    <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="bg-slate-50 p-4 rounded-2xl text-base font-medium outline-none flex-1 border border-slate-100" />
+                    <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="bg-slate-50 p-4 rounded-2xl text-base font-medium outline-none flex-1 border border-slate-100" />
                  </div>
                </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {getOperatorStats().map(([key, op]) => (
-                <div key={key} className="p-8 bg-slate-50 rounded-[2.5rem] border border-slate-100 flex items-center justify-between group">
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center text-xl shadow-sm">👷</div>
-                    <div>
-                      <p className="font-black text-slate-800 uppercase text-xs tracking-tight">{op.name}</p>
-                      <p className="text-[8px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1">{op.count} CAPTURAS REALIZADAS</p>
+            <section className="space-y-6">
+              <h3 className="text-lg font-semibold text-slate-800 uppercase tracking-tight ml-2">Desglose Ocupación por Planta y Tamaño</h3>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                 {warehouseBreakdown.map((plantData: any) => (
+                   <div key={plantData.plant} className="bg-slate-50 p-8 rounded-[3rem] border border-slate-100 space-y-6">
+                      <div className="flex justify-between items-center border-b border-slate-200 pb-4">
+                        <div>
+                          <h4 className="text-3xl font-bold text-indigo-600 leading-none">{plantData.plant}</h4>
+                          <p className="text-[10px] font-medium text-slate-400 uppercase tracking-[0.2em] mt-2">PLANTA DE ALMACENAMIENTO</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-2xl font-semibold text-slate-800">{plantData.avgOccupancy}%</p>
+                          <p className="text-[10px] font-medium text-slate-400 uppercase tracking-widest mt-1">Media Total</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        {plantData.sizeBreakdown.map((sizeData: any) => (
+                          <div key={sizeData.size} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                             <div className="flex justify-between items-center mb-4">
+                                <span className="text-sm font-semibold text-slate-800 uppercase">{sizeData.size}</span>
+                                <span className="text-base font-bold text-indigo-500">{sizeData.occupancy}%</span>
+                             </div>
+                             <div className="grid grid-cols-4 gap-2 text-center">
+                               <div className="flex flex-col">
+                                 <span className="text-lg font-semibold text-slate-800 leading-none">{sizeData.total}</span>
+                                 <span className="text-[10px] font-medium text-slate-400 uppercase mt-2">Huecos</span>
+                               </div>
+                               <div className="flex flex-col">
+                                 <span className="text-lg font-semibold text-rose-500 leading-none">{sizeData.full}</span>
+                                 <span className="text-[10px] font-medium text-slate-400 uppercase mt-2">100%</span>
+                               </div>
+                               <div className="flex flex-col">
+                                 <span className="text-lg font-semibold text-amber-500 leading-none">{sizeData.half}</span>
+                                 <span className="text-[10px] font-medium text-slate-400 uppercase mt-2">50%</span>
+                               </div>
+                               <div className="flex flex-col">
+                                 <span className="text-lg font-semibold text-emerald-500 leading-none">{sizeData.empty}</span>
+                                 <span className="text-[10px] font-medium text-slate-400 uppercase mt-2">Libres</span>
+                               </div>
+                             </div>
+                             <div className="mt-5 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                <div className="h-full bg-indigo-500 transition-all" style={{width: `${sizeData.occupancy}%`}}></div>
+                             </div>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-center text-[10px] font-medium text-slate-400 uppercase tracking-widest mt-2">Basado en {plantData.totalScanned} huecos escaneados en {plantData.plant}</p>
+                   </div>
+                 ))}
+              </div>
+            </section>
+
+            <section className="space-y-6">
+              <h3 className="text-lg font-semibold text-slate-800 uppercase tracking-tight ml-2">Rendimiento Operarios</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {getOperatorStats().map(([key, op]) => (
+                  <div key={key} className="p-8 bg-slate-50 rounded-[2.5rem] border border-slate-100 flex items-center justify-between group">
+                    <div className="flex items-center gap-5">
+                      <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-2xl shadow-sm">👷</div>
+                      <div>
+                        <p className="font-semibold text-slate-800 uppercase text-sm tracking-tight">{op.name}</p>
+                        <p className="text-[10px] font-medium text-slate-400 uppercase tracking-[0.2em] mt-1">{op.count} CAPTURAS REALIZADAS</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-semibold text-indigo-600 leading-none">{calculateAvgTime(op.logs)}</p>
+                      <p className="text-[10px] font-medium text-slate-400 uppercase tracking-widest mt-1">Tiempo Medio</p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-lg font-black text-indigo-600 leading-none">{calculateAvgTime(op.logs)}</p>
-                    <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mt-1">Tiempo Medio</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            </section>
 
-            {getOperatorStats().length === 0 && (
+            {getOperatorStats().length === 0 && warehouseBreakdown.length === 0 && (
               <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
-                 <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center text-3xl">📈</div>
-                 <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Sin datos para informe</h3>
-                 <p className="text-slate-400 text-xs font-medium max-w-xs uppercase tracking-widest leading-relaxed">No se han encontrado capturas en el rango seleccionado para calcular rendimientos.</p>
+                 <div className="w-24 h-24 bg-indigo-50 rounded-full flex items-center justify-center text-4xl">📈</div>
+                 <h3 className="text-2xl font-semibold text-slate-800 uppercase tracking-tight">Sin datos para informe</h3>
+                 <p className="text-slate-400 text-sm font-medium max-w-sm uppercase tracking-widest leading-relaxed">No se han encontrado capturas en el rango seleccionado para calcular rendimientos.</p>
               </div>
             )}
           </div>
