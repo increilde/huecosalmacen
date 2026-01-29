@@ -184,7 +184,6 @@ const AdminPanel: React.FC = () => {
                )}
             </div>
 
-            {/* Tarjetas de Operadores */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               {getOperatorStats().map(([key, op]) => (
                 <button 
@@ -249,7 +248,7 @@ const AdminPanel: React.FC = () => {
                       <p className="font-black text-slate-800 uppercase text-sm">{t.label}</p>
                       <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-1">Registrado</p>
                     </div>
-                    <button onClick={() => deleteTrucker(t.id)} className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">🗑️</button>
+                    <button onClick={() => deleteTrucker(t.id)} className="w-10 h-10 rounded-xl bg-rose-100 text-rose-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">🗑️</button>
                  </div>
                ))}
             </div>

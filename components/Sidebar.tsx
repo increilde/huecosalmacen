@@ -4,7 +4,7 @@ import { UserRole } from '../types';
 
 interface SidebarProps {
   activeTab: string;
-  setActiveTab: (tab: 'dashboard' | 'slots' | 'users' | 'admin' | 'expedition') => void;
+  setActiveTab: (tab: 'dashboard' | 'slots' | 'users' | 'admin' | 'expedition' | 'supplies') => void;
   userRole: UserRole;
   onLogout: () => void;
 }
@@ -17,6 +17,9 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole, on
     ] : []),
     ...(userRole === UserRole.ADMIN || userRole === UserRole.EXPEDITION ? [
       { id: 'expedition', label: 'Control Muelles', icon: '🚛' }
+    ] : []),
+    ...(userRole === UserRole.ADMIN ? [
+      { id: 'supplies', label: 'Suministros', icon: '🛠️' }
     ] : []),
     ...(userRole === UserRole.ADMIN ? [
       { id: 'admin', label: 'Administración', icon: '⚙️' }

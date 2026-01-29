@@ -48,3 +48,22 @@ export interface ExpeditionLog {
   created_at: string;
   finished_at?: string;
 }
+
+export interface WarehouseSupply {
+  id: string;
+  name: string;
+  category: string;
+  quantity: number;
+  min_quantity: number;
+  unit: string;
+  updated_at: string;
+}
+
+export interface WarehouseSupplyLog {
+  id: string;
+  supply_id: string;
+  operator_name: string;
+  change_amount: number;
+  comment: string;
+  created_at: string;
+}

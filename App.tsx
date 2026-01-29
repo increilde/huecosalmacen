@@ -7,10 +7,11 @@ import SlotGrid from './components/SlotGrid';
 import UserManagement from './components/UserManagement';
 import AdminPanel from './components/AdminPanel';
 import ExpeditionPanel from './components/ExpeditionPanel';
+import SuppliesPanel from './components/SuppliesPanel';
 import { supabase } from './supabaseClient';
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'slots' | 'users' | 'admin' | 'expedition'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'slots' | 'users' | 'admin' | 'expedition' | 'supplies'>('dashboard');
   const [dbStatus, setDbStatus] = useState<{connected: boolean | null, error: string | null}>({
     connected: null,
     error: null
@@ -26,7 +27,6 @@ const App: React.FC = () => {
     if (savedUser) {
       const parsed = JSON.parse(savedUser);
       setUser(parsed);
-      // Si el usuario es perfil expedición, enviarlo directamente allí si estaba en dashboard
       if (parsed.role === UserRole.EXPEDITION) {
         setActiveTab('expedition');
       }
@@ -172,6 +172,7 @@ const App: React.FC = () => {
           {activeTab === 'users' && <UserManagement />}
           {activeTab === 'admin' && <AdminPanel />}
           {activeTab === 'expedition' && <ExpeditionPanel user={user} />}
+          {activeTab === 'supplies' && <SuppliesPanel />}
         </div>
       </main>
 
@@ -192,6 +193,12 @@ const App: React.FC = () => {
           <button onClick={() => setActiveTab('expedition')} className={`flex flex-col items-center gap-1 ${activeTab === 'expedition' ? 'text-indigo-400' : 'text-slate-500'}`}>
             <span className="text-xl">🚛</span>
             <span className="text-[10px] font-bold uppercase tracking-tighter">Muelles</span>
+          </button>
+        )}
+        {user.role === UserRole.ADMIN && (
+          <button onClick={() => setActiveTab('supplies')} className={`flex flex-col items-center gap-1 ${activeTab === 'supplies' ? 'text-indigo-400' : 'text-slate-500'}`}>
+            <span className="text-xl">🛠️</span>
+            <span className="text-[10px] font-bold uppercase tracking-tighter">Suministros</span>
           </button>
         )}
         {user.role === UserRole.ADMIN && (

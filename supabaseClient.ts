@@ -37,8 +37,31 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  *   updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
  * );
  * 
+ * -- 4. Tabla de Suministros (Stock Almacén)
+ * CREATE TABLE IF NOT EXISTS warehouse_supplies (
+ *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+ *   name TEXT NOT NULL,
+ *   category TEXT DEFAULT 'VARIOS',
+ *   quantity INTEGER DEFAULT 0,
+ *   min_quantity INTEGER DEFAULT 5,
+ *   unit TEXT DEFAULT 'unidades',
+ *   updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+ * );
+ * 
+ * -- 5. Tabla de Logs de Suministros (Historial de restas/sumas)
+ * CREATE TABLE IF NOT EXISTS warehouse_supply_logs (
+ *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+ *   supply_id UUID REFERENCES warehouse_supplies(id) ON DELETE CASCADE,
+ *   operator_name TEXT,
+ *   change_amount INTEGER,
+ *   comment TEXT,
+ *   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+ * );
+ * 
  * -- Desactivar RLS para pruebas rápidas
  * ALTER TABLE expedition_logs DISABLE ROW LEVEL SECURITY;
  * ALTER TABLE truckers DISABLE ROW LEVEL SECURITY;
  * ALTER TABLE daily_notes DISABLE ROW LEVEL SECURITY;
+ * ALTER TABLE warehouse_supplies DISABLE ROW LEVEL SECURITY;
+ * ALTER TABLE warehouse_supply_logs DISABLE ROW LEVEL SECURITY;
  */
