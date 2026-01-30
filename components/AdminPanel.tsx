@@ -25,9 +25,9 @@ const AdminPanel: React.FC = () => {
   
   const todayLocal = new Date().toLocaleDateString('en-CA');
   
-  // Periodo seleccionado
-  const [scope, setScope] = useState<ReportScope>('range');
-  const [dateFrom, setDateFrom] = useState('2024-01-01'); 
+  // Periodo seleccionado - Por defecto hoy
+  const [scope, setScope] = useState<ReportScope>('today');
+  const [dateFrom, setDateFrom] = useState(todayLocal); 
   const [dateTo, setDateTo] = useState(todayLocal);
   const [selectedOperator, setSelectedOperator] = useState<string | null>(null);
   const [cartSearch, setCartSearch] = useState('');

@@ -77,14 +77,27 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   // Estados para Búsqueda de Carro
   const [showCartFinder, setShowCartFinder] = useState(false);
   const [searchCartId, setSearchCartId] = useState('');
-  const [cartHistory, setCartHistory] = useState<MovementLog[]>([]);
+  const [cartHistory, setSearchCartHistory] = useState<MovementLog[]>([]);
   const [loadingCartHistory, setLoadingCartHistory] = useState(false);
 
   const slotInputRef = useRef<HTMLInputElement>(null);
   const cartInputRef = useRef<HTMLInputElement>(null);
+  
+  // Ref para AudioContext persistente
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  const getAudioContext = () => {
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+    }
+    return audioCtxRef.current;
+  };
 
   const announceLocation = async (operatorName: string, cartId: string) => {
     try {
+      const ctx = getAudioContext();
+      if (ctx.state === 'suspended') await ctx.resume();
+
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const prompt = `Notifica por voz de forma clara: El operario ${operatorName} ha ubicado el carro ${cartId}.`;
       
@@ -103,14 +116,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
       const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
       if (base64Audio) {
-        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-        if (audioCtx.state === 'suspended') {
-          await audioCtx.resume();
-        }
-        const audioBuffer = await decodeAudioData(decode(base64Audio), audioCtx, 24000, 1);
-        const source = audioCtx.createBufferSource();
+        const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
+        const source = ctx.createBufferSource();
         source.buffer = audioBuffer;
-        source.connect(audioCtx.destination);
+        source.connect(ctx.destination);
         source.start();
       }
     } catch (err) {
@@ -183,7 +192,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         .limit(20);
 
       if (error) throw error;
-      setCartHistory(data || []);
+      setSearchCartHistory(data || []);
     } catch (err) {
       console.error("Error fetching cart history:", err);
     } finally {
@@ -209,6 +218,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       setMessage({ type: 'error', text: 'Faltan datos para guardar' });
       return;
     }
+
+    // Inicializar AudioContext ante el gesto del usuario para asegurar la locución posterior
+    const ctx = getAudioContext();
+    if (ctx.state === 'suspended') ctx.resume().catch(console.error);
 
     setLoading(true);
     try {
@@ -240,7 +253,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
       if (logError) throw logError;
 
-      // Iniciar notificación por voz de forma asíncrona para no bloquear el flujo
+      // Disparar locución inmediatamente tras el éxito del guardado
       announceLocation(user.full_name, finalCartId).catch(console.error);
 
       setMessage({ type: 'success', text: `UBICACIÓN ${slotCode} ACTUALIZADA AL ${newQuantity}%` });
@@ -332,7 +345,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
             <h2 className="text-xl font-semibold text-slate-800 tracking-tight uppercase">Entrada Datos</h2>
             <div className="flex gap-2">
               <button onClick={() => { setShowSearchFinder(true); setOrigin('finder'); }} className="flex-1 bg-indigo-600 text-white px-5 py-3 rounded-2xl text-[10px] font-semibold uppercase tracking-widest shadow-lg shadow-indigo-100 active:scale-95 transition-all">Buscar Hueco</button>
-              <button onClick={() => { setShowCartFinder(true); setCartHistory([]); setSearchCartId(''); }} className="flex-1 bg-slate-900 text-white px-5 py-3 rounded-2xl text-[10px] font-semibold uppercase tracking-widest shadow-lg shadow-slate-200 active:scale-95 transition-all">Buscar Carro</button>
+              <button onClick={() => { setShowCartFinder(true); setSearchCartHistory([]); setSearchCartId(''); }} className="flex-1 bg-slate-900 text-white px-5 py-3 rounded-2xl text-[10px] font-semibold uppercase tracking-widest shadow-lg shadow-slate-200 active:scale-95 transition-all">Buscar Carro</button>
             </div>
           </div>
 
