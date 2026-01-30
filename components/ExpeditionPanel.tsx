@@ -15,16 +15,32 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'current' | 'history'>('current');
   
-  // Usar toLocaleDateString para evitar desfases de zona horaria UTC en la comparación
+  // Función para obtener la fecha de hoy en formato YYYY-MM-DD
   const getTodayStr = () => new Date().toLocaleDateString('en-CA'); 
-  const [historyDate, setHistoryDate] = useState(getTodayStr());
+
+  // Función para obtener la fecha del próximo reparto (mañana, saltando domingos)
+  const getNextDeliveryDay = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1); // Empezamos por mañana
+    if (d.getDay() === 0) { // Si es domingo, pasamos al lunes
+      d.setDate(d.getDate() + 1);
+    }
+    return d.toLocaleDateString('en-CA');
+  };
+  
+  const [historyDate, setHistoryDate] = useState(getNextDeliveryDay());
   
   const [assigningData, setAssigningData] = useState<{dock: string, side: 'left' | 'right' | 'single'} | null>(null);
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
   const [truckId, setTruckId] = useState('');
   const [truckers, setTruckers] = useState<Trucker[]>([]);
 
-  const isToday = historyDate === getTodayStr();
+  // Estados para creación rápida de camión
+  const [showTruckerModal, setShowTruckerModal] = useState(false);
+  const [newTruckerName, setNewTruckerName] = useState('');
+
+  // Permitir edición si la fecha es hoy o futura
+  const isToday = historyDate >= getTodayStr();
 
   useEffect(() => {
     fetchLogsAndNotes();
@@ -80,6 +96,27 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
     }
   };
 
+  const handleCreateQuickTrucker = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTruckerName.trim()) return;
+    
+    setLoading(true);
+    try {
+      const formattedName = newTruckerName.toUpperCase().trim();
+      const { error } = await supabase.from('truckers').insert([{ full_name: formattedName }]);
+      if (error) throw error;
+      
+      await fetchTruckers();
+      setTruckId(formattedName);
+      setNewTruckerName('');
+      setShowTruckerModal(false);
+    } catch (err: any) {
+      alert("Error al crear camión: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleAssign = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!truckId || !assigningData || !isToday) return;
@@ -104,7 +141,8 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
             side: assigningData.side,
             truck_id: truckId.toUpperCase().trim(),
             operator_name: user.full_name,
-            status: 'loading'
+            status: 'loading',
+            created_at: `${historyDate}T${new Date().toLocaleTimeString('en-GB')}` // Mantener la fecha seleccionada
           }]);
 
         if (error) throw error;
@@ -124,7 +162,7 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
     e.stopPropagation(); // Evitar propagación a elementos padre
 
     if (!isToday) {
-      alert("Solo se puede vaciar registros del día actual.");
+      alert("Solo se puede modificar registros de hoy o futuros.");
       return;
     }
 
@@ -166,7 +204,7 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
 
   const getActiveLogsForDock = (dock: string) => {
     if (isToday) {
-      // En la vista actual solo mostramos los que están cargando
+      // En la vista actual/futura solo mostramos los que están cargando
       return logs.filter(l => l.dock_id === dock && l.status === 'loading');
     }
     return logs.filter(l => l.dock_id === dock);
@@ -236,15 +274,18 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
         <div className="absolute -right-4 -bottom-4 text-indigo-50 text-8xl font-bold opacity-30">🚛</div>
         <div className="relative z-10 w-full md:w-auto">
           <h2 className="text-lg md:text-xl font-black text-slate-800 uppercase tracking-tighter">Control de Expedición</h2>
+          <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mt-1">
+            CAMIONES PARA EL REPARTO DEL DÍA {new Date(historyDate).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+          </p>
           <div className="flex items-center gap-2 mt-2">
-             <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">FECHA:</span>
+             <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">CAMBIAR FECHA:</span>
              <input 
               type="date" 
               value={historyDate} 
               onChange={e => setHistoryDate(e.target.value)} 
-              className={`px-3 py-1.5 rounded-xl font-black text-[10px] outline-none border-2 transition-all ${isToday ? 'bg-indigo-50 border-indigo-100 text-indigo-600' : 'bg-slate-900 border-slate-800 text-white'}`}
+              className={`px-3 py-1.5 rounded-xl font-black text-[10px] outline-none border-2 transition-all ${historyDate === getTodayStr() ? 'bg-indigo-50 border-indigo-100 text-indigo-600' : historyDate > getTodayStr() ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-slate-900 border-slate-800 text-white'}`}
              />
-             {!isToday && <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded-lg text-[7px] font-black uppercase tracking-widest">MODO CONSULTA</span>}
+             {historyDate < getTodayStr() && <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded-lg text-[7px] font-black uppercase tracking-widest">MODO CONSULTA</span>}
           </div>
         </div>
         <div className="flex bg-slate-900 p-1.5 rounded-2xl mt-4 md:mt-0 relative z-10 shadow-lg shrink-0">
@@ -366,7 +407,15 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
                 
                 <div className="space-y-5 flex-1 overflow-y-auto pr-1 min-h-0">
                   <div className="space-y-2">
-                    <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2 block">Habituales</label>
+                    <div className="flex justify-between items-center mb-2 px-2">
+                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block">Habituales</label>
+                      <button 
+                        onClick={() => setShowTruckerModal(true)} 
+                        className="text-[7px] font-black text-indigo-600 uppercase tracking-widest bg-indigo-50 px-3 py-1.5 rounded-xl border border-indigo-100 active:scale-95 transition-all"
+                      >
+                        + Nuevo Camión
+                      </button>
+                    </div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       {truckers.map(t => (
                         <button
@@ -427,6 +476,29 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
                 </div>
               </div>
            </div>
+        </div>
+      )}
+
+      {/* Modal secundario para creación rápida de camión */}
+      {showTruckerModal && (
+        <div className="fixed inset-0 z-[300] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4">
+           <form onSubmit={handleCreateQuickTrucker} className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl space-y-6 animate-fade-in border border-white">
+              <div className="text-center">
+                 <h3 className="text-xl font-black text-slate-800 uppercase">Nuevo Transportista</h3>
+                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">Registrar para habituales</p>
+              </div>
+              <input 
+                autoFocus 
+                placeholder="NOMBRE / Nº CAMIÓN" 
+                className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 font-black text-xs text-center outline-none focus:border-indigo-500 uppercase" 
+                value={newTruckerName} 
+                onChange={e => setNewTruckerName(e.target.value)} 
+              />
+              <div className="space-y-3">
+                 <button type="submit" disabled={loading || !newTruckerName.trim()} className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-xl uppercase tracking-widest text-[10px] disabled:opacity-50">Guardar Camión</button>
+                 <button type="button" onClick={() => { setShowTruckerModal(false); setNewTruckerName(''); }} className="w-full py-4 text-slate-400 font-black text-[9px] uppercase tracking-[0.2em]">Cancelar</button>
+              </div>
+           </form>
         </div>
       )}
     </div>

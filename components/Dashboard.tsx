@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserProfile, WarehouseSlot } from '../types';
 import ScannerModal from './ScannerModal';
+import { GoogleGenAI, Modality } from "@google/genai";
 
 interface DashboardProps {
   user: UserProfile;
@@ -15,6 +16,36 @@ interface MovementLog {
   new_quantity: number;
   created_at: string;
   operator_name?: string;
+}
+
+// Funciones auxiliares para decodificación de audio PCM de Gemini TTS
+function decode(base64: string) {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function decodeAudioData(
+  data: Uint8Array,
+  ctx: AudioContext,
+  sampleRate: number,
+  numChannels: number,
+): Promise<AudioBuffer> {
+  const dataInt16 = new Int16Array(data.buffer);
+  const frameCount = dataInt16.length / numChannels;
+  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
+
+  for (let channel = 0; channel < numChannels; channel++) {
+    const channelData = buffer.getChannelData(channel);
+    for (let i = 0; i < frameCount; i++) {
+      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
+    }
+  }
+  return buffer;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ user }) => {
@@ -39,7 +70,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [showSearchFinder, setShowSearchFinder] = useState(false);
   const [finderSize, setFinderSize] = useState<string | null>(null);
   const [finderOccupancy, setFinderOccupancy] = useState<number | null>(null);
-  const [finderStreets, setFinderStreets] = useState<'low' | 'high' | null>(null);
+  const [finderStreets, setFinderStreets] = useState<'low' | 'high' | 'u02' | null>(null);
   const [availableSlots, setAvailableSlots] = useState<WarehouseSlot[]>([]);
   const [loadingFinder, setLoadingFinder] = useState(false);
 
@@ -51,6 +82,38 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
   const slotInputRef = useRef<HTMLInputElement>(null);
   const cartInputRef = useRef<HTMLInputElement>(null);
+
+  const announceLocation = async (operatorName: string, cartId: string) => {
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const prompt = `Say clearly in a professional and natural Spanish voice: ${operatorName}, carro ${cartId} ubicado.`;
+      
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash-preview-tts",
+        contents: [{ parts: [{ text: prompt }] }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: 'Kore' },
+            },
+          },
+        },
+      });
+
+      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (base64Audio) {
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+        const audioBuffer = await decodeAudioData(decode(base64Audio), audioCtx, 24000, 1);
+        const source = audioCtx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioCtx.destination);
+        source.start();
+      }
+    } catch (err) {
+      console.error("Error generating speech notification:", err);
+    }
+  };
 
   const checkSlotAndPrepare = async () => {
     const codeToSearch = slotCode.trim().toUpperCase();
@@ -146,15 +209,16 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
     setLoading(true);
     try {
+      // Usar upsert para que si el hueco no existe en la maestra se cree
       const { error: slotError } = await supabase
         .from('warehouse_slots')
-        .update({
+        .upsert({
+          code: slotCode.toUpperCase().trim(),
           quantity: newQuantity,
           size: selectedSize,
           is_scanned_once: true,
           last_updated: new Date().toISOString()
-        })
-        .eq('code', slotCode.toUpperCase().trim());
+        }, { onConflict: 'code' });
 
       if (slotError) throw slotError;
 
@@ -173,6 +237,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         }]);
 
       if (logError) throw logError;
+
+      // Notificación por voz
+      announceLocation(user.full_name, finalCartId);
 
       setMessage({ type: 'success', text: `UBICACIÓN ${slotCode} ACTUALIZADA AL ${newQuantity}%` });
       setCartId('');
@@ -202,22 +269,30 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     setShowActionModal(true);
   };
 
-  const fetchAvailableSlots = async (size: string, occupancy: number, streets: 'low' | 'high') => {
+  const fetchAvailableSlots = async (size: string, occupancy: number, streets: 'low' | 'high' | 'u02') => {
     setLoadingFinder(true);
     setFinderSize(size);
     setFinderOccupancy(occupancy);
     setFinderStreets(streets);
     try {
-      const startRange = streets === 'low' ? 'U0102' : 'U0113';
-      const endRange = streets === 'low' ? 'U0112Z' : 'U0122Z';
-      const { data, error } = await supabase.from('warehouse_slots')
+      let query = supabase.from('warehouse_slots')
         .select('*')
         .eq('size', size)
         .eq('quantity', occupancy)
-        .eq('is_scanned_once', true)
-        .gte('code', startRange)
-        .lte('code', endRange)
-        .limit(24);
+        .eq('is_scanned_once', true);
+
+      if (streets === 'low') {
+        // Pasillos 02-12 SOLO U01
+        query = query.or('code.ilike.U010%,code.ilike.U0110%,code.ilike.U0111%,code.ilike.U0112%');
+      } else if (streets === 'high') {
+        // Pasillos 13-22 SOLO U01
+        query = query.or('code.ilike.U0113%,code.ilike.U0114%,code.ilike.U0115%,code.ilike.U0116%,code.ilike.U0117%,code.ilike.U0118%,code.ilike.U0119%,code.ilike.U012%');
+      } else if (streets === 'u02') {
+        // Solo Planta U02
+        query = query.ilike('code', 'U02%');
+      }
+
+      const { data, error } = await query.limit(40);
       if (error) throw error;
       setAvailableSlots(data || []);
     } catch (err) { console.error(err); } finally { setLoadingFinder(false); }
@@ -315,7 +390,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
       {showHistoryModal && (
         <div className="fixed inset-0 z-[200] bg-slate-900/95 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-sm rounded-[3rem] p-8 shadow-2xl flex flex-col max-h-[85vh] animate-fade-in relative overflow-hidden">
+          <div className="bg-white w-full max-sm rounded-[3rem] p-8 shadow-2xl flex flex-col max-h-[85vh] animate-fade-in relative overflow-hidden">
              <div className="absolute -right-8 -top-8 text-slate-50 text-9xl font-medium opacity-10 pointer-events-none">🕒</div>
              <div className="relative z-10 flex flex-col h-full min-h-0">
                 <div className="text-center mb-6 shrink-0">
@@ -372,7 +447,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
       {showCartFinder && (
         <div className="fixed inset-0 z-[200] bg-slate-900/95 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-sm rounded-[3rem] p-8 shadow-2xl flex flex-col max-h-[85vh] animate-fade-in relative overflow-hidden">
+          <div className="bg-white w-full max-sm rounded-[3rem] p-8 shadow-2xl flex flex-col max-h-[85vh] animate-fade-in relative overflow-hidden">
              <div className="absolute -right-8 -top-8 text-slate-50 text-9xl font-medium opacity-10 pointer-events-none">🚛</div>
              <div className="relative z-10 flex flex-col h-full min-h-0">
                 <div className="text-center mb-6 shrink-0">
@@ -436,7 +511,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
       {showActionModal && (
         <div className="fixed inset-0 z-[150] bg-slate-900/40 backdrop-blur-md flex items-end sm:items-center justify-center p-4">
-          <div className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl space-y-8 animate-fade-in border border-white">
+          <div className="bg-white w-full max-sm rounded-[3rem] p-10 shadow-2xl space-y-8 animate-fade-in border border-white">
             <div className="text-center">
                <h3 className="text-2xl font-semibold text-slate-900 tracking-tighter uppercase">{slotCode}</h3>
                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mt-1">
@@ -500,9 +575,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
               )}
 
               {finderSize && finderOccupancy !== null && (
-                <div className="flex gap-2 animate-fade-in">
-                  <button onClick={() => fetchAvailableSlots(finderSize!, finderOccupancy!, 'low')} className={`flex-1 py-3 rounded-xl text-[10px] font-semibold uppercase tracking-widest border-2 transition-all ${finderStreets === 'low' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>Pasillos 2-12</button>
-                  <button onClick={() => fetchAvailableSlots(finderSize!, finderOccupancy!, 'high')} className={`flex-1 py-3 rounded-xl text-[10px] font-semibold uppercase tracking-widest border-2 transition-all ${finderStreets === 'high' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>Pasillos 13-22</button>
+                <div className="flex flex-wrap gap-2 animate-fade-in">
+                  <button onClick={() => fetchAvailableSlots(finderSize!, finderOccupancy!, 'low')} className={`flex-1 min-w-[100px] py-3 rounded-xl text-[10px] font-semibold uppercase tracking-widest border-2 transition-all ${finderStreets === 'low' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>Pasillos 2-12</button>
+                  <button onClick={() => fetchAvailableSlots(finderSize!, finderOccupancy!, 'high')} className={`flex-1 min-w-[100px] py-3 rounded-xl text-[10px] font-semibold uppercase tracking-widest border-2 transition-all ${finderStreets === 'high' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>Pasillos 13-22</button>
+                  <button onClick={() => fetchAvailableSlots(finderSize!, finderOccupancy!, 'u02')} className={`flex-1 min-w-[100px] py-3 rounded-xl text-[10px] font-semibold uppercase tracking-widest border-2 transition-all ${finderStreets === 'u02' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>Planta U02</button>
                 </div>
               )}
             </div>

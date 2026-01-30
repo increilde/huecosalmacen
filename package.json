@@ -13,7 +13,8 @@
     "react-dom": "^19.2.3",
     "recharts": "2.15.0",
     "@supabase/supabase-js": "2.48.1",
-    "@ericblade/quagga2": "1.8.4"
+    "@ericblade/quagga2": "1.8.4",
+    "@google/genai": "^1.38.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

@@ -31,7 +31,7 @@ const SlotGrid: React.FC<SlotGridProps> = ({ userRole }) => {
 
   useEffect(() => {
     fetchSlots();
-    const channel = supabase.channel('grid-updates-v10').on('postgres_changes', { event: '*', schema: 'public', table: 'warehouse_slots' }, () => {
+    const channel = supabase.channel('grid-updates-v11').on('postgres_changes', { event: '*', schema: 'public', table: 'warehouse_slots' }, () => {
       fetchSlots();
     }).subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -55,17 +55,19 @@ const SlotGrid: React.FC<SlotGridProps> = ({ userRole }) => {
       setSlots(allSlots);
       const active = allSlots.filter(s => s.is_scanned_once);
       
-      // Cálculo de ocupación por tamaño (solo leídos)
+      // Cálculo de ocupación por tamaño (basado en posiciones ocupadas para consistencia)
       const calculateSizeOccupancy = (size: string) => {
-        const sizeSlots = active.filter(s => s.size === size);
+        const sizeSlots = allSlots.filter(s => s.size === size);
         if (sizeSlots.length === 0) return { percent: 0, count: 0 };
-        const percent = Math.round(sizeSlots.reduce((acc, s) => acc + (s.quantity || 0), 0) / sizeSlots.length);
+        const occupiedCount = sizeSlots.filter(s => (s.quantity || 0) > 0).length;
+        const percent = Math.round((occupiedCount / sizeSlots.length) * 100);
         return { percent, count: sizeSlots.length };
       };
 
       setGlobalStats({
         totalAbsolute: allSlots.length,
-        occupancyPercent: active.length > 0 ? Math.round(active.reduce((acc, s) => acc + (s.quantity || 0), 0) / active.length) : 0,
+        // Sincronizado con Sectores: (Huecos con algo / Huecos Totales)
+        occupancyPercent: allSlots.length > 0 ? Math.round((allSlots.filter(s => (s.quantity || 0) > 0).length / allSlots.length) * 100) : 0,
         pendingInitialScan: allSlots.filter(s => !s.is_scanned_once).length,
         sizeStats: {
           Grande: calculateSizeOccupancy('Grande'),
@@ -105,7 +107,7 @@ const SlotGrid: React.FC<SlotGridProps> = ({ userRole }) => {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col justify-center relative overflow-hidden">
           <div className="absolute -right-4 -bottom-4 text-slate-50 text-8xl font-bold opacity-30">🏢</div>
           <p className="text-[10px] font-semibold uppercase text-slate-400 tracking-[0.2em] mb-2 z-10">Total Huecos</p>
@@ -114,38 +116,28 @@ const SlotGrid: React.FC<SlotGridProps> = ({ userRole }) => {
 
         <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col justify-center relative overflow-hidden">
           <div className="absolute -right-4 -bottom-4 text-indigo-50 text-8xl font-bold opacity-30">%</div>
-          <p className="text-[10px] font-semibold uppercase text-slate-400 tracking-[0.2em] mb-2 z-10">Ocupación Media</p>
+          <p className="text-[10px] font-semibold uppercase text-slate-400 tracking-[0.2em] mb-2 z-10">Ocupación Almacén</p>
           <h3 className="text-4xl font-semibold text-indigo-600 tracking-tight z-10">{globalStats.occupancyPercent}%</h3>
         </div>
-
-        <button 
-          onClick={() => setOccupancyFilter('pending')}
-          className="bg-slate-900 p-8 rounded-[2.5rem] shadow-xl text-white flex flex-col justify-center relative overflow-hidden active:scale-95 transition-all text-left"
-        >
-          <div className="absolute -right-4 -bottom-4 text-white/5 text-8xl font-bold opacity-30">!</div>
-          <p className="text-[10px] font-semibold uppercase text-slate-400 tracking-[0.2em] mb-2 z-10">Pendientes Scan</p>
-          <h3 className="text-4xl font-semibold text-rose-500 tracking-tight z-10">{globalStats.pendingInitialScan}</h3>
-        </button>
       </div>
 
-      {/* Nuevas estadísticas por tamaño */}
       <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm">
-        <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em] mb-4 ml-2">Ocupación por tamaño (Solo leídos)</p>
+        <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em] mb-4 ml-2">Ocupación por tamaño (Huecos Totales)</p>
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-slate-50 p-4 rounded-2xl text-center border border-slate-100 flex flex-col justify-center">
             <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Grande</p>
             <p className="text-xl font-black text-indigo-600 leading-none">{globalStats.sizeStats.Grande.percent}%</p>
-            <p className="text-[7px] font-bold text-slate-400 uppercase mt-2 tracking-tighter">sobre {globalStats.sizeStats.Grande.count} huecos</p>
+            <p className="text-[7px] font-bold text-slate-400 uppercase mt-2 tracking-tighter">de {globalStats.sizeStats.Grande.count} huecos</p>
           </div>
           <div className="bg-slate-50 p-4 rounded-2xl text-center border border-slate-100 flex flex-col justify-center">
             <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Mediano</p>
             <p className="text-xl font-black text-indigo-600 leading-none">{globalStats.sizeStats.Mediano.percent}%</p>
-            <p className="text-[7px] font-bold text-slate-400 uppercase mt-2 tracking-tighter">sobre {globalStats.sizeStats.Mediano.count} huecos</p>
+            <p className="text-[7px] font-bold text-slate-400 uppercase mt-2 tracking-tighter">de {globalStats.sizeStats.Mediano.count} huecos</p>
           </div>
           <div className="bg-slate-50 p-4 rounded-2xl text-center border border-slate-100 flex flex-col justify-center">
             <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Pequeño</p>
             <p className="text-xl font-black text-indigo-600 leading-none">{globalStats.sizeStats.Pequeño.percent}%</p>
-            <p className="text-[7px] font-bold text-slate-400 uppercase mt-2 tracking-tighter">sobre {globalStats.sizeStats.Pequeño.count} huecos</p>
+            <p className="text-[7px] font-bold text-slate-400 uppercase mt-2 tracking-tighter">de {globalStats.sizeStats.Pequeño.count} huecos</p>
           </div>
         </div>
       </div>
@@ -165,7 +157,7 @@ const SlotGrid: React.FC<SlotGridProps> = ({ userRole }) => {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-        {filteredSlots.slice(0, 100).map((slot) => (
+        {filteredSlots.slice(0, 1000).map((slot) => (
           <button key={slot.id} onClick={() => setSelectedSlot(slot)} className={`p-5 rounded-[2rem] border relative overflow-hidden text-left active:scale-95 transition-all hover:shadow-lg ${slot.is_scanned_once ? 'bg-white border-slate-100' : 'bg-slate-50 border-dashed border-slate-300'}`}>
             <div className="flex justify-between items-center mb-4"><span className="text-[11px] font-semibold text-slate-800 tracking-tight uppercase">{slot.code}</span></div>
             <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">

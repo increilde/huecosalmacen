@@ -23,7 +23,8 @@ const AdminPanel: React.FC = () => {
   const [loading, setLoading] = useState(true);
   
   const todayLocal = new Date().toLocaleDateString('en-CA');
-  const [dateFrom, setDateFrom] = useState(todayLocal);
+  // Para que el rendimiento sea acumulado por defecto, podemos poner una fecha de inicio más temprana
+  const [dateFrom, setDateFrom] = useState('2024-01-01'); 
   const [dateTo, setDateTo] = useState(todayLocal);
   const [selectedOperator, setSelectedOperator] = useState<string | null>(null);
   const [cartSearch, setCartSearch] = useState('');
@@ -58,9 +59,28 @@ const AdminPanel: React.FC = () => {
       setAllLogs(logs || []);
 
       if (activeSubTab === 'reports') {
-        const { data: slots } = await supabase.from('warehouse_slots').select('*');
-        if (slots) {
-          const breakdown = processWarehouseReport(slots);
+        // Cargar TODOS los huecos mediante paginación para el informe
+        let allSlots: WarehouseSlot[] = [];
+        let from = 0;
+        const step = 1000;
+        let hasMore = true;
+        
+        while (hasMore) {
+          const { data, error } = await supabase
+            .from('warehouse_slots')
+            .select('*')
+            .range(from, from + step - 1);
+          
+          if (error) { hasMore = false; break; }
+          if (data && data.length > 0) {
+            allSlots = [...allSlots, ...data as WarehouseSlot[]];
+            if (data.length < step) hasMore = false;
+            from += step;
+          } else { hasMore = false; }
+        }
+
+        if (allSlots.length > 0) {
+          const breakdown = processWarehouseReport(allSlots);
           setWarehouseBreakdown(breakdown);
         }
       }
@@ -68,13 +88,33 @@ const AdminPanel: React.FC = () => {
       const { data } = await supabase.from('truckers').select('*').order('full_name');
       setTruckers(data?.map((t: any) => ({ id: t.id, label: t.full_name, created_at: t.created_at })) || []);
     } else if (activeSubTab === 'sectors') {
-      const { data } = await supabase.from('warehouse_slots').select('is_scanned_once, quantity');
-      if (data) {
+      // Implementación de carga paginada para obtener el TOTAL REAL de huecos
+      let allSectorSlots: any[] = [];
+      let from = 0;
+      const step = 1000;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('warehouse_slots')
+          .select('is_scanned_once, quantity')
+          .range(from, from + step - 1);
+        
+        if (error || !data || data.length === 0) {
+          hasMore = false;
+        } else {
+          allSectorSlots = [...allSectorSlots, ...data];
+          if (data.length < step) hasMore = false;
+          from += step;
+        }
+      }
+
+      if (allSectorSlots.length > 0) {
         setStats({
-          total: data.length,
-          occupied: data.filter(s => s.quantity && s.quantity > 0).length,
-          empty: data.filter(s => s.is_scanned_once && s.quantity === 0).length,
-          pending: data.filter(s => !s.is_scanned_once).length
+          total: allSectorSlots.length,
+          occupied: allSectorSlots.filter(s => s.quantity && s.quantity > 0).length,
+          empty: allSectorSlots.filter(s => s.is_scanned_once && s.quantity === 0).length,
+          pending: allSectorSlots.filter(s => !s.is_scanned_once).length
         });
       }
     }
@@ -88,25 +128,25 @@ const AdminPanel: React.FC = () => {
     return plants.map(plant => {
       const plantSlots = slots.filter(s => s.code.startsWith(plant));
       const sizeBreakdown = sizes.map(size => {
-        const sSlots = plantSlots.filter(s => s.size === size && s.is_scanned_once);
+        const sSlots = plantSlots.filter(s => s.size === size);
         const total = sSlots.length;
         const full = sSlots.filter(s => s.quantity === 100).length;
         const half = sSlots.filter(s => s.quantity === 50).length;
-        const empty = sSlots.filter(s => s.quantity === 0).length;
+        const empty = sSlots.filter(s => s.is_scanned_once && s.quantity === 0).length;
         
         const occupancy = total > 0 
-          ? Math.round(((full * 100) + (half * 50)) / (total * 100) * 100)
+          ? Math.round((sSlots.filter(s => (s.quantity || 0) > 0).length / total) * 100)
           : 0;
 
         return { size, total, full, half, empty, occupancy };
       });
 
-      const totalPlant = plantSlots.filter(s => s.is_scanned_once).length;
+      const totalPlant = plantSlots.length;
       const avgOccupancy = totalPlant > 0 
-        ? Math.round(plantSlots.filter(s => s.is_scanned_once).reduce((acc, s) => acc + (s.quantity || 0), 0) / totalPlant)
+        ? Math.round((plantSlots.filter(s => (s.quantity || 0) > 0).length / totalPlant) * 100)
         : 0;
 
-      return { plant, sizeBreakdown, avgOccupancy, totalScanned: totalPlant };
+      return { plant, sizeBreakdown, avgOccupancy, totalScanned: plantSlots.filter(s => s.is_scanned_once).length, totalSlots: totalPlant };
     });
   };
 
@@ -247,12 +287,13 @@ const AdminPanel: React.FC = () => {
                     <th className="px-6 py-5">CARRO</th>
                     <th className="px-6 py-5">HUECO</th>
                     <th className="px-6 py-5">ESTADO</th>
-                    <th className="px-6 py-5">HORA</th>
+                    <th className="px-6 py-5 text-right">HORA</th>
+                    <th className="px-6 py-5 text-right">FECHA</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {filteredLogs.length === 0 ? (
-                    <tr><td colSpan={5} className="py-20 text-center text-slate-300 font-black uppercase text-[10px] tracking-widest">No hay movimientos que coincidan</td></tr>
+                    <tr><td colSpan={6} className="py-20 text-center text-slate-300 font-black uppercase text-[10px] tracking-widest">No hay movimientos que coincidan</td></tr>
                   ) : filteredLogs.map(log => (
                     <tr key={log.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-6 py-4 font-bold text-slate-800 uppercase">{log.operator_name}</td>
@@ -263,7 +304,8 @@ const AdminPanel: React.FC = () => {
                           {log.new_quantity}%
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-slate-400 font-bold">{new Date(log.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</td>
+                      <td className="px-6 py-4 text-slate-400 font-bold text-right">{new Date(log.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</td>
+                      <td className="px-6 py-4 text-slate-400 font-bold text-right">{new Date(log.created_at).toLocaleDateString()}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -325,7 +367,7 @@ const AdminPanel: React.FC = () => {
              <div className="bg-indigo-900 p-8 rounded-[3rem] shadow-2xl relative overflow-hidden flex flex-col justify-center text-white">
                 <div className="absolute -right-10 -bottom-10 text-white/10 text-[10rem] font-black pointer-events-none">OK</div>
                 <h4 className="text-[10px] font-black text-indigo-300 uppercase tracking-[0.3em] mb-4">Métrica de Ocupación</h4>
-                <p className="text-5xl font-black">{Math.round((stats.occupied / (stats.total || 1)) * 100)}%</p>
+                <p className="text-5xl font-black">{stats.total > 0 ? Math.round((stats.occupied / stats.total) * 100) : 0}%</p>
                 <p className="text-[10px] font-bold uppercase tracking-widest mt-4 opacity-60">Saturación del Almacén</p>
              </div>
           </div>
@@ -335,7 +377,7 @@ const AdminPanel: React.FC = () => {
           <div className="space-y-12 animate-fade-in">
              <div className="flex flex-col md:flex-row gap-4 items-end mb-8">
                <div className="flex-1 space-y-2">
-                 <label className="text-sm font-semibold text-slate-500 uppercase tracking-widest ml-2">Periodo Informe Operarios</label>
+                 <label className="text-sm font-semibold text-slate-500 uppercase tracking-widest ml-2">Periodo Informe Operarios (Acumulado)</label>
                  <div className="flex gap-2">
                     <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="bg-slate-50 p-4 rounded-2xl text-base font-medium outline-none flex-1 border border-slate-100" />
                     <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="bg-slate-50 p-4 rounded-2xl text-base font-medium outline-none flex-1 border border-slate-100" />
@@ -355,7 +397,7 @@ const AdminPanel: React.FC = () => {
                         </div>
                         <div className="text-right">
                           <p className="text-2xl font-semibold text-slate-800">{plantData.avgOccupancy}%</p>
-                          <p className="text-[10px] font-medium text-slate-400 uppercase tracking-widest mt-1">Media Total</p>
+                          <p className="text-[10px] font-medium text-slate-400 uppercase tracking-widest mt-1">Media Ocupación</p>
                         </div>
                       </div>
 
@@ -369,15 +411,15 @@ const AdminPanel: React.FC = () => {
                              <div className="grid grid-cols-4 gap-2 text-center">
                                <div className="flex flex-col">
                                  <span className="text-lg font-semibold text-slate-800 leading-none">{sizeData.total}</span>
-                                 <span className="text-[10px] font-medium text-slate-400 uppercase mt-2">Huecos</span>
+                                 <span className="text-[10px] font-medium text-slate-400 uppercase mt-2">Capacidad</span>
                                </div>
                                <div className="flex flex-col">
                                  <span className="text-lg font-semibold text-rose-500 leading-none">{sizeData.full}</span>
-                                 <span className="text-[10px] font-medium text-slate-400 uppercase mt-2">100%</span>
+                                 <span className="text-[10px] font-medium text-slate-400 uppercase mt-2">Llenos</span>
                                </div>
                                <div className="flex flex-col">
                                  <span className="text-lg font-semibold text-amber-500 leading-none">{sizeData.half}</span>
-                                 <span className="text-[10px] font-medium text-slate-400 uppercase mt-2">50%</span>
+                                 <span className="text-[10px] font-medium text-slate-400 uppercase mt-2">Medios</span>
                                </div>
                                <div className="flex flex-col">
                                  <span className="text-lg font-semibold text-emerald-500 leading-none">{sizeData.empty}</span>
@@ -390,14 +432,14 @@ const AdminPanel: React.FC = () => {
                           </div>
                         ))}
                       </div>
-                      <p className="text-center text-[10px] font-medium text-slate-400 uppercase tracking-widest mt-2">Basado en {plantData.totalScanned} huecos escaneados en {plantData.plant}</p>
+                      <p className="text-center text-[10px] font-medium text-slate-400 uppercase tracking-widest mt-2">Ocupación real calculada sobre {plantData.totalSlots} huecos en {plantData.plant}</p>
                    </div>
                  ))}
               </div>
             </section>
 
             <section className="space-y-6">
-              <h3 className="text-lg font-semibold text-slate-800 uppercase tracking-tight ml-2">Rendimiento Operarios</h3>
+              <h3 className="text-lg font-semibold text-slate-800 uppercase tracking-tight ml-2">Rendimiento Operarios (Acumulado)</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {getOperatorStats().map(([key, op]) => (
                   <div key={key} className="p-8 bg-slate-50 rounded-[2.5rem] border border-slate-100 flex items-center justify-between group">
@@ -405,7 +447,7 @@ const AdminPanel: React.FC = () => {
                       <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-2xl shadow-sm">👷</div>
                       <div>
                         <p className="font-semibold text-slate-800 uppercase text-sm tracking-tight">{op.name}</p>
-                        <p className="text-[10px] font-medium text-slate-400 uppercase tracking-[0.2em] mt-1">{op.count} CAPTURAS REALIZADAS</p>
+                        <p className="text-[10px] font-medium text-slate-400 uppercase tracking-[0.2em] mt-1">{op.count} CAPTURAS TOTALES</p>
                       </div>
                     </div>
                     <div className="text-right">
