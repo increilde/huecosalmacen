@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
-import { UserProfile, WarehouseSlot } from '../types';
+import { WarehouseSlot, UserProfile } from '../types';
 import ScannerModal from './ScannerModal';
 import { GoogleGenAI, Modality } from "@google/genai";
 
@@ -86,7 +86,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const announceLocation = async (operatorName: string, cartId: string) => {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = `Say clearly in a professional and natural Spanish voice: ${operatorName}, carro ${cartId} ubicado.`;
+      const prompt = `Notifica por voz de forma clara: El operario ${operatorName} ha ubicado el carro ${cartId}.`;
       
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
@@ -104,6 +104,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
       if (base64Audio) {
         const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+        if (audioCtx.state === 'suspended') {
+          await audioCtx.resume();
+        }
         const audioBuffer = await decodeAudioData(decode(base64Audio), audioCtx, 24000, 1);
         const source = audioCtx.createBufferSource();
         source.buffer = audioBuffer;
@@ -209,7 +212,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
     setLoading(true);
     try {
-      // Usar upsert para que si el hueco no existe en la maestra se cree
       const { error: slotError } = await supabase
         .from('warehouse_slots')
         .upsert({
@@ -238,8 +240,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
       if (logError) throw logError;
 
-      // Notificación por voz
-      announceLocation(user.full_name, finalCartId);
+      // Iniciar notificación por voz de forma asíncrona para no bloquear el flujo
+      announceLocation(user.full_name, finalCartId).catch(console.error);
 
       setMessage({ type: 'success', text: `UBICACIÓN ${slotCode} ACTUALIZADA AL ${newQuantity}%` });
       setCartId('');
@@ -260,12 +262,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     setSelectedSize(slot.size);
     setOrigin('finder');
     setShowSearchFinder(false);
-    
-    if (!cartId.trim()) {
-      setStep('status');
-    } else {
-      setStep('status');
-    }
+    setStep('status');
     setShowActionModal(true);
   };
 
@@ -282,13 +279,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         .eq('is_scanned_once', true);
 
       if (streets === 'low') {
-        // Pasillos 02-12 SOLO U01
         query = query.or('code.ilike.U010%,code.ilike.U0110%,code.ilike.U0111%,code.ilike.U0112%');
       } else if (streets === 'high') {
-        // Pasillos 13-22 SOLO U01
         query = query.or('code.ilike.U0113%,code.ilike.U0114%,code.ilike.U0115%,code.ilike.U0116%,code.ilike.U0117%,code.ilike.U0118%,code.ilike.U0119%,code.ilike.U012%');
       } else if (streets === 'u02') {
-        // Solo Planta U02
         query = query.ilike('code', 'U02%');
       }
 

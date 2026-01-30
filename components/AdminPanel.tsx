@@ -17,13 +17,16 @@ interface MovementLog {
 }
 
 type AdminTab = 'movements' | 'operators' | 'truckers' | 'sectors' | 'reports';
+type ReportScope = 'range' | 'week' | 'today';
 
 const AdminPanel: React.FC = () => {
   const [activeSubTab, setActiveSubTab] = useState<AdminTab>('movements');
   const [loading, setLoading] = useState(true);
   
   const todayLocal = new Date().toLocaleDateString('en-CA');
-  // Para que el rendimiento sea acumulado por defecto, podemos poner una fecha de inicio más temprana
+  
+  // Periodo seleccionado
+  const [scope, setScope] = useState<ReportScope>('range');
   const [dateFrom, setDateFrom] = useState('2024-01-01'); 
   const [dateTo, setDateTo] = useState(todayLocal);
   const [selectedOperator, setSelectedOperator] = useState<string | null>(null);
@@ -47,6 +50,26 @@ const AdminPanel: React.FC = () => {
     fetchData();
   }, [dateFrom, dateTo, activeSubTab]);
 
+  const setRangeToThisWeek = () => {
+    const now = new Date();
+    const day = now.getDay() || 7; // Lunes: 1, Domingo: 7
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - day + 1);
+    
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+
+    setDateFrom(monday.toLocaleDateString('en-CA'));
+    setDateTo(sunday.toLocaleDateString('en-CA'));
+    setScope('week');
+  };
+
+  const setRangeToToday = () => {
+    setDateFrom(todayLocal);
+    setDateTo(todayLocal);
+    setScope('today');
+  };
+
   const fetchData = async () => {
     setLoading(true);
     if (activeSubTab === 'movements' || activeSubTab === 'reports') {
@@ -59,7 +82,6 @@ const AdminPanel: React.FC = () => {
       setAllLogs(logs || []);
 
       if (activeSubTab === 'reports') {
-        // Cargar TODOS los huecos mediante paginación para el informe
         let allSlots: WarehouseSlot[] = [];
         let from = 0;
         const step = 1000;
@@ -88,7 +110,6 @@ const AdminPanel: React.FC = () => {
       const { data } = await supabase.from('truckers').select('*').order('full_name');
       setTruckers(data?.map((t: any) => ({ id: t.id, label: t.full_name, created_at: t.created_at })) || []);
     } else if (activeSubTab === 'sectors') {
-      // Implementación de carga paginada para obtener el TOTAL REAL de huecos
       let allSectorSlots: any[] = [];
       let from = 0;
       const step = 1000;
@@ -228,10 +249,10 @@ const AdminPanel: React.FC = () => {
             <div className="flex flex-col lg:flex-row gap-4 items-end justify-between">
                <div className="w-full flex flex-col md:flex-row gap-4 flex-wrap">
                  <div className="space-y-2">
-                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2">Rango Histórico</label>
+                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2">Periodo Consulta</label>
                    <div className="flex gap-2">
-                      <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="bg-slate-50 p-4 rounded-2xl text-xs font-bold outline-none flex-1 border border-slate-100" />
-                      <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="bg-slate-50 p-4 rounded-2xl text-xs font-bold outline-none flex-1 border border-slate-100" />
+                      <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setScope('range'); }} className="bg-slate-50 p-4 rounded-2xl text-xs font-bold outline-none flex-1 border border-slate-100" />
+                      <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setScope('range'); }} className="bg-slate-50 p-4 rounded-2xl text-xs font-bold outline-none flex-1 border border-slate-100" />
                    </div>
                  </div>
                  <div className="space-y-2 min-w-[180px]">
@@ -338,7 +359,7 @@ const AdminPanel: React.FC = () => {
 
         {activeSubTab === 'sectors' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-             <div className="bg-slate-50 p-8 rounded-[3rem] border border-slate-100 space-y-4">
+             <div className="bg-slate-50 p-8 rounded-[3rem] border border-slate-100 shadow-sm space-y-4">
                 <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Estado Global Inventario</h4>
                 <div className="space-y-4">
                    <div className="flex justify-between items-end">
@@ -375,13 +396,21 @@ const AdminPanel: React.FC = () => {
 
         {activeSubTab === 'reports' && (
           <div className="space-y-12 animate-fade-in">
-             <div className="flex flex-col md:flex-row gap-4 items-end mb-8">
-               <div className="flex-1 space-y-2">
-                 <label className="text-sm font-semibold text-slate-500 uppercase tracking-widest ml-2">Periodo Informe Operarios (Acumulado)</label>
-                 <div className="flex gap-2">
-                    <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="bg-slate-50 p-4 rounded-2xl text-base font-medium outline-none flex-1 border border-slate-100" />
-                    <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="bg-slate-50 p-4 rounded-2xl text-base font-medium outline-none flex-1 border border-slate-100" />
+             <div className="flex flex-col md:flex-row gap-6 items-end mb-8">
+               <div className="flex-1 space-y-4">
+                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">Periodo del Informe</label>
+                 <div className="flex flex-wrap gap-2">
+                    <button onClick={setRangeToToday} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${scope === 'today' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>Hoy</button>
+                    <button onClick={setRangeToThisWeek} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${scope === 'week' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>Esta Semana</button>
+                    <button onClick={() => setScope('range')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${scope === 'range' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>Manual</button>
                  </div>
+                 <div className="flex gap-2">
+                    <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setScope('range'); }} className="bg-slate-50 p-4 rounded-2xl text-xs font-bold outline-none flex-1 border border-slate-100" />
+                    <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setScope('range'); }} className="bg-slate-50 p-4 rounded-2xl text-xs font-bold outline-none flex-1 border border-slate-100" />
+                 </div>
+                 {scope === 'week' && (
+                   <p className="text-[9px] font-black text-indigo-500 uppercase tracking-widest ml-2">📊 Mostrando rendimiento semanal: {new Date(dateFrom).toLocaleDateString()} al {new Date(dateTo).toLocaleDateString()}</p>
+                 )}
                </div>
             </div>
 
@@ -439,7 +468,7 @@ const AdminPanel: React.FC = () => {
             </section>
 
             <section className="space-y-6">
-              <h3 className="text-lg font-semibold text-slate-800 uppercase tracking-tight ml-2">Rendimiento Operarios (Acumulado)</h3>
+              <h3 className="text-lg font-semibold text-slate-800 uppercase tracking-tight ml-2">Rendimiento Operarios (Promedio en Periodo Seleccionado)</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {getOperatorStats().map(([key, op]) => (
                   <div key={key} className="p-8 bg-slate-50 rounded-[2.5rem] border border-slate-100 flex items-center justify-between group">
@@ -447,7 +476,7 @@ const AdminPanel: React.FC = () => {
                       <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-2xl shadow-sm">👷</div>
                       <div>
                         <p className="font-semibold text-slate-800 uppercase text-sm tracking-tight">{op.name}</p>
-                        <p className="text-[10px] font-medium text-slate-400 uppercase tracking-[0.2em] mt-1">{op.count} CAPTURAS TOTALES</p>
+                        <p className="text-[10px] font-medium text-slate-400 uppercase tracking-[0.2em] mt-1">{op.count} CAPTURAS EN EL PERIODO</p>
                       </div>
                     </div>
                     <div className="text-right">
@@ -463,7 +492,7 @@ const AdminPanel: React.FC = () => {
               <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
                  <div className="w-24 h-24 bg-indigo-50 rounded-full flex items-center justify-center text-4xl">📈</div>
                  <h3 className="text-2xl font-semibold text-slate-800 uppercase tracking-tight">Sin datos para informe</h3>
-                 <p className="text-slate-400 text-sm font-medium max-w-sm uppercase tracking-widest leading-relaxed">No se han encontrado capturas en el rango seleccionado para calcular rendimientos.</p>
+                 <p className="text-slate-400 text-sm font-medium max-w-sm uppercase tracking-widest leading-relaxed">No se han encontrado capturas en el periodo {scope} seleccionado para calcular rendimientos.</p>
               </div>
             )}
           </div>
