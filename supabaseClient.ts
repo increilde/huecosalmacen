@@ -7,61 +7,35 @@ const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 /**
- * --- EJECUTA ESTO EN EL "SQL EDITOR" DE SUPABASE PARA SOLUCIONAR EL ERROR ---
+ * --- EJECUTA ESTO EN EL "SQL EDITOR" DE SUPABASE (Copia y pega todo el bloque) ---
  * 
- * -- 1. Tabla de Logs de Expedición (Muelles)
- * CREATE TABLE IF NOT EXISTS expedition_logs (
- *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
- *   dock_id TEXT NOT NULL,
- *   side TEXT DEFAULT 'single', -- 'single', 'left', 'right'
- *   truck_id TEXT NOT NULL,
- *   operator_name TEXT,
- *   status TEXT DEFAULT 'loading',
- *   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
- *   finished_at TIMESTAMP WITH TIME ZONE
- * );
+ * -- 1. Columnas base
+ * ALTER TABLE roles ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '[]';
+ * ALTER TABLE profiles ADD COLUMN IF NOT EXISTS prompt_machinery BOOLEAN DEFAULT FALSE;
  * 
- * -- 2. Tabla de Camioneros Habituales
- * CREATE TABLE IF NOT EXISTS truckers (
- *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
- *   full_name TEXT NOT NULL,
- *   truck_id TEXT,
- *   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
- * );
+ * -- 2. Restricciones seguras (Solo se crean si no existen)
+ * DO $$
+ * BEGIN
+ *     -- Unicidad del email para poder usarlo como FK
+ *     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'profiles_email_unique') THEN
+ *         ALTER TABLE profiles ADD CONSTRAINT profiles_email_unique UNIQUE (email);
+ *     END IF;
  * 
- * -- 3. Tabla de Notas Diarias
- * CREATE TABLE IF NOT EXISTS daily_notes (
- *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
- *   note_date DATE UNIQUE NOT NULL DEFAULT CURRENT_DATE,
- *   content TEXT,
- *   updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
- * );
+ *     -- Relación de task_logs con profiles
+ *     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'task_logs_operator_email_fkey') THEN
+ *         ALTER TABLE task_logs 
+ *         ADD CONSTRAINT task_logs_operator_email_fkey 
+ *         FOREIGN KEY (operator_email) REFERENCES profiles(email)
+ *         ON UPDATE CASCADE;
+ *     END IF;
+ * END
+ * $$;
  * 
- * -- 4. Tabla de Suministros (Stock Almacén)
- * CREATE TABLE IF NOT EXISTS warehouse_supplies (
- *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
- *   name TEXT NOT NULL,
- *   category TEXT DEFAULT 'VARIOS',
- *   quantity INTEGER DEFAULT 0,
- *   min_quantity INTEGER DEFAULT 5,
- *   unit TEXT DEFAULT 'unidades',
- *   updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
- * );
- * 
- * -- 5. Tabla de Logs de Suministros (Historial de restas/sumas)
- * CREATE TABLE IF NOT EXISTS warehouse_supply_logs (
- *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
- *   supply_id UUID REFERENCES warehouse_supplies(id) ON DELETE CASCADE,
- *   operator_name TEXT,
- *   change_amount INTEGER,
- *   comment TEXT,
- *   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
- * );
- * 
- * -- Desactivar RLS para pruebas rápidas
- * ALTER TABLE expedition_logs DISABLE ROW LEVEL SECURITY;
- * ALTER TABLE truckers DISABLE ROW LEVEL SECURITY;
- * ALTER TABLE daily_notes DISABLE ROW LEVEL SECURITY;
- * ALTER TABLE warehouse_supplies DISABLE ROW LEVEL SECURITY;
- * ALTER TABLE warehouse_supply_logs DISABLE ROW LEVEL SECURITY;
+ * -- 3. Población inicial de roles
+ * INSERT INTO roles (name, permissions) VALUES 
+ * ('admin', '["dashboard", "slots", "expedition", "supplies", "admin", "users"]'), 
+ * ('operator', '["dashboard", "slots"]'), 
+ * ('expedition', '["expedition"]'), 
+ * ('viewer', '["slots"]')
+ * ON CONFLICT (name) DO UPDATE SET permissions = EXCLUDED.permissions;
  */

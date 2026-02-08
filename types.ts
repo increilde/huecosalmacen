@@ -10,13 +10,36 @@ export interface UserProfile {
   id: string;
   email: string;
   full_name: string;
-  role: UserRole;
+  role: string; // Nombre del rol
+  prompt_machinery: boolean; // Si debe pedir maquinaria al entrar
+  created_at: string;
+}
+
+export interface Role {
+  id: string;
+  name: string;
+  permissions: string[]; // Lista de IDs de secciones permitidas
+  created_at: string;
+}
+
+export interface Task {
+  id: string;
+  name: string;
+  allowed_roles: string[];
+  is_timed: boolean;
+  created_at: string;
+}
+
+export interface Machinery {
+  id: string;
+  type: 'carretilla' | 'pda';
+  identifier: string;
   created_at: string;
 }
 
 export interface Trucker {
   id: string;
-  label: string; // Ejemplo: "115 MXO21"
+  label: string;
   created_at: string;
 }
 
@@ -42,7 +65,7 @@ export interface ExpeditionLog {
   id: string;
   dock_id: string;
   side: 'left' | 'right' | 'single';
-  truck_id: string; // Usaremos este campo para el identificador combinado (ej: 115 MXO21)
+  truck_id: string;
   status: 'loading' | 'completed';
   operator_name: string;
   created_at: string;

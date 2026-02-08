@@ -142,7 +142,7 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
             truck_id: truckId.toUpperCase().trim(),
             operator_name: user.full_name,
             status: 'loading',
-            created_at: `${historyDate}T${new Date().toLocaleTimeString('en-GB')}` // Mantener la fecha seleccionada
+            created_at: `${historyDate}T${new Date().toLocaleTimeString('en-GB')}` 
           }]);
 
         if (error) throw error;
@@ -159,7 +159,7 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
 
   const handleFinish = async (e: React.MouseEvent, logId: string) => {
     e.preventDefault();
-    e.stopPropagation(); // Evitar propagación a elementos padre
+    e.stopPropagation(); 
 
     if (!isToday) {
       alert("Solo se puede modificar registros de hoy o futuros.");
@@ -180,7 +180,6 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
 
       if (error) throw error;
       
-      // Refrescar lista de logs para ocultar el camión finalizado
       await fetchLogsAndNotes();
     } catch (err: any) {
       alert("Error al finalizar: " + err.message);
@@ -204,7 +203,6 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
 
   const getActiveLogsForDock = (dock: string) => {
     if (isToday) {
-      // En la vista actual/futura solo mostramos los que están cargando
       return logs.filter(l => l.dock_id === dock && l.status === 'loading');
     }
     return logs.filter(l => l.dock_id === dock);
@@ -280,10 +278,11 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
           <div className="flex items-center gap-2 mt-2">
              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">CAMBIAR FECHA:</span>
              <input 
+              id="expedition-date-selector"
               type="date" 
               value={historyDate} 
-              onChange={e => setHistoryDate(e.target.value)} 
-              className={`px-3 py-1.5 rounded-xl font-black text-[10px] outline-none border-2 transition-all ${historyDate === getTodayStr() ? 'bg-indigo-50 border-indigo-100 text-indigo-600' : historyDate > getTodayStr() ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-slate-900 border-slate-800 text-white'}`}
+              onChange={e => { if (e.target.value) setHistoryDate(e.target.value); }}
+              className={`px-3 py-1.5 rounded-xl font-black text-[10px] outline-none border-2 transition-all cursor-pointer ${historyDate === getTodayStr() ? 'bg-indigo-50 border-indigo-100 text-indigo-600' : historyDate > getTodayStr() ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-slate-900 border-slate-800 text-white'}`}
              />
              {historyDate < getTodayStr() && <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded-lg text-[7px] font-black uppercase tracking-widest">MODO CONSULTA</span>}
           </div>
@@ -394,7 +393,7 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
 
       {assigningData && isToday && (
         <div className="fixed inset-0 z-[200] bg-slate-900/95 backdrop-blur-md flex items-center justify-center p-4">
-           <div className="bg-white w-full max-w-lg rounded-[3.5rem] p-6 md:p-10 shadow-2xl animate-fade-in relative overflow-hidden flex flex-col max-h-[90vh]">
+           <div className="bg-white w-full max-lg rounded-[3.5rem] p-6 md:p-10 shadow-2xl animate-fade-in relative overflow-hidden flex flex-col max-h-[90vh]">
               <div className="absolute -right-8 -top-8 text-slate-50 text-9xl font-bold opacity-30 pointer-events-none">🚛</div>
               
               <div className="relative z-10 flex flex-col h-full min-h-0">
@@ -479,7 +478,6 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
         </div>
       )}
 
-      {/* Modal secundario para creación rápida de camión */}
       {showTruckerModal && (
         <div className="fixed inset-0 z-[300] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4">
            <form onSubmit={handleCreateQuickTrucker} className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl space-y-6 animate-fade-in border border-white">
