@@ -254,7 +254,7 @@ const App: React.FC = () => {
         <div className="animate-fade-in max-w-5xl mx-auto">
           {activeTab === 'dashboard' && <Dashboard user={user} />}
           {activeTab === 'slots' && <SlotGrid userRole={user.role as any} />}
-          {activeTab === 'admin' && <AdminPanel />}
+          {activeTab === 'admin' && <AdminPanel user={user} />}
           {activeTab === 'expedition' && <ExpeditionPanel user={user} />}
           {activeTab === 'supplies' && <SuppliesPanel />}
         </div>

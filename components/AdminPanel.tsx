@@ -30,7 +30,11 @@ interface TaskLog {
 type AdminTab = 'movements' | 'operators' | 'truckers' | 'sectors' | 'reports' | 'machinery' | 'tasks';
 type ReportScope = 'range' | 'week' | 'today';
 
-const AdminPanel: React.FC = () => {
+interface AdminPanelProps {
+  user: UserProfile;
+}
+
+const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   const [activeSubTab, setActiveSubTab] = useState<AdminTab>('movements');
   const [tasksView, setTasksView] = useState<'report' | 'config'>('report');
   const [loading, setLoading] = useState(true);
@@ -219,6 +223,42 @@ const AdminPanel: React.FC = () => {
     }
   };
 
+  /**
+   * Lógica de redondeo: 
+   * - Mínimo 15 min.
+   * - Tramos de 15 min siempre al alza.
+   */
+  const getRoundedDurationMs = (start: string, end: string | null): number => {
+    if (!end) return 0;
+    const startMs = new Date(start).getTime();
+    const endMs = new Date(end).getTime();
+    const diffMs = Math.max(0, endMs - startMs);
+    
+    const intervalMs = 15 * 60 * 1000; // 15 minutos en ms
+    
+    if (diffMs === 0) return 0;
+    
+    // Aplicar mínimo 15 minutos y redondear al alza al siguiente tramo de 15 min
+    return Math.ceil(Math.max(diffMs, intervalMs) / intervalMs) * intervalMs;
+  };
+
+  const formatMsToHHMM = (ms: number): string => {
+    const totalMinutes = Math.floor(ms / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return `${hours}:${minutes.toString().padStart(2, '0')}`;
+  };
+
+  const calculateTotalTimeRounded = (logs: TaskLog[]) => {
+    let totalMs = 0;
+    logs.forEach(log => {
+      if (log.start_time && log.end_time) {
+        totalMs += getRoundedDurationMs(log.start_time, log.end_time);
+      }
+    });
+    return formatMsToHHMM(totalMs);
+  };
+
   const processWarehouseReport = (slots: WarehouseSlot[]) => {
     const plants = ['U01', 'U02'];
     const sizes = ['Grande', 'Mediano', 'Pequeño'];
@@ -258,18 +298,6 @@ const AdminPanel: React.FC = () => {
       entry.logs.push(log);
     });
     return Array.from(map.entries());
-  };
-
-  const calculateTotalTime = (logs: TaskLog[]) => {
-    let totalMs = 0;
-    logs.forEach(log => {
-      if (log.start_time && log.end_time) {
-        totalMs += new Date(log.end_time).getTime() - new Date(log.start_time).getTime();
-      }
-    });
-    const hours = Math.floor(totalMs / 3600000);
-    const minutes = Math.floor((totalMs % 3600000) / 60000);
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
   };
 
   const calculateAvgTime = (logs: MovementLog[]) => {
@@ -385,6 +413,44 @@ const AdminPanel: React.FC = () => {
     }));
   };
 
+  const handleFinishTaskLog = async (logId: string) => {
+    if (user.role !== 'admin') return;
+    if (!confirm("¿Deseas finalizar esta tarea manualmente con la hora actual?")) return;
+    
+    setLoadingTaskLogs(true);
+    try {
+      const { error } = await supabase
+        .from('task_logs')
+        .update({ end_time: new Date().toISOString() })
+        .eq('id', logId);
+      if (error) throw error;
+      await fetchTaskLogs();
+    } catch (err: any) {
+      alert("Error al finalizar: " + err.message);
+    } finally {
+      setLoadingTaskLogs(false);
+    }
+  };
+
+  const handleDeleteTaskLog = async (logId: string) => {
+    if (user.role !== 'admin') return;
+    if (!confirm("¿Estás seguro de eliminar este registro de tiempo? Esta acción no se puede deshacer.")) return;
+    
+    setLoadingTaskLogs(true);
+    try {
+      const { error } = await supabase
+        .from('task_logs')
+        .delete()
+        .eq('id', logId);
+      if (error) throw error;
+      await fetchTaskLogs();
+    } catch (err: any) {
+      alert("Error al eliminar: " + err.message);
+    } finally {
+      setLoadingTaskLogs(false);
+    }
+  };
+
   return (
     <div className="space-y-8 animate-fade-in pb-20">
       <div className="flex justify-center">
@@ -417,6 +483,7 @@ const AdminPanel: React.FC = () => {
       <div className="bg-white p-4 md:p-10 rounded-[3rem] border border-slate-100 shadow-sm min-h-[500px]">
         {activeSubTab === 'movements' && (
           <div className="space-y-8">
+            {/* Filtros Historial */}
             <div className="flex flex-col lg:flex-row gap-4 items-end justify-between">
                <div className="w-full flex flex-col md:flex-row gap-4 flex-wrap">
                  <div className="space-y-2">
@@ -529,8 +596,8 @@ const AdminPanel: React.FC = () => {
               <section className="bg-slate-50 p-8 rounded-[3rem] border border-slate-100 space-y-8 animate-fade-in">
                  <div className="flex flex-col md:flex-row justify-between items-end gap-6">
                     <div className="space-y-2">
-                      <h3 className="text-lg font-black text-slate-800 uppercase tracking-tighter">Rendimiento en Tareas</h3>
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Resumen de tiempos por operario</p>
+                      <h3 className="text-lg font-black text-slate-800 uppercase tracking-tighter">Rendimiento en Tareas (Redondeado)</h3>
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Tramos de 15 min al alza (Regla 15 min min.)</p>
                     </div>
                     <div className="flex flex-wrap gap-4 items-end">
                        <div className="space-y-1">
@@ -561,8 +628,8 @@ const AdminPanel: React.FC = () => {
                     <div className="absolute -right-10 -bottom-10 text-white/10 text-[12rem] font-black pointer-events-none">Σ</div>
                     <div className="relative z-10 text-center md:text-left">
                       <p className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-200 mb-2">Total tiempo acumulado</p>
-                      <p className="text-6xl font-black tracking-tighter">{calculateTotalTime(taskLogs)}</p>
-                      <p className="text-[8px] font-bold uppercase tracking-widest mt-2 opacity-60">HH:MM DE ACTIVIDAD FILTRADA</p>
+                      <p className="text-6xl font-black tracking-tighter">{calculateTotalTimeRounded(taskLogs)}</p>
+                      <p className="text-[8px] font-bold uppercase tracking-widest mt-2 opacity-60">HH:MM DE ACTIVIDAD FACTURABLE</p>
                     </div>
                     <div className="relative z-10 bg-white/10 backdrop-blur-md p-6 rounded-3xl border border-white/20 text-center">
                       <p className="text-[9px] font-black uppercase tracking-widest mb-1">Registros</p>
@@ -576,27 +643,58 @@ const AdminPanel: React.FC = () => {
                         <tr>
                           <th className="px-6 py-4">TAREA</th>
                           <th className="px-6 py-4">OPERARIO</th>
-                          <th className="px-6 py-4">INICIO</th>
-                          <th className="px-6 py-4">FIN</th>
-                          <th className="px-6 py-4 text-right">DURACIÓN</th>
+                          <th className="px-6 py-4 text-center">INICIO</th>
+                          <th className="px-6 py-4 text-center">FIN</th>
+                          <th className="px-6 py-4 text-right">DURACIÓN (REDON)</th>
+                          <th className="px-6 py-4 text-center">ACCIONES</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-50">
                         {loadingTaskLogs ? (
-                          <tr><td colSpan={5} className="py-16 text-center animate-pulse text-slate-300 font-black uppercase text-[10px]">Cargando registros...</td></tr>
+                          <tr><td colSpan={6} className="py-16 text-center animate-pulse text-slate-300 font-black uppercase text-[10px]">Cargando registros...</td></tr>
                         ) : taskLogs.length === 0 ? (
-                          <tr><td colSpan={5} className="py-16 text-center text-slate-300 font-black uppercase text-[10px]">Sin actividad en el periodo</td></tr>
+                          <tr><td colSpan={6} className="py-16 text-center text-slate-300 font-black uppercase text-[10px]">Sin actividad en el periodo</td></tr>
                         ) : taskLogs.map(log => {
-                          const duration = log.end_time 
-                            ? calculateTotalTime([log])
-                            : '--:--';
+                          const roundedMs = getRoundedDurationMs(log.start_time, log.end_time);
+                          const durationStr = log.end_time ? formatMsToHHMM(roundedMs) : '--:--';
+                          
                           return (
                             <tr key={log.id} className="hover:bg-slate-50 transition-colors">
                               <td className="px-6 py-4 font-black text-slate-800 uppercase">{log.tasks?.name || 'Desconocida'}</td>
                               <td className="px-6 py-4 font-bold text-indigo-600 uppercase">{log.profiles?.full_name || log.operator_email}</td>
-                              <td className="px-6 py-4 text-slate-400 font-bold">{new Date(log.start_time).toLocaleString()}</td>
-                              <td className="px-6 py-4 text-slate-400 font-bold">{log.end_time ? new Date(log.end_time).toLocaleString() : <span className="text-rose-500">Activa</span>}</td>
-                              <td className="px-6 py-4 text-right font-black text-slate-900">{duration}</td>
+                              <td className="px-6 py-4 text-slate-400 font-bold text-center text-[10px]">
+                                {new Date(log.start_time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+                              </td>
+                              <td className="px-6 py-4 text-slate-400 font-bold text-center text-[10px]">
+                                {log.end_time ? new Date(log.end_time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : <span className="text-rose-500 font-black">ABIERTA</span>}
+                              </td>
+                              <td className="px-6 py-4 text-right font-black text-slate-900">
+                                {durationStr}
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                <div className="flex justify-center gap-2">
+                                  {user.role === 'admin' && (
+                                    <>
+                                      {!log.end_time && (
+                                        <button 
+                                          onClick={() => handleFinishTaskLog(log.id)}
+                                          className="bg-emerald-50 text-emerald-600 p-2 rounded-lg hover:bg-emerald-100 transition-all active:scale-90"
+                                          title="Finalizar tarea manualmente"
+                                        >
+                                          🏁
+                                        </button>
+                                      )}
+                                      <button 
+                                        onClick={() => handleDeleteTaskLog(log.id)}
+                                        className="bg-rose-50 text-rose-600 p-2 rounded-lg hover:bg-rose-100 transition-all active:scale-90"
+                                        title="Eliminar registro"
+                                      >
+                                        🗑️
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </td>
                             </tr>
                           );
                         })}
