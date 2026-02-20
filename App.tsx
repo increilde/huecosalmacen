@@ -26,6 +26,24 @@ const App: React.FC = () => {
   const [allMachinery, setAllMachinery] = useState<Machinery[]>([]);
   const [selectionForm, setSelectionForm] = useState({ forklift: '', pda: '' });
 
+  const fetchRolePermissions = React.useCallback(async (roleName: string) => {
+    try {
+      const { data } = await supabase.from('roles').select('permissions').eq('name', roleName).single();
+      if (data && data.permissions) {
+        const perms = Array.isArray(data.permissions) ? data.permissions : JSON.parse(data.permissions || '[]');
+        setUserPermissions(perms);
+        
+        if (perms.length > 0 && !perms.includes(activeTab)) {
+          if (perms.includes('dashboard')) setActiveTab('dashboard');
+          else if (perms.includes('expedition')) setActiveTab('expedition');
+          else setActiveTab(perms[0] as any);
+        }
+      }
+    } catch (e) {
+      console.error("Error al obtener permisos:", e);
+    }
+  }, [activeTab]);
+
   // Efecto para cierre de sesión automático a las 23:59
   useEffect(() => {
     const checkMidnight = setInterval(() => {
@@ -81,25 +99,7 @@ const App: React.FC = () => {
     };
     checkConnection();
     return () => { isMounted = false; };
-  }, []);
-
-  const fetchRolePermissions = async (roleName: string) => {
-    try {
-      const { data } = await supabase.from('roles').select('permissions').eq('name', roleName).single();
-      if (data && data.permissions) {
-        const perms = Array.isArray(data.permissions) ? data.permissions : JSON.parse(data.permissions || '[]');
-        setUserPermissions(perms);
-        
-        if (perms.length > 0 && !perms.includes(activeTab)) {
-          if (perms.includes('dashboard')) setActiveTab('dashboard');
-          else if (perms.includes('expedition')) setActiveTab('expedition');
-          else setActiveTab(perms[0] as any);
-        }
-      }
-    } catch (e) {
-      console.error("Error al obtener permisos:", e);
-    }
-  };
+  }, [fetchRolePermissions]);
 
   useEffect(() => {
     if (user && !sessionMachinery && user.prompt_machinery) {

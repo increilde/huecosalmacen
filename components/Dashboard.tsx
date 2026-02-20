@@ -95,6 +95,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   // Ref para AudioContext persistente
   const audioCtxRef = useRef<AudioContext | null>(null);
 
+  const fetchAvailableTasks = React.useCallback(async () => {
+    const { data } = await supabase.from('tasks').select('*');
+    if (data) {
+      // Filtrar tareas que permiten el rol del usuario actual
+      const filtered = data.filter((t: any) => t.allowed_roles.includes(user.role));
+      setAvailableTasks(filtered);
+    }
+  }, [user.role]);
+
   useEffect(() => {
     fetchAvailableTasks();
     const savedTask = localStorage.getItem('wh_active_task');
@@ -107,7 +116,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, []);
+  }, [fetchAvailableTasks]);
 
   useEffect(() => {
     if (activeTask?.is_timed && taskStartTime) {
@@ -124,15 +133,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       setElapsedTime('00:00');
     }
   }, [activeTask, taskStartTime]);
-
-  const fetchAvailableTasks = async () => {
-    const { data } = await supabase.from('tasks').select('*');
-    if (data) {
-      // Filtrar tareas que permiten el rol del usuario actual
-      const filtered = data.filter((t: any) => t.allowed_roles.includes(user.role));
-      setAvailableTasks(filtered);
-    }
-  };
 
   const handleStartTask = async (task: Task) => {
     setLoading(true);

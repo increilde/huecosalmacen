@@ -90,3 +90,15 @@ export interface WarehouseSupplyLog {
   comment: string;
   created_at: string;
 }
+
+export interface MachineryMaintenance {
+  id: string;
+  machinery_id: string;
+  type: 'averia' | 'reparacion' | 'revision';
+  description: string;
+  cost?: number;
+  status: 'pending' | 'completed';
+  reported_by: string;
+  created_at: string;
+  completed_at?: string;
+}

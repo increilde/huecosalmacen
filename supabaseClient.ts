@@ -38,4 +38,17 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  * ('expedition', '["expedition"]'), 
  * ('viewer', '["slots"]')
  * ON CONFLICT (name) DO UPDATE SET permissions = EXCLUDED.permissions;
+ * 
+ * -- 4. Tabla de Mantenimiento de Maquinaria
+ * CREATE TABLE IF NOT EXISTS machinery_maintenance (
+ *     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+ *     machinery_id UUID REFERENCES machinery(id) ON DELETE CASCADE,
+ *     type TEXT CHECK (type IN ('averia', 'reparacion', 'revision')),
+ *     description TEXT NOT NULL,
+ *     cost NUMERIC DEFAULT 0,
+ *     status TEXT CHECK (status IN ('pending', 'completed')) DEFAULT 'pending',
+ *     reported_by TEXT,
+ *     created_at TIMESTAMPTZ DEFAULT now(),
+ *     completed_at TIMESTAMPTZ
+ * );
  */

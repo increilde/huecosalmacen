@@ -16,27 +16,29 @@ const ScannerModal: React.FC<ScannerModalProps> = ({ isOpen, onClose, onScan, ti
   // Ref para manejar la validación de confianza sin re-renders innecesarios
   const scanBuffer = useRef<{ code: string, count: number }>({ code: '', count: 0 });
 
-  useEffect(() => {
-    if (isOpen && scannerRef.current) {
-      initQuagga();
-      scanBuffer.current = { code: '', count: 0 };
-    }
-    return () => {
-      try {
-        Quagga.stop();
-        Quagga.offDetected();
-      } catch (e) {
-        // Silencioso
-      }
-    };
-  }, [isOpen]);
+  const handleScanSuccess = React.useCallback((code: string) => {
+    if (isSuccess) return;
+    setIsSuccess(true);
+    
+    // Feedback táctil
+    if (navigator.vibrate) navigator.vibrate(100);
+    
+    // Pausamos Quagga para que no siga detectando mientras cerramos
+    Quagga.offDetected();
+    
+    setTimeout(() => {
+      onScan(code);
+      onClose();
+      setIsSuccess(false);
+    }, 500);
+  }, [isSuccess, onClose, onScan]);
 
-  const initQuagga = () => {
+  const initQuagga = React.useCallback(() => {
+    if (!scannerRef.current) return;
     Quagga.init({
       inputStream: {
-        // Removed 'name' property as it is not part of Quagga's inputStream types and caused a TS error.
         type: "LiveStream",
-        target: scannerRef.current!,
+        target: scannerRef.current,
         constraints: {
           width: { min: 640 },
           height: { min: 480 },
@@ -69,9 +71,6 @@ const ScannerModal: React.FC<ScannerModalProps> = ({ isOpen, onClose, onScan, ti
       if (data?.codeResult?.code) {
         const code = data.codeResult.code.trim();
         
-        // --- SISTEMA DE CONFIANZA ---
-        // Para evitar lecturas raras, necesitamos que el mismo código 
-        // aparezca 3 veces seguidas en el flujo de la cámara.
         if (code === scanBuffer.current.code) {
           scanBuffer.current.count++;
         } else {
@@ -84,24 +83,22 @@ const ScannerModal: React.FC<ScannerModalProps> = ({ isOpen, onClose, onScan, ti
         }
       }
     });
-  };
+  }, [handleScanSuccess]);
 
-  const handleScanSuccess = (code: string) => {
-    if (isSuccess) return;
-    setIsSuccess(true);
-    
-    // Feedback táctil
-    if (navigator.vibrate) navigator.vibrate(100);
-    
-    // Pausamos Quagga para que no siga detectando mientras cerramos
-    Quagga.offDetected();
-    
-    setTimeout(() => {
-      onScan(code);
-      onClose();
-      setIsSuccess(false);
-    }, 500);
-  };
+  useEffect(() => {
+    if (isOpen && scannerRef.current) {
+      initQuagga();
+      scanBuffer.current = { code: '', count: 0 };
+    }
+    return () => {
+      try {
+        Quagga.stop();
+        Quagga.offDetected();
+      } catch (e) {
+        // Silencioso
+      }
+    };
+  }, [isOpen, initQuagga]);
 
   if (!isOpen) return null;
 

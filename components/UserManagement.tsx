@@ -42,11 +42,7 @@ const UserManagement: React.FC = () => {
     viewer: 'VISOR'
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
+  const fetchData = React.useCallback(async () => {
     setLoading(true);
     try {
       const { data: usersData } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
@@ -88,7 +84,11 @@ const UserManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [userForm.role]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleCreateOrUpdateUser = async (e: React.FormEvent) => {
     e.preventDefault();

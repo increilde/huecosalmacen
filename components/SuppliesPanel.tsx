@@ -25,39 +25,7 @@ const SuppliesPanel: React.FC = () => {
   const [reportCategory, setReportCategory] = useState('TODAS');
   const [groupedLogs, setGroupedLogs] = useState<Record<string, { supply: WarehouseSupply, logs: WarehouseSupplyLog[] }>>({});
 
-  const [supplyForm, setSupplyForm] = useState({
-    name: '',
-    category: 'VARIOS',
-    quantity: 0,
-    min_quantity: 5,
-    unit: 'unidades'
-  });
-
-  useEffect(() => {
-    const savedUser = localStorage.getItem('wh_user');
-    if (savedUser) setCurrentUser(JSON.parse(savedUser));
-    fetchSupplies();
-  }, []);
-
-  useEffect(() => {
-    if (activeTab === 'reports') {
-      fetchReportData();
-    }
-  }, [activeTab, reportFrom, reportTo, reportCategory]);
-
-  const fetchSupplies = async () => {
-    setLoading(true);
-    try {
-      const { data } = await supabase.from('warehouse_supplies').select('*').order('name');
-      setSupplies(data || []);
-    } catch (err) {
-      console.error("Error fetching supplies:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchReportData = async () => {
+  const fetchReportData = React.useCallback(async () => {
     setLoadingLogs(true);
     try {
       // 1. Obtener los suministros (filtrados por categoría si aplica)
@@ -96,6 +64,38 @@ const SuppliesPanel: React.FC = () => {
       console.error(err);
     } finally {
       setLoadingLogs(false);
+    }
+  }, [reportCategory, reportFrom, reportTo]);
+
+  const [supplyForm, setSupplyForm] = useState({
+    name: '',
+    category: 'VARIOS',
+    quantity: 0,
+    min_quantity: 5,
+    unit: 'unidades'
+  });
+
+  useEffect(() => {
+    const savedUser = localStorage.getItem('wh_user');
+    if (savedUser) setCurrentUser(JSON.parse(savedUser));
+    fetchSupplies();
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'reports') {
+      fetchReportData();
+    }
+  }, [activeTab, fetchReportData]);
+
+  const fetchSupplies = async () => {
+    setLoading(true);
+    try {
+      const { data } = await supabase.from('warehouse_supplies').select('*').order('name');
+      setSupplies(data || []);
+    } catch (err) {
+      console.error("Error fetching supplies:", err);
+    } finally {
+      setLoading(false);
     }
   };
 

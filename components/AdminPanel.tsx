@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
-import { WarehouseSlot, UserProfile, Trucker, UserRole, Machinery, Task, Role } from '../types';
+import { WarehouseSlot, UserProfile, Trucker, UserRole, Machinery, Task, Role, MachineryMaintenance } from '../types';
 import UserManagement from './UserManagement';
 
 interface MovementLog {
@@ -36,6 +36,7 @@ interface AdminPanelProps {
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   const [activeSubTab, setActiveSubTab] = useState<AdminTab>('movements');
+  const [selectedMachineryId, setSelectedMachineryId] = useState<string | null>(null);
   const [tasksView, setTasksView] = useState<'report' | 'config'>('report');
   const [loading, setLoading] = useState(true);
   
@@ -79,38 +80,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   });
 
   const [warehouseBreakdown, setWarehouseBreakdown] = useState<any[]>([]);
+  const [maintenanceRecords, setMaintenanceRecords] = useState<MachineryMaintenance[]>([]);
+  const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
+  const [maintenanceForm, setMaintenanceForm] = useState({
+    machinery_id: '',
+    type: 'averia' as 'averia' | 'reparacion' | 'revision',
+    description: '',
+    cost: 0,
+    status: 'pending' as 'pending' | 'completed'
+  });
 
-  useEffect(() => {
-    fetchData();
-  }, [dateFrom, dateTo, activeSubTab]);
-
-  useEffect(() => {
-    if (activeSubTab === 'tasks' && tasksView === 'report') {
-      fetchTaskLogs();
-    }
-  }, [activeSubTab, tasksView, taskLogDateFrom, taskLogDateTo, taskLogOperator]);
-
-  const setRangeToThisWeek = () => {
-    const now = new Date();
-    const day = now.getDay() || 7; 
-    const monday = new Date(now);
-    monday.setDate(now.getDate() - day + 1);
-    
-    const sunday = new Date(monday);
-    sunday.setDate(monday.getDate() + 6);
-
-    setDateFrom(monday.toLocaleDateString('en-CA'));
-    setDateTo(sunday.toLocaleDateString('en-CA'));
-    setScope('week');
-  };
-
-  const setRangeToToday = () => {
-    setDateFrom(todayLocal);
-    setDateTo(todayLocal);
-    setScope('today');
-  };
-
-  const fetchData = async () => {
+  const fetchData = React.useCallback(async () => {
     setLoading(true);
     try {
       if (activeSubTab === 'movements' || activeSubTab === 'reports') {
@@ -153,6 +133,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
       } else if (activeSubTab === 'machinery') {
         const { data } = await supabase.from('machinery').select('*').order('type', { ascending: true }).order('identifier', { ascending: true });
         setMachinery(data || []);
+        const { data: maintData } = await supabase.from('machinery_maintenance').select('*').order('created_at', { ascending: false });
+        setMaintenanceRecords(maintData || []);
       } else if (activeSubTab === 'tasks') {
         const { data: tasksData } = await supabase.from('tasks').select('*').order('name');
         const { data: rolesData } = await supabase.from('roles').select('*').order('name');
@@ -193,9 +175,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeSubTab, dateFrom, dateTo]);
 
-  const fetchTaskLogs = async () => {
+  const fetchTaskLogs = React.useCallback(async () => {
     setLoadingTaskLogs(true);
     try {
       let query = supabase
@@ -221,6 +203,36 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
     } finally {
       setLoadingTaskLogs(false);
     }
+  }, [taskLogDateFrom, taskLogDateTo, taskLogOperator]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  useEffect(() => {
+    if (activeSubTab === 'tasks' && tasksView === 'report') {
+      fetchTaskLogs();
+    }
+  }, [activeSubTab, tasksView, fetchTaskLogs]);
+
+  const setRangeToThisWeek = () => {
+    const now = new Date();
+    const day = now.getDay() || 7; 
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - day + 1);
+    
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+
+    setDateFrom(monday.toLocaleDateString('en-CA'));
+    setDateTo(sunday.toLocaleDateString('en-CA'));
+    setScope('week');
+  };
+
+  const setRangeToToday = () => {
+    setDateFrom(todayLocal);
+    setDateTo(todayLocal);
+    setScope('today');
   };
 
   /**
@@ -347,11 +359,58 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
     }
   };
 
+  const handleSaveMaintenance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!maintenanceForm.machinery_id || !maintenanceForm.description) return;
+    
+    const payload = {
+      ...maintenanceForm,
+      reported_by: user.full_name,
+      completed_at: maintenanceForm.status === 'completed' ? new Date().toISOString() : null
+    };
+
+    const { error } = await supabase.from('machinery_maintenance').insert([payload]);
+    if (!error) {
+      setShowMaintenanceModal(false);
+      setMaintenanceForm({
+        machinery_id: '',
+        type: 'averia',
+        description: '',
+        cost: 0,
+        status: 'pending'
+      });
+      fetchData();
+    }
+  };
+
+  const toggleMaintenanceStatus = async (record: MachineryMaintenance) => {
+    const newStatus = record.status === 'pending' ? 'completed' : 'pending';
+    const { error } = await supabase
+      .from('machinery_maintenance')
+      .update({ 
+        status: newStatus,
+        completed_at: newStatus === 'completed' ? new Date().toISOString() : null
+      })
+      .eq('id', record.id);
+    if (!error) fetchData();
+  };
+
+  const deleteMaintenance = async (id: string) => {
+    if (!confirm("¿Eliminar este registro?")) return;
+    const { error } = await supabase.from('machinery_maintenance').delete().eq('id', id);
+    if (!error) fetchData();
+  };
+
   const deleteMachinery = async (id: string) => {
     if (confirm("¿Eliminar maquinaria?")) {
       await supabase.from('machinery').delete().eq('id', id);
       fetchData();
     }
+  };
+
+  const openMaintenanceModal = (machineryId: string) => {
+    setMaintenanceForm(prev => ({ ...prev, machinery_id: machineryId }));
+    setShowMaintenanceModal(true);
   };
 
   const handleCreateOrUpdateTask = async (e: React.FormEvent) => {
@@ -737,27 +796,151 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
         )}
 
         {activeSubTab === 'machinery' && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center mb-6">
-               <h3 className="text-lg font-black text-slate-800 uppercase tracking-tighter">Maquinaria y PDAs</h3>
-               <button onClick={() => setShowMachineryModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-100">Nueva Maquina</button>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-               {machinery.map(m => (
-                 <div key={m.id} className="p-6 bg-slate-50 rounded-[2.5rem] border border-slate-100 flex items-center justify-between group">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-xl bg-white shadow-sm flex items-center justify-center">
-                        {m.type === 'carretilla' ? '🚜' : '📱'}
+          <div className="space-y-6 animate-fade-in">
+            {selectedMachineryId ? (
+              <div className="space-y-8">
+                <div className="flex items-center gap-4">
+                  <button 
+                    onClick={() => setSelectedMachineryId(null)}
+                    className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-all"
+                  >
+                    ←
+                  </button>
+                  <div>
+                    <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">
+                      Ficha de Maquinaria: {machinery.find(m => m.id === selectedMachineryId)?.identifier}
+                    </h3>
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Historial y control de mantenimiento</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  <div className="lg:col-span-1 space-y-6">
+                    <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+                      <div className="w-16 h-16 bg-white rounded-2xl shadow-sm flex items-center justify-center text-3xl mb-4 mx-auto">
+                        {machinery.find(m => m.id === selectedMachineryId)?.type === 'carretilla' ? '🚜' : '📱'}
                       </div>
-                      <div>
-                        <p className="font-black text-slate-800 uppercase text-sm">{m.identifier}</p>
-                        <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-1">{m.type}</p>
+                      <div className="text-center space-y-2">
+                        <p className="text-2xl font-black text-slate-800 uppercase">{machinery.find(m => m.id === selectedMachineryId)?.identifier}</p>
+                        <p className="text-[10px] font-black text-indigo-500 bg-indigo-50 px-3 py-1 rounded-full uppercase inline-block">
+                          {machinery.find(m => m.id === selectedMachineryId)?.type}
+                        </p>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-4">
+                          Registrada el {new Date(machinery.find(m => m.id === selectedMachineryId)?.created_at || '').toLocaleDateString()}
+                        </p>
+                      </div>
+                      
+                      <div className="mt-8 pt-8 border-t border-slate-200">
+                        <button 
+                          onClick={() => openMaintenanceModal(selectedMachineryId)}
+                          className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-indigo-100 active:scale-95 transition-all"
+                        >
+                          + Registrar Avería/Revisión
+                        </button>
                       </div>
                     </div>
-                    <button onClick={() => deleteMachinery(m.id)} className="w-10 h-10 rounded-xl bg-rose-100 text-rose-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">🗑️</button>
-                 </div>
-               ))}
-            </div>
+                  </div>
+
+                  <div className="lg:col-span-2 space-y-6">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] ml-2">Historial de Intervenciones</h4>
+                    <div className="space-y-4">
+                      {maintenanceRecords.filter(r => r.machinery_id === selectedMachineryId).length === 0 ? (
+                        <div className="py-20 text-center bg-slate-50 rounded-[3rem] border border-slate-100">
+                          <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Sin historial de mantenimiento</p>
+                        </div>
+                      ) : (
+                        maintenanceRecords.filter(r => r.machinery_id === selectedMachineryId).map(record => (
+                          <div key={record.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 group hover:border-indigo-200 transition-all">
+                            <div className="flex items-center gap-4">
+                              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl ${
+                                record.type === 'averia' ? 'bg-rose-50 text-rose-500' : 
+                                record.type === 'reparacion' ? 'bg-emerald-50 text-emerald-500' : 
+                                'bg-indigo-50 text-indigo-500'
+                              }`}>
+                                {record.type === 'averia' ? '⚠️' : record.type === 'reparacion' ? '🔧' : '📋'}
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase ${
+                                    record.type === 'averia' ? 'bg-rose-100 text-rose-600' : 
+                                    record.type === 'reparacion' ? 'bg-emerald-100 text-emerald-600' : 
+                                    'bg-indigo-100 text-indigo-600'
+                                  }`}>
+                                    {record.type}
+                                  </span>
+                                  <span className="text-[8px] font-bold text-slate-400 uppercase">{new Date(record.created_at).toLocaleDateString()}</span>
+                                </div>
+                                <p className="text-[10px] text-slate-800 font-bold mt-1">{record.description}</p>
+                                <div className="flex items-center gap-3 mt-1">
+                                  <span className="text-[8px] font-medium text-slate-400 uppercase">Por: {record.reported_by}</span>
+                                  {record.cost && record.cost > 0 && (
+                                    <span className="text-[8px] font-black text-slate-600 uppercase">Coste: {record.cost}€</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-3 self-end md:self-center">
+                              <button 
+                                onClick={() => toggleMaintenanceStatus(record)}
+                                className={`px-4 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest border transition-all ${
+                                  record.status === 'completed' 
+                                  ? 'bg-emerald-600 text-white border-emerald-600' 
+                                  : 'bg-amber-50 text-amber-600 border-amber-100 hover:bg-amber-100'
+                                }`}
+                              >
+                                {record.status === 'completed' ? 'Completado' : 'Pendiente'}
+                              </button>
+                              <button 
+                                onClick={() => deleteMaintenance(record.id)}
+                                className="w-8 h-8 flex items-center justify-center text-slate-300 hover:text-rose-500 transition-colors"
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex justify-between items-center mb-6">
+                   <h3 className="text-lg font-black text-slate-800 uppercase tracking-tighter">Maquinaria y PDAs</h3>
+                   <button onClick={() => setShowMachineryModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-100 active:scale-95 transition-all">Nueva Maquina</button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                   {machinery.map(m => (
+                     <div 
+                      key={m.id} 
+                      onClick={() => setSelectedMachineryId(m.id)}
+                      className="p-6 bg-slate-50 rounded-[2.5rem] border border-slate-100 flex items-center justify-between group cursor-pointer hover:bg-white hover:shadow-xl hover:border-indigo-200 transition-all"
+                     >
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-xl bg-white shadow-sm flex items-center justify-center">
+                            {m.type === 'carretilla' ? '🚜' : '📱'}
+                          </div>
+                          <div>
+                            <p className="font-black text-slate-800 uppercase text-sm">{m.identifier}</p>
+                            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-1">{m.type}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-400 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">👁️</div>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); deleteMachinery(m.id); }} 
+                            className="w-8 h-8 rounded-lg bg-rose-50 text-rose-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                     </div>
+                   ))}
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -1030,6 +1213,90 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
               <div className="space-y-3">
                  <button type="submit" className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-xl uppercase tracking-widest text-[10px]">Registrar Maquina</button>
                  <button type="button" onClick={() => setShowMachineryModal(false)} className="w-full py-4 text-slate-400 font-black text-[9px] uppercase tracking-[0.2em]">Cancelar</button>
+              </div>
+           </form>
+        </div>
+      )}
+
+      {showMaintenanceModal && (
+        <div className="fixed inset-0 z-[300] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4">
+           <form onSubmit={handleSaveMaintenance} className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl space-y-6 animate-fade-in border border-white">
+              <div className="text-center">
+                 <h3 className="text-xl font-black text-slate-800 uppercase">Registro Mantenimiento</h3>
+                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">Averías y revisiones</p>
+              </div>
+              
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2">Máquina</label>
+                  <select 
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-xs outline-none focus:border-indigo-500 transition-all uppercase"
+                    value={maintenanceForm.machinery_id}
+                    onChange={e => setMaintenanceForm({ ...maintenanceForm, machinery_id: e.target.value })}
+                    required
+                  >
+                    <option value="">-- SELECCIONAR --</option>
+                    {machinery.map(m => (
+                      <option key={m.id} value={m.id}>{m.identifier} ({m.type})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2">Tipo de Intervención</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['averia', 'reparacion', 'revision'] as const).map(type => (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => setMaintenanceForm({ ...maintenanceForm, type })}
+                        className={`py-3 rounded-xl text-[8px] font-black uppercase tracking-widest border transition-all ${maintenanceForm.type === type ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-slate-50 text-slate-400 border-slate-100'}`}
+                      >
+                        {type}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2">Descripción / Notas</label>
+                  <textarea 
+                    placeholder="DETALLES DE LA INTERVENCIÓN..." 
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-xs outline-none focus:border-indigo-500 uppercase min-h-[100px]" 
+                    value={maintenanceForm.description} 
+                    onChange={e => setMaintenanceForm({ ...maintenanceForm, description: e.target.value })} 
+                    required
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2">Coste (€)</label>
+                    <input 
+                      type="number"
+                      placeholder="0" 
+                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-xs text-center outline-none focus:border-indigo-500" 
+                      value={maintenanceForm.cost} 
+                      onChange={e => setMaintenanceForm({ ...maintenanceForm, cost: Number(e.target.value) })} 
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2">Estado Inicial</label>
+                    <select 
+                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-xs outline-none focus:border-indigo-500 transition-all uppercase"
+                      value={maintenanceForm.status}
+                      onChange={e => setMaintenanceForm({ ...maintenanceForm, status: e.target.value as any })}
+                    >
+                      <option value="pending">PENDIENTE</option>
+                      <option value="completed">COMPLETADO</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                 <button type="submit" className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-xl uppercase tracking-widest text-[10px]">Guardar Registro</button>
+                 <button type="button" onClick={() => setShowMaintenanceModal(false)} className="w-full py-4 text-slate-400 font-black text-[9px] uppercase tracking-[0.2em]">Cancelar</button>
               </div>
            </form>
         </div>

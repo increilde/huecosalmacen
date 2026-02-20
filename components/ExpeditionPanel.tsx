@@ -35,30 +35,7 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
   const [truckId, setTruckId] = useState('');
   const [truckers, setTruckers] = useState<Trucker[]>([]);
 
-  // Estados para creación rápida de camión
-  const [showTruckerModal, setShowTruckerModal] = useState(false);
-  const [newTruckerName, setNewTruckerName] = useState('');
-
-  // Permitir edición si la fecha es hoy o futura
-  const isToday = historyDate >= getTodayStr();
-
-  useEffect(() => {
-    fetchLogsAndNotes();
-    fetchTruckers();
-  }, [historyDate]);
-
-  const fetchTruckers = async () => {
-    const { data } = await supabase.from('truckers').select('*').order('full_name');
-    if (data) {
-      setTruckers(data.map((t: any) => ({
-        id: t.id,
-        label: t.full_name,
-        created_at: t.created_at
-      })));
-    }
-  };
-
-  const fetchLogsAndNotes = async () => {
+  const fetchLogsAndNotes = React.useCallback(async () => {
     setLoading(true);
     try {
       const { data: logsData } = await supabase
@@ -81,6 +58,29 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
       console.error("Error al obtener datos de expedición:", err);
     } finally {
       setLoading(false);
+    }
+  }, [historyDate]);
+
+  // Estados para creación rápida de camión
+  const [showTruckerModal, setShowTruckerModal] = useState(false);
+  const [newTruckerName, setNewTruckerName] = useState('');
+
+  // Permitir edición si la fecha es hoy o futura
+  const isToday = historyDate >= getTodayStr();
+
+  useEffect(() => {
+    fetchLogsAndNotes();
+    fetchTruckers();
+  }, [fetchLogsAndNotes]);
+
+  const fetchTruckers = async () => {
+    const { data } = await supabase.from('truckers').select('*').order('full_name');
+    if (data) {
+      setTruckers(data.map((t: any) => ({
+        id: t.id,
+        label: t.full_name,
+        created_at: t.created_at
+      })));
     }
   };
 
