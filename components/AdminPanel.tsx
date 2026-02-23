@@ -910,7 +910,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                                   </span>
                                   <span className="text-[8px] font-bold text-slate-400 uppercase">{new Date(record.created_at).toLocaleDateString()}</span>
                                 </div>
-                                <p className="text-[10px] text-slate-800 font-bold mt-1">{record.description}</p>
+                                <p className="text-[10px] text-slate-800 font-bold mt-1 whitespace-pre-wrap">{record.description}</p>
                                 <div className="flex items-center gap-3 mt-1">
                                   <span className="text-[8px] font-medium text-slate-400 uppercase">Por: {record.reported_by}</span>
                                   {record.cost && record.cost > 0 && (
@@ -1303,7 +1303,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                   <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2">Descripción / Notas</label>
                   <textarea 
                     placeholder="DETALLES DE LA INTERVENCIÓN..." 
-                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-xs outline-none focus:border-indigo-500 uppercase min-h-[100px]" 
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-xs outline-none focus:border-indigo-500 min-h-[100px]" 
                     value={maintenanceForm.description} 
                     onChange={e => setMaintenanceForm({ ...maintenanceForm, description: e.target.value })} 
                     required
