@@ -82,6 +82,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   const [warehouseBreakdown, setWarehouseBreakdown] = useState<any[]>([]);
   const [maintenanceRecords, setMaintenanceRecords] = useState<MachineryMaintenance[]>([]);
   const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
+  const [editingMaintenanceId, setEditingMaintenanceId] = useState<string | null>(null);
   const [maintenanceForm, setMaintenanceForm] = useState({
     machinery_id: '',
     type: 'averia' as 'averia' | 'reparacion' | 'revision',
@@ -363,15 +364,27 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
     e.preventDefault();
     if (!maintenanceForm.machinery_id || !maintenanceForm.description) return;
     
-    const payload = {
-      ...maintenanceForm,
-      reported_by: user.full_name,
-      completed_at: maintenanceForm.status === 'completed' ? new Date().toISOString() : null
-    };
+    setLoading(true);
+    try {
+      const payload = {
+        ...maintenanceForm,
+        reported_by: user.full_name,
+        completed_at: maintenanceForm.status === 'completed' ? new Date().toISOString() : null
+      };
 
-    const { error } = await supabase.from('machinery_maintenance').insert([payload]);
-    if (!error) {
+      if (editingMaintenanceId) {
+        const { error } = await supabase
+          .from('machinery_maintenance')
+          .update(payload)
+          .eq('id', editingMaintenanceId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('machinery_maintenance').insert([payload]);
+        if (error) throw error;
+      }
+
       setShowMaintenanceModal(false);
+      setEditingMaintenanceId(null);
       setMaintenanceForm({
         machinery_id: '',
         type: 'averia',
@@ -380,6 +393,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
         status: 'pending'
       });
       fetchData();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -409,7 +426,26 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   };
 
   const openMaintenanceModal = (machineryId: string) => {
-    setMaintenanceForm(prev => ({ ...prev, machinery_id: machineryId }));
+    setEditingMaintenanceId(null);
+    setMaintenanceForm({
+      machinery_id: machineryId,
+      type: 'averia',
+      description: '',
+      cost: 0,
+      status: 'pending'
+    });
+    setShowMaintenanceModal(true);
+  };
+
+  const openEditMaintenance = (record: MachineryMaintenance) => {
+    setEditingMaintenanceId(record.id);
+    setMaintenanceForm({
+      machinery_id: record.machinery_id,
+      type: record.type,
+      description: record.description,
+      cost: record.cost || 0,
+      status: record.status
+    });
     setShowMaintenanceModal(true);
   };
 
@@ -850,7 +886,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                         </div>
                       ) : (
                         maintenanceRecords.filter(r => r.machinery_id === selectedMachineryId).map(record => (
-                          <div key={record.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 group hover:border-indigo-200 transition-all">
+                          <div 
+                            key={record.id} 
+                            onClick={() => openEditMaintenance(record)}
+                            className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 group hover:border-indigo-200 hover:shadow-md transition-all cursor-pointer"
+                          >
                             <div className="flex items-center gap-4">
                               <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl ${
                                 record.type === 'averia' ? 'bg-rose-50 text-rose-500' : 
@@ -882,7 +922,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
 
                             <div className="flex items-center gap-3 self-end md:self-center">
                               <button 
-                                onClick={() => toggleMaintenanceStatus(record)}
+                                onClick={(e) => { e.stopPropagation(); toggleMaintenanceStatus(record); }}
                                 className={`px-4 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest border transition-all ${
                                   record.status === 'completed' 
                                   ? 'bg-emerald-600 text-white border-emerald-600' 
@@ -892,7 +932,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                                 {record.status === 'completed' ? 'Completado' : 'Pendiente'}
                               </button>
                               <button 
-                                onClick={() => deleteMaintenance(record.id)}
+                                onClick={(e) => { e.stopPropagation(); deleteMaintenance(record.id); }}
                                 className="w-8 h-8 flex items-center justify-center text-slate-300 hover:text-rose-500 transition-colors"
                               >
                                 🗑️
@@ -1222,18 +1262,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
         <div className="fixed inset-0 z-[300] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4">
            <form onSubmit={handleSaveMaintenance} className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl space-y-6 animate-fade-in border border-white">
               <div className="text-center">
-                 <h3 className="text-xl font-black text-slate-800 uppercase">Registro Mantenimiento</h3>
-                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">Averías y revisiones</p>
+                 <h3 className="text-xl font-black text-slate-800 uppercase">{editingMaintenanceId ? 'Editar Intervención' : 'Registro Mantenimiento'}</h3>
+                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">{editingMaintenanceId ? 'Actualizar detalles' : 'Averías y revisiones'}</p>
               </div>
               
               <div className="space-y-4">
                 <div className="space-y-1">
                   <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2">Máquina</label>
                   <select 
-                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-xs outline-none focus:border-indigo-500 transition-all uppercase"
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-xs outline-none focus:border-indigo-500 transition-all uppercase disabled:opacity-50"
                     value={maintenanceForm.machinery_id}
                     onChange={e => setMaintenanceForm({ ...maintenanceForm, machinery_id: e.target.value })}
                     required
+                    disabled={!!editingMaintenanceId}
                   >
                     <option value="">-- SELECCIONAR --</option>
                     {machinery.map(m => (
@@ -1281,7 +1322,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2">Estado Inicial</label>
+                    <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2">Estado</label>
                     <select 
                       className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-xs outline-none focus:border-indigo-500 transition-all uppercase"
                       value={maintenanceForm.status}
@@ -1295,8 +1336,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
               </div>
 
               <div className="space-y-3">
-                 <button type="submit" className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-xl uppercase tracking-widest text-[10px]">Guardar Registro</button>
-                 <button type="button" onClick={() => setShowMaintenanceModal(false)} className="w-full py-4 text-slate-400 font-black text-[9px] uppercase tracking-[0.2em]">Cancelar</button>
+                 <button type="submit" disabled={loading} className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-xl uppercase tracking-widest text-[10px] active:scale-95 transition-all">
+                    {loading ? 'GUARDANDO...' : (editingMaintenanceId ? 'Actualizar Registro' : 'Guardar Registro')}
+                 </button>
+                 <button type="button" onClick={() => { setShowMaintenanceModal(false); setEditingMaintenanceId(null); }} className="w-full py-4 text-slate-400 font-black text-[9px] uppercase tracking-[0.2em]">Cancelar</button>
               </div>
            </form>
         </div>
