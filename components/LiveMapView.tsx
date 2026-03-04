@@ -223,11 +223,11 @@ const LiveMapView: React.FC = () => {
                               {op.name.charAt(0)}
                               {pos.isGPS && <span className="absolute -top-1 -right-1 text-[8px]">🛰️</span>}
                             </div>
-                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1 bg-slate-900 text-white text-[7px] font-black uppercase tracking-widest rounded-lg opacity-0 group-hover/op:opacity-100 transition-all whitespace-nowrap z-30">
+                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-lg opacity-0 group-hover/op:opacity-100 transition-all whitespace-nowrap z-30">
                               {op.name}
                               <br/>
-                              <span className="text-indigo-300">{lastLog.slot_code}</span>
-                              {pos.isGPS && <span className="text-emerald-400 ml-1">(GPS)</span>}
+                              <span className="text-indigo-300 text-[9px]">{lastLog.slot_code}</span>
+                              {pos.isGPS && <span className="text-emerald-400 ml-1 text-[9px]">(GPS)</span>}
                             </div>
                           </div>
                         </div>

@@ -109,7 +109,7 @@ const App: React.FC = () => {
   }, [user, sessionMachinery]);
 
   useEffect(() => {
-    if (!user || !sessionMachinery) return;
+    if (!user) return;
 
     let watchId: number | null = null;
 
@@ -118,16 +118,19 @@ const App: React.FC = () => {
         watchId = navigator.geolocation.watchPosition(
           async (position) => {
             const { latitude, longitude, accuracy } = position.coords;
-            try {
-              await supabase.from('operator_locations').insert([{
-                operator_email: user.email,
-                latitude,
-                longitude,
-                accuracy,
-                machinery_id: sessionMachinery.forklift
-              }]);
-            } catch (err) {
-              console.error("Error al enviar ubicación:", err);
+            // Solo enviar a Supabase si hay maquinaria asignada O si es admin (para pruebas)
+            if (sessionMachinery || user.role === 'admin') {
+              try {
+                await supabase.from('operator_locations').insert([{
+                  operator_email: user.email,
+                  latitude,
+                  longitude,
+                  accuracy,
+                  machinery_id: sessionMachinery?.forklift || 'ADMIN_TEST'
+                }]);
+              } catch (err) {
+                console.error("Error al enviar ubicación:", err);
+              }
             }
           },
           (error) => {

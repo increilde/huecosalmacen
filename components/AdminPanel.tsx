@@ -720,6 +720,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
         <nav className="bg-slate-950 p-2 rounded-[2.5rem] shadow-2xl flex items-center gap-1 md:gap-2 border border-slate-800 overflow-x-auto no-scrollbar max-w-full">
           {[
             { id: 'map', label: 'MAPA VIVO', icon: '📍' },
+            { id: 'map_config', label: 'CONFIG MAPA', icon: '⚙️' },
             { id: 'movements', label: 'HISTORIAL', icon: '📋' },
             { id: 'operators', label: 'OPERARIOS', icon: '👥' },
             { id: 'sectors', label: 'SECTORES', icon: '📊' },
@@ -783,7 +784,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
 
             <div className="space-y-6">
               <div className="bg-slate-50 p-6 rounded-[2.5rem] border border-slate-100">
-                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Operarios Activos</h4>
+                <h4 className="text-[12px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Operarios Activos</h4>
                 <div className="flex flex-wrap gap-4">
                   {getOperatorStats()
                     .filter(([_, op]) => {
@@ -798,16 +799,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                       const isInactive = timeDiff !== null && timeDiff > 10;
                       
                       return (
-                        <div key={email} className={`flex items-center gap-3 p-3 rounded-2xl border transition-all min-w-[180px] ${isInactive ? 'bg-slate-100 border-slate-200 opacity-60' : 'bg-white border-slate-100 shadow-sm'}`}>
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black ${isInactive ? 'bg-slate-200 text-slate-500' : 'bg-indigo-100 text-indigo-600'}`}>
+                        <div key={email} className={`flex items-center gap-4 p-4 rounded-2xl border transition-all min-w-[220px] ${isInactive ? 'bg-slate-100 border-slate-200 opacity-60' : 'bg-white border-slate-100 shadow-sm'}`}>
+                          <div className={`w-12 h-12 rounded-full flex items-center justify-center text-sm font-black ${isInactive ? 'bg-slate-200 text-slate-500' : 'bg-indigo-100 text-indigo-600'}`}>
                             {op.name.charAt(0)}
                           </div>
                           <div className="flex-1">
-                            <p className="text-[10px] font-black text-slate-800 uppercase leading-tight">{op.name}</p>
-                            <p className="text-[8px] font-bold text-slate-400 uppercase">{lastLog?.slot_code || 'S/Ubicación'}</p>
+                            <p className="text-sm font-black text-slate-800 uppercase leading-tight">{op.name}</p>
+                            <p className="text-xs font-bold text-slate-400 uppercase">{lastLog?.slot_code || 'S/Ubicación'}</p>
                           </div>
                           <div className="text-right">
-                            <p className={`text-[8px] font-black uppercase ${timeDiff !== null && timeDiff < 10 ? 'text-emerald-500' : 'text-slate-400'}`}>
+                            <p className={`text-xs font-black uppercase ${timeDiff !== null && timeDiff < 10 ? 'text-emerald-500' : 'text-slate-400'}`}>
                               {timeDiff !== null ? (timeDiff < 1 ? 'Ahora' : `${timeDiff}m`) : '--'}
                             </p>
                           </div>
@@ -914,10 +915,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                                             <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-black shadow-lg border-2 border-white cursor-help transition-all ${isInactive ? 'bg-slate-400 opacity-50 scale-90 grayscale' : 'bg-indigo-600 animate-bounce'}`}>
                                               {op.name.charAt(0)}
                                             </div>
-                                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1 bg-slate-900 text-white text-[8px] font-black uppercase tracking-widest rounded-lg opacity-0 group-hover/op:opacity-100 transition-all whitespace-nowrap z-20">
+                                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-lg opacity-0 group-hover/op:opacity-100 transition-all whitespace-nowrap z-20">
                                               {op.name} {isInactive && '(INACTIVO)'}
                                               <br/>
-                                              <span className="text-indigo-300 text-[7px]">{op.logs[0].slot_code}</span>
+                                              <span className="text-indigo-300 text-[9px]">{op.logs[0].slot_code}</span>
                                             </div>
                                           </div>
                                         );
@@ -1090,12 +1091,34 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
               <div className="bg-indigo-600 p-4 rounded-2xl text-white max-w-xs">
                 <p className="text-[8px] font-black uppercase tracking-widest mb-2 text-indigo-200">Guía Rápida</p>
                 <ol className="text-[9px] font-bold space-y-1 list-decimal ml-4 opacity-90">
-                  <li>Elige la planta (U01/U02).</li>
-                  <li>Sube el archivo PNG del plano.</li>
-                  <li>Escribe el ID de la calle (ej: U01-C01).</li>
-                  <li>Haz clic en el mapa para situarla.</li>
-                  <li>Pulsa "Guardar Ubicación".</li>
+                  <li>Elige la planta (U01/U02) y sube el PNG.</li>
+                  <li><b>Calles:</b> Escribe el ID, haz clic en el mapa y guarda.</li>
+                  <li><b>GPS:</b> Cambia a la pestaña "GPS (Beta)".</li>
+                  <li>Haz clic en un punto del mapa (ej: esquina).</li>
+                  <li>Escribe la Lat/Long real de ese punto y guarda.</li>
+                  <li>Repite con un segundo punto alejado del primero.</li>
                 </ol>
+              </div>
+              <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-2xl flex items-center gap-4">
+                <div className="text-xl">🛰️</div>
+                <div>
+                  <p className="text-[8px] font-black text-emerald-800 uppercase tracking-widest">Estado GPS Local</p>
+                  <button 
+                    onClick={() => {
+                      if ("geolocation" in navigator) {
+                        navigator.geolocation.getCurrentPosition(
+                          (pos) => alert(`GPS OK: Lat ${pos.coords.latitude}, Long ${pos.coords.longitude}`),
+                          (err) => alert(`Error GPS: ${err.message}. Si estás en la vista previa del editor, prueba a abrir la aplicación en una pestaña nueva (botón arriba a la derecha) para que el navegador te pida los permisos correctamente.`)
+                        );
+                      } else {
+                        alert("Tu navegador no soporta GPS");
+                      }
+                    }}
+                    className="text-[9px] font-bold text-emerald-600 underline uppercase"
+                  >
+                    Probar GPS en este dispositivo
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1179,7 +1202,7 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                         onClick={() => setConfigMode('gps')}
                         className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${configMode === 'gps' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}
                       >
-                        GPS (Beta)
+                        GPS (Calibración)
                       </button>
                     </div>
 
