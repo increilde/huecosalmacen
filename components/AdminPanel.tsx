@@ -96,10 +96,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   // Estados para Mapa Real
   const [warehouseMaps, setWarehouseMaps] = useState<any[]>([]);
   const [streetCoords, setStreetCoords] = useState<any[]>([]);
+  const [calibrationPoints, setCalibrationPoints] = useState<any[]>([]);
+  const [operatorLocations, setOperatorLocations] = useState<any[]>([]);
   const [isConfiguringMap, setIsConfiguringMap] = useState(false);
   const [selectedMapId, setSelectedMapId] = useState<string | null>(null);
   const [mapForm, setMapForm] = useState({ plant: 'U01', image_url: '' });
   const [coordForm, setCoordForm] = useState({ street_id: '', x_percent: 50, y_percent: 50 });
+  const [calibForm, setCalibForm] = useState({ point_name: 'Punto 1', latitude: 0, longitude: 0, x_percent: 50, y_percent: 50 });
+  const [configMode, setConfigMode] = useState<'streets' | 'gps'>('streets');
 
   const fetchData = React.useCallback(async () => {
     setLoading(true);
@@ -115,6 +119,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
           // Fetch map data even in 'map' tab
           const { data: mapsData, error: mapsError } = await supabase.from('warehouse_maps').select('*');
           const { data: coordsData, error: coordsError } = await supabase.from('warehouse_street_coords').select('*');
+          const { data: calibData } = await supabase.from('warehouse_map_calibration').select('*');
+          const { data: locData } = await supabase.from('operator_locations').select('*').order('created_at', { ascending: false }).limit(100);
           
           if (mapsError || coordsError) {
             console.warn("Map tables might be missing. Ensure SQL is executed.", mapsError || coordsError);
@@ -122,6 +128,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
           
           setWarehouseMaps(mapsData || []);
           setStreetCoords(coordsData || []);
+          setCalibrationPoints(calibData || []);
+          setOperatorLocations(locData || []);
         } else {
           query = query.gte('created_at', `${dateFrom}T00:00:00`).lte('created_at', `${dateTo}T23:59:59`);
         }
@@ -641,6 +649,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
     }
   };
 
+  const handleSaveCalibration = async (e: React.FormEvent, calibForm: any) => {
+    e.preventDefault();
+    if (!selectedMapId) return;
+    const { error } = await supabase.from('warehouse_map_calibration').upsert([{
+      map_id: selectedMapId,
+      ...calibForm
+    }]);
+    if (!error) fetchData();
+  };
+
+  const deleteCalibration = async (id: string) => {
+    if (confirm("¿Eliminar este punto de calibración?")) {
+      await supabase.from('warehouse_map_calibration').delete().eq('id', id);
+      fetchData();
+    }
+  };
+
   const deleteCoord = async (id: string) => {
     if (confirm("¿Eliminar esta coordenada?")) {
       await supabase.from('warehouse_street_coords').delete().eq('id', id);
@@ -648,12 +673,45 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
     }
   };
 
-  const getOperatorPosition = (streetId: string, plant: string) => {
+  const getGPSPosition = (lat: number, lng: number, mapId: string) => {
+    const points = calibrationPoints.filter(p => p.map_id === mapId);
+    if (points.length < 2) return null;
+
+    const p1 = points[0];
+    const p2 = points[1];
+
+    const latRange = p2.latitude - p1.latitude;
+    const lngRange = p2.longitude - p1.longitude;
+    const xRange = p2.x_percent - p1.x_percent;
+    const yRange = p2.y_percent - p1.y_percent;
+
+    if (latRange === 0 || lngRange === 0) return null;
+
+    const x = p1.x_percent + ((lng - p1.longitude) / lngRange) * xRange;
+    const y = p1.y_percent + ((lat - p1.latitude) / latRange) * yRange;
+
+    return { x, y };
+  };
+
+  const getOperatorPosition = (email: string, streetId: string, plant: string) => {
     const map = warehouseMaps.find(m => m.plant === plant);
     if (!map) return null;
+
+    // Intentar obtener posición GPS reciente (últimos 30 segundos)
+    const recentLoc = operatorLocations.find(l => 
+      l.operator_email === email && 
+      (new Date().getTime() - new Date(l.created_at).getTime()) < 30000
+    );
+
+    if (recentLoc) {
+      const gpsPos = getGPSPosition(recentLoc.latitude, recentLoc.longitude, map.id);
+      if (gpsPos) return { ...gpsPos, isGPS: true };
+    }
+
+    // Fallback a la calle si no hay GPS o no está calibrado
     const coord = streetCoords.find(c => c.map_id === map.id && c.street_id === streetId);
     if (!coord) return null;
-    return { x: coord.x_percent, y: coord.y_percent };
+    return { x: coord.x_percent, y: coord.y_percent, isGPS: false };
   };
 
   return (
@@ -791,7 +849,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                               }).map(([email, op]) => {
                                 const lastLog = op.logs[0];
                                 const streetId = lastLog.slot_code.substring(0, 5);
-                                const pos = getOperatorPosition(streetId, plant);
+                                const pos = getOperatorPosition(email, streetId, plant);
                                 const timeDiff = (new Date().getTime() - new Date(lastLog.created_at).getTime()) / 60000;
                                 const isInactive = timeDiff > 10;
 
@@ -814,13 +872,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                                     }}
                                   >
                                     <div className="relative group/op">
-                                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-[10px] font-black shadow-lg border-2 border-white cursor-help transition-all ${isInactive ? 'bg-slate-400 opacity-50 grayscale' : 'bg-indigo-600 animate-bounce'}`}>
+                                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-[10px] font-black shadow-lg border-2 cursor-help transition-all ${isInactive ? 'bg-slate-400 opacity-50 grayscale border-white' : 'bg-indigo-600 animate-bounce ' + (pos.isGPS ? 'border-emerald-400' : 'border-white')}`}>
                                         {op.name.charAt(0)}
+                                        {pos.isGPS && <span className="absolute -top-1 -right-1 text-[8px]">🛰️</span>}
                                       </div>
                                       <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1 bg-slate-900 text-white text-[7px] font-black uppercase tracking-widest rounded-lg opacity-0 group-hover/op:opacity-100 transition-all whitespace-nowrap z-30">
                                         {op.name}
                                         <br/>
                                         <span className="text-indigo-300">{lastLog.slot_code}</span>
+                                        {pos.isGPS && <span className="text-emerald-400 ml-1">(GPS)</span>}
                                       </div>
                                     </div>
                                   </div>
@@ -987,6 +1047,33 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
 
         {activeSubTab === 'map_config' && (
           <div className="space-y-8 animate-fade-in">
+            <div className="bg-amber-50 border border-amber-200 p-6 rounded-3xl mb-8">
+              <h4 className="text-[10px] font-black text-amber-800 uppercase tracking-widest mb-2">⚠️ Configuración de Base de Datos Necesaria</h4>
+              <p className="text-[9px] text-amber-700 font-bold uppercase mb-4">Para que el GPS y el Mapa funcionen, debes ejecutar este SQL en Supabase:</p>
+              <pre className="bg-slate-900 text-indigo-300 p-4 rounded-xl text-[8px] overflow-x-auto font-mono">
+{`CREATE TABLE IF NOT EXISTS operator_locations (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  operator_email TEXT,
+  latitude FLOAT8,
+  longitude FLOAT8,
+  accuracy FLOAT8,
+  machinery_id TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  map_id UUID REFERENCES warehouse_maps(id) ON DELETE CASCADE,
+  point_name TEXT,
+  latitude FLOAT8,
+  longitude FLOAT8,
+  x_percent FLOAT8,
+  y_percent FLOAT8,
+  created_at TIMESTAMPTZ DEFAULT now()
+);`}
+              </pre>
+            </div>
+
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div className="flex items-center gap-4">
                 <button 
@@ -1081,50 +1168,139 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
 
                 {warehouseMaps.find(m => m.plant === mapForm.plant) && (
                   <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-6">
-                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">2. Definir Coordenadas</h4>
-                    <p className="text-[9px] text-slate-400 font-bold uppercase">Haz clic en el mapa de la derecha para situar una calle</p>
-                    
-                    <form onSubmit={handleSaveCoord} className="space-y-4">
-                      <div className="space-y-1">
-                        <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2">ID Calle (Ej: U01-C01)</label>
-                        <input 
-                          type="text" 
-                          placeholder="U01-C01" 
-                          value={coordForm.street_id}
-                          onChange={e => setCoordForm(prev => ({ ...prev, street_id: e.target.value.toUpperCase() }))}
-                          className="w-full bg-slate-50 p-4 rounded-2xl text-xs font-bold outline-none border border-slate-100 uppercase"
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="bg-slate-50 p-3 rounded-xl text-center">
-                          <span className="text-[8px] font-black text-slate-400 uppercase block">X %</span>
-                          <span className="text-xs font-black">{coordForm.x_percent.toFixed(1)}</span>
-                        </div>
-                        <div className="bg-slate-50 p-3 rounded-xl text-center">
-                          <span className="text-[8px] font-black text-slate-400 uppercase block">Y %</span>
-                          <span className="text-xs font-black">{coordForm.y_percent.toFixed(1)}</span>
-                        </div>
-                      </div>
+                    <div className="flex bg-slate-100 p-1 rounded-xl mb-4">
                       <button 
-                        type="submit" 
-                        disabled={!coordForm.street_id}
-                        className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-700 transition-all disabled:opacity-50"
+                        onClick={() => setConfigMode('streets')}
+                        className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${configMode === 'streets' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}
                       >
-                        Guardar Ubicación
+                        Calles
                       </button>
-                    </form>
-
-                    <div className="pt-6 border-t border-slate-100">
-                      <h5 className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-4">Calles Configuradas</h5>
-                      <div className="space-y-2 max-h-[200px] overflow-y-auto pr-2">
-                        {streetCoords.filter(c => c.map_id === warehouseMaps.find(m => m.plant === mapForm.plant)?.id).map(c => (
-                          <div key={c.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                            <span className="text-[9px] font-black text-slate-700 uppercase">{c.street_id}</span>
-                            <button onClick={() => deleteCoord(c.id)} className="text-rose-500 hover:text-rose-700 transition-colors">✕</button>
-                          </div>
-                        ))}
-                      </div>
+                      <button 
+                        onClick={() => setConfigMode('gps')}
+                        className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${configMode === 'gps' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}
+                      >
+                        GPS (Beta)
+                      </button>
                     </div>
+
+                    {configMode === 'streets' ? (
+                      <>
+                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">2. Definir Coordenadas de Calles</h4>
+                        <p className="text-[9px] text-slate-400 font-bold uppercase">Haz clic en el mapa de la derecha para situar una calle</p>
+                        
+                        <form onSubmit={handleSaveCoord} className="space-y-4">
+                          <div className="space-y-1">
+                            <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2">ID Calle (Ej: U01-C01)</label>
+                            <input 
+                              type="text" 
+                              placeholder="U01-C01" 
+                              value={coordForm.street_id}
+                              onChange={e => setCoordForm(prev => ({ ...prev, street_id: e.target.value.toUpperCase() }))}
+                              className="w-full bg-slate-50 p-4 rounded-2xl text-xs font-bold outline-none border border-slate-100 uppercase"
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-slate-50 p-3 rounded-xl text-center">
+                              <span className="text-[8px] font-black text-slate-400 uppercase block">X %</span>
+                              <span className="text-xs font-black">{coordForm.x_percent.toFixed(1)}</span>
+                            </div>
+                            <div className="bg-slate-50 p-3 rounded-xl text-center">
+                              <span className="text-[8px] font-black text-slate-400 uppercase block">Y %</span>
+                              <span className="text-xs font-black">{coordForm.y_percent.toFixed(1)}</span>
+                            </div>
+                          </div>
+                          <button 
+                            type="submit" 
+                            disabled={!coordForm.street_id}
+                            className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-700 transition-all disabled:opacity-50"
+                          >
+                            Guardar Ubicación
+                          </button>
+                        </form>
+
+                        <div className="pt-6 border-t border-slate-100">
+                          <h5 className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-4">Calles Configuradas</h5>
+                          <div className="space-y-2 max-h-[200px] overflow-y-auto pr-2">
+                            {streetCoords.filter(c => c.map_id === warehouseMaps.find(m => m.plant === mapForm.plant)?.id).map(c => (
+                              <div key={c.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                <span className="text-[9px] font-black text-slate-700 uppercase">{c.street_id}</span>
+                                <button onClick={() => deleteCoord(c.id)} className="text-rose-500 hover:text-rose-700 transition-colors">✕</button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">2. Calibración GPS</h4>
+                        <p className="text-[9px] text-slate-400 font-bold uppercase">Necesitas 2 puntos para calibrar el plano</p>
+                        
+                        <form onSubmit={(e) => handleSaveCalibration(e, calibForm)} className="space-y-4">
+                          <div className="space-y-1">
+                            <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2">Nombre del Punto</label>
+                            <input 
+                              type="text" 
+                              value={calibForm.point_name}
+                              onChange={e => setCalibForm(prev => ({ ...prev, point_name: e.target.value }))}
+                              className="w-full bg-slate-50 p-4 rounded-2xl text-xs font-bold outline-none border border-slate-100"
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                              <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2">Latitud</label>
+                              <input 
+                                type="number" 
+                                step="any"
+                                value={calibForm.latitude}
+                                onChange={e => setCalibForm(prev => ({ ...prev, latitude: parseFloat(e.target.value) }))}
+                                className="w-full bg-slate-50 p-4 rounded-2xl text-xs font-bold outline-none border border-slate-100"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2">Longitud</label>
+                              <input 
+                                type="number" 
+                                step="any"
+                                value={calibForm.longitude}
+                                onChange={e => setCalibForm(prev => ({ ...prev, longitude: parseFloat(e.target.value) }))}
+                                className="w-full bg-slate-50 p-4 rounded-2xl text-xs font-bold outline-none border border-slate-100"
+                              />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-slate-50 p-3 rounded-xl text-center">
+                              <span className="text-[8px] font-black text-slate-400 uppercase block">X %</span>
+                              <span className="text-xs font-black">{calibForm.x_percent.toFixed(1)}</span>
+                            </div>
+                            <div className="bg-slate-50 p-3 rounded-xl text-center">
+                              <span className="text-[8px] font-black text-slate-400 uppercase block">Y %</span>
+                              <span className="text-xs font-black">{calibForm.y_percent.toFixed(1)}</span>
+                            </div>
+                          </div>
+                          <button 
+                            type="submit" 
+                            className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-700 transition-all"
+                          >
+                            Guardar Punto de Calibración
+                          </button>
+                        </form>
+
+                        <div className="pt-6 border-t border-slate-100">
+                          <h5 className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-4">Puntos de Calibración</h5>
+                          <div className="space-y-2">
+                            {calibrationPoints.filter(p => p.map_id === warehouseMaps.find(m => m.plant === mapForm.plant)?.id).map(p => (
+                              <div key={p.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                <div className="flex flex-col">
+                                  <span className="text-[9px] font-black text-slate-700 uppercase">{p.point_name}</span>
+                                  <span className="text-[7px] text-slate-400">{p.latitude}, {p.longitude}</span>
+                                </div>
+                                <button onClick={() => deleteCalibration(p.id)} className="text-rose-500 hover:text-rose-700 transition-colors">✕</button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -1142,7 +1318,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                           const x = ((e.clientX - rect.left) / rect.width) * 100;
                           const y = ((e.clientY - rect.top) / rect.height) * 100;
                           setSelectedMapId(warehouseMaps.find(m => m.plant === mapForm.plant)?.id || null);
-                          setCoordForm(prev => ({ ...prev, x_percent: x, y_percent: y }));
+                          
+                          if (configMode === 'streets') {
+                            setCoordForm(prev => ({ ...prev, x_percent: x, y_percent: y }));
+                          } else {
+                            setCalibForm(prev => ({ ...prev, x_percent: x, y_percent: y }));
+                          }
                         }}
                         referrerPolicy="no-referrer"
                       />
@@ -1158,14 +1339,37 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                           </div>
                         </div>
                       ))}
-                      {/* Marcador temporal (el que se está situando) */}
-                      {coordForm.street_id && (
+                      {/* Marcadores de calibración GPS */}
+                      {calibrationPoints.filter(p => p.map_id === warehouseMaps.find(m => m.plant === mapForm.plant)?.id).map(p => (
                         <div 
-                          className="absolute w-6 h-6 bg-rose-500 rounded-full border-2 border-white shadow-xl animate-pulse flex items-center justify-center"
-                          style={{ left: `${coordForm.x_percent}%`, top: `${coordForm.y_percent}%`, transform: 'translate(-50%, -50%)' }}
+                          key={p.id}
+                          className="absolute w-4 h-4 bg-emerald-500 rounded-full border-2 border-white shadow-lg flex items-center justify-center"
+                          style={{ left: `${p.x_percent}%`, top: `${p.y_percent}%`, transform: 'translate(-50%, -50%)' }}
                         >
-                          <div className="absolute bottom-full mb-2 px-2 py-1 bg-rose-600 text-white text-[7px] font-black rounded uppercase whitespace-nowrap">
-                            NUEVO: {coordForm.street_id}
+                          <div className="absolute bottom-full mb-1 px-2 py-0.5 bg-emerald-600 text-white text-[6px] font-black rounded uppercase whitespace-nowrap">
+                            {p.point_name}
+                          </div>
+                        </div>
+                      ))}
+                      {/* Marcador temporal (el que se está situando) */}
+                      {configMode === 'streets' ? (
+                        coordForm.street_id && (
+                          <div 
+                            className="absolute w-6 h-6 bg-rose-500 rounded-full border-2 border-white shadow-xl animate-pulse flex items-center justify-center"
+                            style={{ left: `${coordForm.x_percent}%`, top: `${coordForm.y_percent}%`, transform: 'translate(-50%, -50%)' }}
+                          >
+                            <div className="absolute bottom-full mb-2 px-2 py-1 bg-rose-600 text-white text-[7px] font-black rounded uppercase whitespace-nowrap">
+                              NUEVO: {coordForm.street_id}
+                            </div>
+                          </div>
+                        )
+                      ) : (
+                        <div 
+                          className="absolute w-6 h-6 bg-amber-500 rounded-full border-2 border-white shadow-xl animate-pulse flex items-center justify-center"
+                          style={{ left: `${calibForm.x_percent}%`, top: `${calibForm.y_percent}%`, transform: 'translate(-50%, -50%)' }}
+                        >
+                          <div className="absolute bottom-full mb-2 px-2 py-1 bg-amber-600 text-white text-[7px] font-black rounded uppercase whitespace-nowrap">
+                            CALIBRAR: {calibForm.point_name}
                           </div>
                         </div>
                       )}

@@ -108,6 +108,47 @@ const App: React.FC = () => {
     }
   }, [user, sessionMachinery]);
 
+  useEffect(() => {
+    if (!user || !sessionMachinery) return;
+
+    let watchId: number | null = null;
+
+    const startTracking = () => {
+      if ("geolocation" in navigator) {
+        watchId = navigator.geolocation.watchPosition(
+          async (position) => {
+            const { latitude, longitude, accuracy } = position.coords;
+            try {
+              await supabase.from('operator_locations').insert([{
+                operator_email: user.email,
+                latitude,
+                longitude,
+                accuracy,
+                machinery_id: sessionMachinery.forklift
+              }]);
+            } catch (err) {
+              console.error("Error al enviar ubicación:", err);
+            }
+          },
+          (error) => {
+            console.error("Error de geolocalización:", error);
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0
+          }
+        );
+      }
+    };
+
+    startTracking();
+
+    return () => {
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+    };
+  }, [user, sessionMachinery]);
+
   const fetchMachinery = async () => {
     const { data } = await supabase.from('machinery').select('*').order('identifier');
     if (data) setAllMachinery(data);

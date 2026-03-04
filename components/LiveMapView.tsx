@@ -17,6 +17,8 @@ const LiveMapView: React.FC = () => {
   const [allLogs, setAllLogs] = useState<MovementLog[]>([]);
   const [warehouseMaps, setWarehouseMaps] = useState<any[]>([]);
   const [streetCoords, setStreetCoords] = useState<any[]>([]);
+  const [calibrationPoints, setCalibrationPoints] = useState<any[]>([]);
+  const [operatorLocations, setOperatorLocations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(new Date());
 
@@ -31,10 +33,14 @@ const LiveMapView: React.FC = () => {
       
       const { data: mapsData } = await supabase.from('warehouse_maps').select('*');
       const { data: coordsData } = await supabase.from('warehouse_street_coords').select('*');
+      const { data: calibData } = await supabase.from('warehouse_map_calibration').select('*');
+      const { data: locData } = await supabase.from('operator_locations').select('*').order('created_at', { ascending: false }).limit(100);
       
       setAllLogs(logs || []);
       setWarehouseMaps(mapsData || []);
       setStreetCoords(coordsData || []);
+      setCalibrationPoints(calibData || []);
+      setOperatorLocations(locData || []);
       setLastRefresh(new Date());
     } catch (err) {
       console.error(err);
@@ -61,12 +67,45 @@ const LiveMapView: React.FC = () => {
     return Array.from(map.entries());
   };
 
-  const getOperatorPosition = (streetId: string, plant: string) => {
+  const getGPSPosition = (lat: number, lng: number, mapId: string) => {
+    const points = calibrationPoints.filter(p => p.map_id === mapId);
+    if (points.length < 2) return null;
+
+    const p1 = points[0];
+    const p2 = points[1];
+
+    const latRange = p2.latitude - p1.latitude;
+    const lngRange = p2.longitude - p1.longitude;
+    const xRange = p2.x_percent - p1.x_percent;
+    const yRange = p2.y_percent - p1.y_percent;
+
+    if (latRange === 0 || lngRange === 0) return null;
+
+    const x = p1.x_percent + ((lng - p1.longitude) / lngRange) * xRange;
+    const y = p1.y_percent + ((lat - p1.latitude) / latRange) * yRange;
+
+    return { x, y };
+  };
+
+  const getOperatorPosition = (email: string, streetId: string, plant: string) => {
     const map = warehouseMaps.find(m => m.plant === plant);
     if (!map) return null;
+
+    // Intentar obtener posición GPS reciente (últimos 30 segundos)
+    const recentLoc = operatorLocations.find(l => 
+      l.operator_email === email && 
+      (new Date().getTime() - new Date(l.created_at).getTime()) < 30000
+    );
+
+    if (recentLoc) {
+      const gpsPos = getGPSPosition(recentLoc.latitude, recentLoc.longitude, map.id);
+      if (gpsPos) return { ...gpsPos, isGPS: true };
+    }
+
+    // Fallback a la calle
     const coord = streetCoords.find(c => c.map_id === map.id && c.street_id === streetId);
     if (!coord) return null;
-    return { x: coord.x_percent, y: coord.y_percent };
+    return { x: coord.x_percent, y: coord.y_percent, isGPS: false };
   };
 
   if (loading) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white font-black uppercase tracking-widest">Cargando Mapa en Vivo...</div>;
@@ -158,7 +197,7 @@ const LiveMapView: React.FC = () => {
                     }).map(([email, op]) => {
                       const lastLog = op.logs[0];
                       const streetId = lastLog.slot_code.substring(0, 5);
-                      const pos = getOperatorPosition(streetId, plant);
+                      const pos = getOperatorPosition(email, streetId, plant);
                       const timeDiff = (new Date().getTime() - new Date(lastLog.created_at).getTime()) / 60000;
                       const isInactive = timeDiff > 10;
 
@@ -180,13 +219,15 @@ const LiveMapView: React.FC = () => {
                           }}
                         >
                           <div className="relative group/op">
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-[10px] font-black shadow-lg border-2 border-white cursor-help transition-all ${isInactive ? 'bg-slate-400 opacity-50 grayscale' : 'bg-indigo-600 animate-bounce'}`}>
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-[10px] font-black shadow-lg border-2 cursor-help transition-all ${isInactive ? 'bg-slate-400 opacity-50 grayscale border-white' : 'bg-indigo-600 animate-bounce ' + (pos.isGPS ? 'border-emerald-400' : 'border-white')}`}>
                               {op.name.charAt(0)}
+                              {pos.isGPS && <span className="absolute -top-1 -right-1 text-[8px]">🛰️</span>}
                             </div>
                             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1 bg-slate-900 text-white text-[7px] font-black uppercase tracking-widest rounded-lg opacity-0 group-hover/op:opacity-100 transition-all whitespace-nowrap z-30">
                               {op.name}
                               <br/>
                               <span className="text-indigo-300">{lastLog.slot_code}</span>
+                              {pos.isGPS && <span className="text-emerald-400 ml-1">(GPS)</span>}
                             </div>
                           </div>
                         </div>
