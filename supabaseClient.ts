@@ -51,4 +51,22 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  *     created_at TIMESTAMPTZ DEFAULT now(),
  *     completed_at TIMESTAMPTZ
  * );
+ * 
+ * -- 5. Tablas para el Mapa Vivo Real
+ * CREATE TABLE IF NOT EXISTS warehouse_maps (
+ *     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+ *     plant TEXT NOT NULL UNIQUE,
+ *     image_url TEXT NOT NULL,
+ *     created_at TIMESTAMPTZ DEFAULT now()
+ * );
+ * 
+ * CREATE TABLE IF NOT EXISTS warehouse_street_coords (
+ *     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+ *     map_id UUID REFERENCES warehouse_maps(id) ON DELETE CASCADE,
+ *     street_id TEXT NOT NULL,
+ *     x_percent NUMERIC NOT NULL,
+ *     y_percent NUMERIC NOT NULL,
+ *     created_at TIMESTAMPTZ DEFAULT now(),
+ *     UNIQUE(map_id, street_id)
+ * );
  */

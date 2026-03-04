@@ -27,7 +27,7 @@ interface TaskLog {
   profiles?: { full_name: string };
 }
 
-type AdminTab = 'movements' | 'operators' | 'truckers' | 'sectors' | 'reports' | 'machinery' | 'tasks';
+type AdminTab = 'movements' | 'operators' | 'truckers' | 'sectors' | 'reports' | 'machinery' | 'tasks' | 'map' | 'map_config';
 type ReportScope = 'range' | 'week' | 'today';
 
 interface AdminPanelProps {
@@ -91,16 +91,42 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
     status: 'pending' as 'pending' | 'completed'
   });
 
+  const [lastRefresh, setLastRefresh] = useState(new Date());
+
+  // Estados para Mapa Real
+  const [warehouseMaps, setWarehouseMaps] = useState<any[]>([]);
+  const [streetCoords, setStreetCoords] = useState<any[]>([]);
+  const [isConfiguringMap, setIsConfiguringMap] = useState(false);
+  const [selectedMapId, setSelectedMapId] = useState<string | null>(null);
+  const [mapForm, setMapForm] = useState({ plant: 'U01', image_url: '' });
+  const [coordForm, setCoordForm] = useState({ street_id: '', x_percent: 50, y_percent: 50 });
+
   const fetchData = React.useCallback(async () => {
     setLoading(true);
+    setLastRefresh(new Date());
     try {
-      if (activeSubTab === 'movements' || activeSubTab === 'reports') {
-        const { data: logs } = await supabase
-          .from('movement_logs')
-          .select('*')
-          .gte('created_at', `${dateFrom}T00:00:00`)
-          .lte('created_at', `${dateTo}T23:59:59`)
-          .order('created_at', { ascending: false });
+      if (activeSubTab === 'movements' || activeSubTab === 'reports' || activeSubTab === 'map') {
+        let query = supabase.from('movement_logs').select('*');
+        
+        if (activeSubTab === 'map') {
+          const yesterday = new Date(new Date().getTime() - 24 * 60 * 60 * 1000).toISOString();
+          query = query.gte('created_at', yesterday);
+          
+          // Fetch map data even in 'map' tab
+          const { data: mapsData, error: mapsError } = await supabase.from('warehouse_maps').select('*');
+          const { data: coordsData, error: coordsError } = await supabase.from('warehouse_street_coords').select('*');
+          
+          if (mapsError || coordsError) {
+            console.warn("Map tables might be missing. Ensure SQL is executed.", mapsError || coordsError);
+          }
+          
+          setWarehouseMaps(mapsData || []);
+          setStreetCoords(coordsData || []);
+        } else {
+          query = query.gte('created_at', `${dateFrom}T00:00:00`).lte('created_at', `${dateTo}T23:59:59`);
+        }
+
+        const { data: logs } = await query.order('created_at', { ascending: false });
         setAllLogs(logs || []);
 
         if (activeSubTab === 'reports') {
@@ -141,6 +167,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
         const { data: rolesData } = await supabase.from('roles').select('*').order('name');
         setTasks(tasksData || []);
         setRoles(rolesData || []);
+      } else if (activeSubTab === 'map_config') {
+        const { data: mapsData } = await supabase.from('warehouse_maps').select('*');
+        const { data: coordsData } = await supabase.from('warehouse_street_coords').select('*');
+        setWarehouseMaps(mapsData || []);
+        setStreetCoords(coordsData || []);
       } else if (activeSubTab === 'sectors') {
         let allSectorSlots: any[] = [];
         let from = 0;
@@ -177,6 +208,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
       setLoading(false);
     }
   }, [activeSubTab, dateFrom, dateTo]);
+
+  useEffect(() => {
+    let interval: any;
+    if (activeSubTab === 'map') {
+      interval = setInterval(() => {
+        fetchData();
+      }, 30000); // Auto-refresh cada 30s
+    }
+    return () => clearInterval(interval);
+  }, [activeSubTab, fetchData]);
 
   const fetchTaskLogs = React.useCallback(async () => {
     setLoadingTaskLogs(true);
@@ -270,6 +311,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
       }
     });
     return formatMsToHHMM(totalMs);
+  };
+
+  const getDiscoveredStreets = () => {
+    const streets = new Set<string>();
+    allLogs.forEach(log => {
+      if (log.slot_code && log.slot_code.length >= 5) {
+        // Tomamos los primeros 5 caracteres (Ej: U01-C) o similar
+        // El usuario dice que los 5 primeros indican planta y calle
+        streets.add(log.slot_code.substring(0, 5));
+      }
+    });
+    return Array.from(streets).sort();
   };
 
   const processWarehouseReport = (slots: WarehouseSlot[]) => {
@@ -546,11 +599,70 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
     }
   };
 
+  const handleSaveMap = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!mapForm.image_url) return;
+    
+    setLoading(true);
+    try {
+      const { error } = await supabase.from('warehouse_maps').upsert([mapForm], { onConflict: 'plant' });
+      if (error) throw error;
+      alert("Plano guardado correctamente");
+      fetchData();
+    } catch (err: any) {
+      console.error(err);
+      alert("Error al guardar el plano: " + err.message + ". Asegúrate de haber ejecutado el SQL en Supabase.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new window.FileReader();
+    reader.onloadend = () => {
+      setMapForm(prev => ({ ...prev, image_url: reader.result as string }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveCoord = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedMapId || !coordForm.street_id) return;
+    const { error } = await supabase.from('warehouse_street_coords').upsert([{
+      map_id: selectedMapId,
+      ...coordForm
+    }], { onConflict: 'map_id,street_id' });
+    if (!error) { 
+      setCoordForm({ street_id: '', x_percent: 50, y_percent: 50 });
+      fetchData(); 
+    }
+  };
+
+  const deleteCoord = async (id: string) => {
+    if (confirm("¿Eliminar esta coordenada?")) {
+      await supabase.from('warehouse_street_coords').delete().eq('id', id);
+      fetchData();
+    }
+  };
+
+  const getOperatorPosition = (streetId: string, plant: string) => {
+    const map = warehouseMaps.find(m => m.plant === plant);
+    if (!map) return null;
+    const coord = streetCoords.find(c => c.map_id === map.id && c.street_id === streetId);
+    if (!coord) return null;
+    return { x: coord.x_percent, y: coord.y_percent };
+  };
+
   return (
     <div className="space-y-8 animate-fade-in pb-20">
       <div className="flex justify-center">
         <nav className="bg-slate-950 p-2 rounded-[2.5rem] shadow-2xl flex items-center gap-1 md:gap-2 border border-slate-800 overflow-x-auto no-scrollbar max-w-full">
           {[
+            { id: 'map_config', label: 'CONFIG MAPA', icon: '⚙️' },
+            { id: 'map', label: 'MAPA VIVO', icon: '📍' },
             { id: 'movements', label: 'HISTORIAL', icon: '📋' },
             { id: 'operators', label: 'OPERARIOS', icon: '👥' },
             { id: 'sectors', label: 'SECTORES', icon: '📊' },
@@ -576,6 +688,205 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
       </div>
 
       <div className="bg-white p-4 md:p-10 rounded-[3rem] border border-slate-100 shadow-sm min-h-[500px]">
+        {activeSubTab === 'map' && (
+          <div className="space-y-8 animate-fade-in">
+            <div className="flex justify-between items-center">
+              <div>
+                <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Mapa de Nave en Tiempo Real</h3>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Ubicación aproximada basada en el último escaneo</p>
+              </div>
+              <div className="flex items-center gap-4">
+                <button 
+                  onClick={() => setActiveSubTab('map_config')}
+                  className="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-indigo-100 transition-all flex items-center gap-2 border border-indigo-100"
+                >
+                  <span>⚙️</span>
+                  <span>Configurar Plano Real</span>
+                </button>
+                <button 
+                  onClick={() => fetchData()}
+                  className="bg-white border border-slate-200 px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all flex items-center gap-2"
+                >
+                  <span>🔄</span>
+                  <span>Actualizar ({lastRefresh.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})</span>
+                </button>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></div>
+                  <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Sistema Activo</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
+              <div className="xl:col-span-3 bg-slate-50 rounded-[3rem] p-8 border border-slate-100 min-h-[600px] relative overflow-hidden">
+                {/* Representación de la Nave Dinámica */}
+                <div className="flex flex-col gap-12 h-full">
+                  {['U01', 'U02'].map(plant => {
+                    const plantStreets = getDiscoveredStreets().filter(s => s.startsWith(plant));
+                    const realMap = warehouseMaps.find(m => m.plant === plant);
+                    
+                    return (
+                      <div key={plant} className="relative border-2 border-dashed border-slate-200 rounded-[2rem] p-6 flex flex-col min-h-[400px]">
+                        <div className="absolute top-4 left-4 bg-white px-4 py-1 rounded-full shadow-sm border border-slate-100 z-10">
+                          <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest">PLANTA {plant}</span>
+                        </div>
+                        
+                        {realMap ? (
+                          <div className="relative mt-12 w-full aspect-video bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                            <img 
+                              src={realMap.image_url} 
+                              alt={`Mapa ${plant}`} 
+                              className="w-full h-full object-contain opacity-40"
+                              referrerPolicy="no-referrer"
+                            />
+                            {/* Operarios en Mapa Real */}
+                            {getOperatorStats().filter(([_, op]) => {
+                              const lastLog = op.logs[0];
+                              if (!lastLog) return false;
+                              const timeDiff = (new Date().getTime() - new Date(lastLog.created_at).getTime()) / 60000;
+                              return lastLog.slot_code.startsWith(plant) && timeDiff < 15;
+                            }).map(([email, op]) => {
+                              const lastLog = op.logs[0];
+                              const streetId = lastLog.slot_code.substring(0, 5);
+                              const pos = getOperatorPosition(streetId, plant);
+                              const timeDiff = (new Date().getTime() - new Date(lastLog.created_at).getTime()) / 60000;
+                              const isInactive = timeDiff > 10;
+
+                              if (!pos) return null;
+
+                              return (
+                                <div 
+                                  key={email} 
+                                  className="absolute transition-all duration-1000"
+                                  style={{ left: `${pos.x}%`, top: `${pos.y}%`, transform: 'translate(-50%, -50%)' }}
+                                >
+                                  <div className="relative group/op">
+                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-[10px] font-black shadow-lg border-2 border-white cursor-help transition-all ${isInactive ? 'bg-slate-400 opacity-50 grayscale' : 'bg-indigo-600 animate-bounce'}`}>
+                                      {op.name.charAt(0)}
+                                    </div>
+                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1 bg-slate-900 text-white text-[7px] font-black uppercase tracking-widest rounded-lg opacity-0 group-hover/op:opacity-100 transition-all whitespace-nowrap z-20">
+                                      {op.name}
+                                      <br/>
+                                      <span className="text-indigo-300">{lastLog.slot_code}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : plantStreets.length > 0 ? (
+                          <div className="flex-1 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mt-12">
+                            {plantStreets.map(streetId => {
+                              const operatorsInStreet = getOperatorStats().filter(([_, op]) => {
+                                const lastLog = op.logs[0];
+                                if (!lastLog) return false;
+                                const timeDiff = (new Date().getTime() - new Date(lastLog.created_at).getTime()) / 60000;
+                                return lastLog.slot_code.startsWith(streetId) && timeDiff < 15;
+                              });
+
+                              return (
+                                <div key={streetId} className="bg-white/50 rounded-2xl border border-slate-100 p-4 flex flex-col items-center justify-center relative group hover:bg-white hover:shadow-md transition-all min-h-[100px]">
+                                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest absolute top-2">{streetId}</span>
+                                  
+                                  <div className="flex flex-wrap justify-center gap-2 mt-2">
+                                    {operatorsInStreet.length > 0 ? (
+                                      operatorsInStreet.map(([email, op]) => {
+                                        const lastLog = op.logs[0];
+                                        const timeDiff = (new Date().getTime() - new Date(lastLog.created_at).getTime()) / 60000;
+                                        const isInactive = timeDiff > 10;
+
+                                        return (
+                                          <div key={email} className="relative group/op">
+                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-black shadow-lg border-2 border-white cursor-help transition-all ${isInactive ? 'bg-slate-400 opacity-50 scale-90 grayscale' : 'bg-indigo-600 animate-bounce'}`}>
+                                              {op.name.charAt(0)}
+                                            </div>
+                                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1 bg-slate-900 text-white text-[8px] font-black uppercase tracking-widest rounded-lg opacity-0 group-hover/op:opacity-100 transition-all whitespace-nowrap z-20">
+                                              {op.name} {isInactive && '(INACTIVO)'}
+                                              <br/>
+                                              <span className="text-indigo-300 text-[7px]">{op.logs[0].slot_code}</span>
+                                            </div>
+                                          </div>
+                                        );
+                                      })
+                                    ) : (
+                                      <div className="w-6 h-6 rounded-full border border-dashed border-slate-200 flex items-center justify-center text-[8px] text-slate-200">
+                                        ∅
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="flex-1 flex items-center justify-center">
+                            <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Esperando lecturas en Planta {plant}...</p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Zona de Recepción / Expedición */}
+                <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-2/3 h-16 bg-slate-200/50 rounded-full border-2 border-dashed border-slate-300 flex items-center justify-around px-12">
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em]">MUELLES DE CARGA / DESCARGA</span>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Operarios Activos</h4>
+                  <div className="space-y-3">
+                    {getOperatorStats()
+                      .filter(([_, op]) => {
+                        const lastLog = op.logs[0];
+                        if (!lastLog) return false;
+                        const timeDiff = (new Date().getTime() - new Date(lastLog.created_at).getTime()) / 60000;
+                        return timeDiff < 15;
+                      })
+                      .map(([email, op]) => {
+                        const lastLog = op.logs[0];
+                        const timeDiff = lastLog ? Math.round((new Date().getTime() - new Date(lastLog.created_at).getTime()) / 60000) : null;
+                        const isInactive = timeDiff !== null && timeDiff > 10;
+                        
+                        return (
+                          <div key={email} className={`flex items-center justify-between p-3 rounded-2xl border transition-all ${isInactive ? 'bg-slate-100 border-slate-200 opacity-60' : 'bg-slate-50 border-slate-100'}`}>
+                            <div className="flex items-center gap-3">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black ${isInactive ? 'bg-slate-200 text-slate-500' : 'bg-indigo-100 text-indigo-600'}`}>
+                                {op.name.charAt(0)}
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-black text-slate-800 uppercase">{op.name}</p>
+                                <p className="text-[8px] font-bold text-slate-400 uppercase">{lastLog?.slot_code || 'S/Ubicación'}</p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <p className={`text-[8px] font-black uppercase ${timeDiff !== null && timeDiff < 10 ? 'text-emerald-500' : 'text-slate-400'}`}>
+                                {timeDiff !== null ? (timeDiff < 1 ? 'Ahora' : `Hace ${timeDiff}m`) : '--'}
+                              </p>
+                              {isInactive && <p className="text-[6px] font-black text-amber-500 uppercase">Inactivo</p>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+
+                <div className="bg-indigo-900 p-8 rounded-[2.5rem] text-white relative overflow-hidden">
+                  <div className="absolute -right-4 -bottom-4 text-white/10 text-6xl font-black">?</div>
+                  <h4 className="text-[10px] font-black text-indigo-300 uppercase tracking-[0.2em] mb-2">¿Cómo funciona?</h4>
+                  <p className="text-[10px] leading-relaxed opacity-80">
+                    El plano se dibuja dinámicamente. Cada vez que un operario lee un hueco, el sistema identifica la calle (primeros 5 dígitos) y la añade al mapa.
+                    <br/><br/>
+                    Esto permite conocer la ubicación exacta de cada calle según se van descubriendo.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {activeSubTab === 'movements' && (
           <div className="space-y-8">
             {/* Filtros Historial */}
@@ -669,6 +980,195 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
         )}
 
         {activeSubTab === 'operators' && <UserManagement />}
+
+        {activeSubTab === 'map_config' && (
+          <div className="space-y-8 animate-fade-in">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div>
+                <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Configuración de Plano Real</h3>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Sube tu PNG y define las coordenadas de las calles</p>
+              </div>
+              <div className="bg-indigo-600 p-4 rounded-2xl text-white max-w-xs">
+                <p className="text-[8px] font-black uppercase tracking-widest mb-2 text-indigo-200">Guía Rápida</p>
+                <ol className="text-[9px] font-bold space-y-1 list-decimal ml-4 opacity-90">
+                  <li>Elige la planta (U01/U02).</li>
+                  <li>Sube el archivo PNG del plano.</li>
+                  <li>Escribe el ID de la calle (ej: U01-C01).</li>
+                  <li>Haz clic en el mapa para situarla.</li>
+                  <li>Pulsa "Guardar Ubicación".</li>
+                </ol>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-1 space-y-6">
+                <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">1. Seleccionar Planta</h4>
+                  <div className="flex gap-2 mb-6">
+                    {['U01', 'U02'].map(p => (
+                      <button 
+                        key={p}
+                        onClick={() => setMapForm(prev => ({ ...prev, plant: p }))}
+                        className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${mapForm.plant === p ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-400 border-slate-100'}`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+
+                  <form onSubmit={handleSaveMap} className="space-y-4">
+                    <div className="space-y-1">
+                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2">Imagen del Plano</label>
+                      <div 
+                        className={`w-full bg-white border-2 border-dashed p-6 rounded-2xl flex flex-col items-center justify-center gap-4 transition-all ${mapForm.image_url.startsWith('data:') ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200'}`}
+                      >
+                        <span className="text-3xl">{mapForm.image_url.startsWith('data:') ? '✅' : '🗺️'}</span>
+                        <div className="text-center">
+                          <p className="text-[10px] font-black text-slate-800 uppercase">
+                            {mapForm.image_url.startsWith('data:') ? 'Imagen Cargada' : 'Sin Imagen Seleccionada'}
+                          </p>
+                          <p className="text-[8px] font-bold text-slate-400 uppercase mt-1">PNG o JPG (Max 5MB)</p>
+                        </div>
+                        
+                        <label className="bg-indigo-600 text-white px-6 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest cursor-pointer hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100">
+                          {mapForm.image_url.startsWith('data:') ? 'Cambiar Imagen' : 'Seleccionar Archivo'}
+                          <input 
+                            type="file" 
+                            accept="image/*"
+                            onChange={handleFileUpload}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                      {mapForm.image_url && (
+                        <button 
+                          type="button"
+                          onClick={() => setMapForm(prev => ({ ...prev, image_url: '' }))}
+                          className="text-[8px] font-black text-rose-500 uppercase tracking-widest mt-1 ml-2"
+                        >
+                          Limpiar Imagen ✕
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2">O pega la URL del Plano</label>
+                      <input 
+                        type="text" 
+                        placeholder="https://..." 
+                        value={mapForm.image_url.startsWith('data:') ? 'Imagen cargada localmente' : mapForm.image_url}
+                        onChange={e => setMapForm(prev => ({ ...prev, image_url: e.target.value }))}
+                        className="w-full bg-white p-4 rounded-2xl text-xs font-bold outline-none border border-slate-100"
+                      />
+                    </div>
+                    <button type="submit" className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all">
+                      Guardar Plano
+                    </button>
+                  </form>
+                </div>
+
+                {warehouseMaps.find(m => m.plant === mapForm.plant) && (
+                  <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-6">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">2. Definir Coordenadas</h4>
+                    <p className="text-[9px] text-slate-400 font-bold uppercase">Haz clic en el mapa de la derecha para situar una calle</p>
+                    
+                    <form onSubmit={handleSaveCoord} className="space-y-4">
+                      <div className="space-y-1">
+                        <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2">ID Calle (Ej: U01-C01)</label>
+                        <input 
+                          type="text" 
+                          placeholder="U01-C01" 
+                          value={coordForm.street_id}
+                          onChange={e => setCoordForm(prev => ({ ...prev, street_id: e.target.value.toUpperCase() }))}
+                          className="w-full bg-slate-50 p-4 rounded-2xl text-xs font-bold outline-none border border-slate-100 uppercase"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-slate-50 p-3 rounded-xl text-center">
+                          <span className="text-[8px] font-black text-slate-400 uppercase block">X %</span>
+                          <span className="text-xs font-black">{coordForm.x_percent.toFixed(1)}</span>
+                        </div>
+                        <div className="bg-slate-50 p-3 rounded-xl text-center">
+                          <span className="text-[8px] font-black text-slate-400 uppercase block">Y %</span>
+                          <span className="text-xs font-black">{coordForm.y_percent.toFixed(1)}</span>
+                        </div>
+                      </div>
+                      <button 
+                        type="submit" 
+                        disabled={!coordForm.street_id}
+                        className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-700 transition-all disabled:opacity-50"
+                      >
+                        Guardar Ubicación
+                      </button>
+                    </form>
+
+                    <div className="pt-6 border-t border-slate-100">
+                      <h5 className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-4">Calles Configuradas</h5>
+                      <div className="space-y-2 max-h-[200px] overflow-y-auto pr-2">
+                        {streetCoords.filter(c => c.map_id === warehouseMaps.find(m => m.plant === mapForm.plant)?.id).map(c => (
+                          <div key={c.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                            <span className="text-[9px] font-black text-slate-700 uppercase">{c.street_id}</span>
+                            <button onClick={() => deleteCoord(c.id)} className="text-rose-500 hover:text-rose-700 transition-colors">✕</button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="lg:col-span-2">
+                <div className="bg-slate-900 rounded-[3rem] p-4 border border-slate-800 shadow-2xl relative overflow-hidden min-h-[600px] flex items-center justify-center">
+                  {mapForm.image_url ? (
+                    <div className="relative w-full h-full flex items-center justify-center">
+                      <img 
+                        src={mapForm.image_url} 
+                        alt="Vista previa plano" 
+                        className="max-w-full max-h-[700px] object-contain cursor-crosshair"
+                        onClick={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const x = ((e.clientX - rect.left) / rect.width) * 100;
+                          const y = ((e.clientY - rect.top) / rect.height) * 100;
+                          setSelectedMapId(warehouseMaps.find(m => m.plant === mapForm.plant)?.id || null);
+                          setCoordForm(prev => ({ ...prev, x_percent: x, y_percent: y }));
+                        }}
+                        referrerPolicy="no-referrer"
+                      />
+                      {/* Marcadores de calles ya configuradas */}
+                      {streetCoords.filter(c => c.map_id === warehouseMaps.find(m => m.plant === mapForm.plant)?.id).map(c => (
+                        <div 
+                          key={c.id}
+                          className="absolute w-4 h-4 bg-indigo-500 rounded-full border-2 border-white shadow-lg flex items-center justify-center"
+                          style={{ left: `${c.x_percent}%`, top: `${c.y_percent}%`, transform: 'translate(-50%, -50%)' }}
+                        >
+                          <div className="absolute bottom-full mb-1 px-2 py-0.5 bg-indigo-600 text-white text-[6px] font-black rounded uppercase whitespace-nowrap">
+                            {c.street_id}
+                          </div>
+                        </div>
+                      ))}
+                      {/* Marcador temporal (el que se está situando) */}
+                      {coordForm.street_id && (
+                        <div 
+                          className="absolute w-6 h-6 bg-rose-500 rounded-full border-2 border-white shadow-xl animate-pulse flex items-center justify-center"
+                          style={{ left: `${coordForm.x_percent}%`, top: `${coordForm.y_percent}%`, transform: 'translate(-50%, -50%)' }}
+                        >
+                          <div className="absolute bottom-full mb-2 px-2 py-1 bg-rose-600 text-white text-[7px] font-black rounded uppercase whitespace-nowrap">
+                            NUEVO: {coordForm.street_id}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-center space-y-4">
+                      <div className="text-6xl">🗺️</div>
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Introduce una URL de imagen para empezar</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {activeSubTab === 'tasks' && (
           <div className="space-y-8">
