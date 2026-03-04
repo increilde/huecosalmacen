@@ -7,6 +7,7 @@ import SlotGrid from './components/SlotGrid';
 import AdminPanel from './components/AdminPanel';
 import ExpeditionPanel from './components/ExpeditionPanel';
 import SuppliesPanel from './components/SuppliesPanel';
+import LiveMapView from './components/LiveMapView';
 import { supabase } from './supabaseClient';
 
 const App: React.FC = () => {
@@ -168,6 +169,13 @@ const App: React.FC = () => {
     localStorage.removeItem('wh_user');
     localStorage.removeItem('wh_session_machinery');
   };
+
+  // Verificar si estamos en modo "Mapa en Vivo" (Ventana Nueva)
+  const isLiveMapView = typeof window !== 'undefined' && new window.URLSearchParams(window.location.search).get('view') === 'live-map';
+
+  if (isLiveMapView) {
+    return <LiveMapView />;
+  }
 
   if (!user) {
     return (

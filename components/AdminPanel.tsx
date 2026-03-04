@@ -661,7 +661,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
       <div className="flex justify-center">
         <nav className="bg-slate-950 p-2 rounded-[2.5rem] shadow-2xl flex items-center gap-1 md:gap-2 border border-slate-800 overflow-x-auto no-scrollbar max-w-full">
           {[
-            { id: 'map_config', label: 'CONFIG MAPA', icon: '⚙️' },
             { id: 'map', label: 'MAPA VIVO', icon: '📍' },
             { id: 'movements', label: 'HISTORIAL', icon: '📋' },
             { id: 'operators', label: 'OPERARIOS', icon: '👥' },
@@ -697,6 +696,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
               </div>
               <div className="flex items-center gap-4">
                 <button 
+                  onClick={() => window.open(window.location.origin + '?view=live-map', '_blank')}
+                  className="bg-slate-900 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-slate-800 transition-all flex items-center gap-2 shadow-lg shadow-slate-200"
+                >
+                  <span>🖥️</span>
+                  <span>Abrir en Ventana Nueva</span>
+                </button>
+                <button 
                   onClick={() => setActiveSubTab('map_config')}
                   className="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-indigo-100 transition-all flex items-center gap-2 border border-indigo-100"
                 >
@@ -717,8 +723,43 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
-              <div className="xl:col-span-3 bg-slate-50 rounded-[3rem] p-8 border border-slate-100 min-h-[600px] relative overflow-hidden">
+            <div className="space-y-6">
+              <div className="bg-slate-50 p-6 rounded-[2.5rem] border border-slate-100">
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Operarios Activos</h4>
+                <div className="flex flex-wrap gap-4">
+                  {getOperatorStats()
+                    .filter(([_, op]) => {
+                      const lastLog = op.logs[0];
+                      if (!lastLog) return false;
+                      const timeDiff = (new Date().getTime() - new Date(lastLog.created_at).getTime()) / 60000;
+                      return timeDiff < 15;
+                    })
+                    .map(([email, op]) => {
+                      const lastLog = op.logs[0];
+                      const timeDiff = lastLog ? Math.round((new Date().getTime() - new Date(lastLog.created_at).getTime()) / 60000) : null;
+                      const isInactive = timeDiff !== null && timeDiff > 10;
+                      
+                      return (
+                        <div key={email} className={`flex items-center gap-3 p-3 rounded-2xl border transition-all min-w-[180px] ${isInactive ? 'bg-slate-100 border-slate-200 opacity-60' : 'bg-white border-slate-100 shadow-sm'}`}>
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black ${isInactive ? 'bg-slate-200 text-slate-500' : 'bg-indigo-100 text-indigo-600'}`}>
+                            {op.name.charAt(0)}
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-[10px] font-black text-slate-800 uppercase leading-tight">{op.name}</p>
+                            <p className="text-[8px] font-bold text-slate-400 uppercase">{lastLog?.slot_code || 'S/Ubicación'}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className={`text-[8px] font-black uppercase ${timeDiff !== null && timeDiff < 10 ? 'text-emerald-500' : 'text-slate-400'}`}>
+                              {timeDiff !== null ? (timeDiff < 1 ? 'Ahora' : `${timeDiff}m`) : '--'}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+
+              <div className="bg-slate-50 rounded-[3rem] p-8 border border-slate-100 min-h-[600px] relative overflow-hidden">
                 {/* Representación de la Nave Dinámica */}
                 <div className="flex flex-col gap-12 h-full">
                   {['U01', 'U02'].map(plant => {
@@ -740,39 +781,52 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                               referrerPolicy="no-referrer"
                             />
                             {/* Operarios en Mapa Real */}
-                            {getOperatorStats().filter(([_, op]) => {
-                              const lastLog = op.logs[0];
-                              if (!lastLog) return false;
-                              const timeDiff = (new Date().getTime() - new Date(lastLog.created_at).getTime()) / 60000;
-                              return lastLog.slot_code.startsWith(plant) && timeDiff < 15;
-                            }).map(([email, op]) => {
-                              const lastLog = op.logs[0];
-                              const streetId = lastLog.slot_code.substring(0, 5);
-                              const pos = getOperatorPosition(streetId, plant);
-                              const timeDiff = (new Date().getTime() - new Date(lastLog.created_at).getTime()) / 60000;
-                              const isInactive = timeDiff > 10;
+                            {(() => {
+                              const streetCounts: Record<string, number> = {};
+                              return getOperatorStats().filter(([_, op]) => {
+                                const lastLog = op.logs[0];
+                                if (!lastLog) return false;
+                                const timeDiff = (new Date().getTime() - new Date(lastLog.created_at).getTime()) / 60000;
+                                return lastLog.slot_code.startsWith(plant) && timeDiff < 15;
+                              }).map(([email, op]) => {
+                                const lastLog = op.logs[0];
+                                const streetId = lastLog.slot_code.substring(0, 5);
+                                const pos = getOperatorPosition(streetId, plant);
+                                const timeDiff = (new Date().getTime() - new Date(lastLog.created_at).getTime()) / 60000;
+                                const isInactive = timeDiff > 10;
 
-                              if (!pos) return null;
+                                if (!pos) return null;
 
-                              return (
-                                <div 
-                                  key={email} 
-                                  className="absolute transition-all duration-1000"
-                                  style={{ left: `${pos.x}%`, top: `${pos.y}%`, transform: 'translate(-50%, -50%)' }}
-                                >
-                                  <div className="relative group/op">
-                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-[10px] font-black shadow-lg border-2 border-white cursor-help transition-all ${isInactive ? 'bg-slate-400 opacity-50 grayscale' : 'bg-indigo-600 animate-bounce'}`}>
-                                      {op.name.charAt(0)}
-                                    </div>
-                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1 bg-slate-900 text-white text-[7px] font-black uppercase tracking-widest rounded-lg opacity-0 group-hover/op:opacity-100 transition-all whitespace-nowrap z-20">
-                                      {op.name}
-                                      <br/>
-                                      <span className="text-indigo-300">{lastLog.slot_code}</span>
+                                // Calcular desplazamiento si hay varios en la misma calle
+                                const count = streetCounts[streetId] || 0;
+                                streetCounts[streetId] = count + 1;
+                                const offsetX = count * 2.5; // Desplazamiento en % para que no se tapen
+                                const offsetY = count * 1.5;
+
+                                return (
+                                  <div 
+                                    key={email} 
+                                    className="absolute transition-all duration-1000 z-20"
+                                    style={{ 
+                                      left: `${pos.x + offsetX}%`, 
+                                      top: `${pos.y + offsetY}%`, 
+                                      transform: 'translate(-50%, -50%)' 
+                                    }}
+                                  >
+                                    <div className="relative group/op">
+                                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-[10px] font-black shadow-lg border-2 border-white cursor-help transition-all ${isInactive ? 'bg-slate-400 opacity-50 grayscale' : 'bg-indigo-600 animate-bounce'}`}>
+                                        {op.name.charAt(0)}
+                                      </div>
+                                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1 bg-slate-900 text-white text-[7px] font-black uppercase tracking-widest rounded-lg opacity-0 group-hover/op:opacity-100 transition-all whitespace-nowrap z-30">
+                                        {op.name}
+                                        <br/>
+                                        <span className="text-indigo-300">{lastLog.slot_code}</span>
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
-                              );
-                            })}
+                                );
+                              });
+                            })()}
                           </div>
                         ) : plantStreets.length > 0 ? (
                           <div className="flex-1 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mt-12">
@@ -831,56 +885,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                 {/* Zona de Recepción / Expedición */}
                 <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-2/3 h-16 bg-slate-200/50 rounded-full border-2 border-dashed border-slate-300 flex items-center justify-around px-12">
                   <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em]">MUELLES DE CARGA / DESCARGA</span>
-                </div>
-              </div>
-
-              <div className="space-y-6">
-                <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm">
-                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Operarios Activos</h4>
-                  <div className="space-y-3">
-                    {getOperatorStats()
-                      .filter(([_, op]) => {
-                        const lastLog = op.logs[0];
-                        if (!lastLog) return false;
-                        const timeDiff = (new Date().getTime() - new Date(lastLog.created_at).getTime()) / 60000;
-                        return timeDiff < 15;
-                      })
-                      .map(([email, op]) => {
-                        const lastLog = op.logs[0];
-                        const timeDiff = lastLog ? Math.round((new Date().getTime() - new Date(lastLog.created_at).getTime()) / 60000) : null;
-                        const isInactive = timeDiff !== null && timeDiff > 10;
-                        
-                        return (
-                          <div key={email} className={`flex items-center justify-between p-3 rounded-2xl border transition-all ${isInactive ? 'bg-slate-100 border-slate-200 opacity-60' : 'bg-slate-50 border-slate-100'}`}>
-                            <div className="flex items-center gap-3">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black ${isInactive ? 'bg-slate-200 text-slate-500' : 'bg-indigo-100 text-indigo-600'}`}>
-                                {op.name.charAt(0)}
-                              </div>
-                              <div>
-                                <p className="text-[10px] font-black text-slate-800 uppercase">{op.name}</p>
-                                <p className="text-[8px] font-bold text-slate-400 uppercase">{lastLog?.slot_code || 'S/Ubicación'}</p>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <p className={`text-[8px] font-black uppercase ${timeDiff !== null && timeDiff < 10 ? 'text-emerald-500' : 'text-slate-400'}`}>
-                                {timeDiff !== null ? (timeDiff < 1 ? 'Ahora' : `Hace ${timeDiff}m`) : '--'}
-                              </p>
-                              {isInactive && <p className="text-[6px] font-black text-amber-500 uppercase">Inactivo</p>}
-                            </div>
-                          </div>
-                        );
-                      })}
-                  </div>
-                </div>
-
-                <div className="bg-indigo-900 p-8 rounded-[2.5rem] text-white relative overflow-hidden">
-                  <div className="absolute -right-4 -bottom-4 text-white/10 text-6xl font-black">?</div>
-                  <h4 className="text-[10px] font-black text-indigo-300 uppercase tracking-[0.2em] mb-2">¿Cómo funciona?</h4>
-                  <p className="text-[10px] leading-relaxed opacity-80">
-                    El plano se dibuja dinámicamente. Cada vez que un operario lee un hueco, el sistema identifica la calle (primeros 5 dígitos) y la añade al mapa.
-                    <br/><br/>
-                    Esto permite conocer la ubicación exacta de cada calle según se van descubriendo.
-                  </p>
                 </div>
               </div>
             </div>
@@ -984,9 +988,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
         {activeSubTab === 'map_config' && (
           <div className="space-y-8 animate-fade-in">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-              <div>
-                <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Configuración de Plano Real</h3>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Sube tu PNG y define las coordenadas de las calles</p>
+              <div className="flex items-center gap-4">
+                <button 
+                  onClick={() => setActiveSubTab('map')}
+                  className="bg-slate-100 p-3 rounded-2xl text-slate-600 hover:bg-slate-200 transition-all"
+                >
+                  ←
+                </button>
+                <div>
+                  <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Configuración de Plano Real</h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Sube tu PNG y define las coordenadas de las calles</p>
+                </div>
               </div>
               <div className="bg-indigo-600 p-4 rounded-2xl text-white max-w-xs">
                 <p className="text-[8px] font-black uppercase tracking-widest mb-2 text-indigo-200">Guía Rápida</p>
