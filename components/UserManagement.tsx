@@ -18,7 +18,8 @@ const UserManagement: React.FC = () => {
     password_plain: '',
     full_name: '',
     role: '',
-    prompt_machinery: false
+    prompt_machinery: false,
+    avatar_url: ''
   });
 
   const [roleForm, setRoleForm] = useState({
@@ -103,7 +104,8 @@ const UserManagement: React.FC = () => {
         email: userForm.username.toLowerCase().trim(),
         full_name: userForm.full_name.trim(),
         role: userForm.role,
-        prompt_machinery: userForm.prompt_machinery
+        prompt_machinery: userForm.prompt_machinery,
+        avatar_url: userForm.avatar_url
       };
 
       if (userForm.password_plain) {
@@ -146,7 +148,8 @@ const UserManagement: React.FC = () => {
       password_plain: '',
       full_name: user.full_name,
       role: user.role,
-      prompt_machinery: !!user.prompt_machinery
+      prompt_machinery: !!user.prompt_machinery,
+      avatar_url: user.avatar_url || ''
     });
     setEditingUserId(user.id);
     setShowUserModal(true);
@@ -237,7 +240,7 @@ const UserManagement: React.FC = () => {
         <button 
           onClick={() => {
             setEditingUserId(null); setEditingRoleId(null);
-            setUserForm({ username: '', password_plain: '', full_name: '', role: roles[0]?.name || '', prompt_machinery: false });
+            setUserForm({ username: '', password_plain: '', full_name: '', role: roles[0]?.name || '', prompt_machinery: false, avatar_url: '' });
             setRoleForm({ name: '', permissions: [] });
             viewMode === 'users' ? setShowUserModal(true) : setShowRoleModal(true);
           }}
@@ -252,7 +255,11 @@ const UserManagement: React.FC = () => {
           {users.map((u) => (
             <div key={u.id} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm flex items-center justify-between group transition-all hover:shadow-xl">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-slate-900 flex items-center justify-center text-white font-black text-lg uppercase">{u.full_name?.[0] || '?'}</div>
+                {u.avatar_url ? (
+                  <img src={u.avatar_url} alt={u.full_name} className="w-12 h-12 rounded-2xl object-cover border border-slate-100" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="w-12 h-12 rounded-2xl bg-slate-900 flex items-center justify-center text-white font-black text-lg uppercase">{u.full_name?.[0] || '?'}</div>
+                )}
                 <div>
                   <h4 className="font-black text-slate-800 text-sm leading-none mb-1 uppercase">{u.full_name}</h4>
                   <div className="flex items-center gap-2">
@@ -301,6 +308,31 @@ const UserManagement: React.FC = () => {
               <h3 className="text-xl font-black text-slate-800 uppercase">{editingUserId ? 'Editar Acceso' : 'Nuevo Acceso'}</h3>
             </div>
             <div className="space-y-4">
+              <div className="flex justify-center mb-4">
+                <div className="relative group">
+                  {userForm.avatar_url ? (
+                    <img src={userForm.avatar_url} className="w-20 h-20 rounded-3xl object-cover border-2 border-indigo-100" referrerPolicy="no-referrer" />
+                  ) : (
+                    <div className="w-20 h-20 rounded-3xl bg-slate-100 flex items-center justify-center text-2xl">👤</div>
+                  )}
+                  <label className="absolute inset-0 flex items-center justify-center bg-black/40 text-white rounded-3xl opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity text-[8px] font-black uppercase">
+                    Subir
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      className="hidden" 
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new window.FileReader();
+                          reader.onloadend = () => setUserForm({ ...userForm, avatar_url: reader.result as string });
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
               <input placeholder="NOMBRE COMPLETO" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-xs outline-none focus:border-indigo-500 transition-all uppercase" value={userForm.full_name} onChange={e => setUserForm({...userForm, full_name: e.target.value})} />
               <input placeholder="USUARIO (EMAIL)" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-xs outline-none focus:border-indigo-500 transition-all uppercase" value={userForm.username} onChange={e => setUserForm({...userForm, username: e.target.value})} />
               <input type="text" placeholder={editingUserId ? "NUEVA CONTRASEÑA (OPCIONAL)" : "CONTRASEÑA"} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-xs outline-none focus:border-indigo-500" value={userForm.password_plain} onChange={e => setUserForm({...userForm, password_plain: e.target.value})} />

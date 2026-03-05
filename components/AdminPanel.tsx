@@ -92,6 +92,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   });
 
   const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [profiles, setProfiles] = useState<any[]>([]);
 
   // Estados para Mapa Real
   const [warehouseMaps, setWarehouseMaps] = useState<any[]>([]);
@@ -121,6 +122,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
           const { data: coordsData, error: coordsError } = await supabase.from('warehouse_street_coords').select('*');
           const { data: calibData } = await supabase.from('warehouse_map_calibration').select('*');
           const { data: locData } = await supabase.from('operator_locations').select('*').order('created_at', { ascending: false }).limit(100);
+          const { data: profData } = await supabase.from('profiles').select('email, full_name, avatar_url');
           
           if (mapsError || coordsError) {
             console.warn("Map tables might be missing. Ensure SQL is executed.", mapsError || coordsError);
@@ -130,6 +132,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
           setStreetCoords(coordsData || []);
           setCalibrationPoints(calibData || []);
           setOperatorLocations(locData || []);
+          setProfiles(profData || []);
         } else {
           query = query.gte('created_at', `${dateFrom}T00:00:00`).lte('created_at', `${dateTo}T23:59:59`);
         }
@@ -363,10 +366,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   };
 
   const getOperatorStats = () => {
-    const map = new Map<string, { name: string, count: number, logs: MovementLog[], email: string }>();
+    const map = new Map<string, { name: string, count: number, logs: MovementLog[], email: string, avatar_url?: string }>();
     allLogs.forEach(log => {
       const key = log.operator_email || log.operator_name;
-      if (!map.has(key)) map.set(key, { name: log.operator_name, count: 0, logs: [], email: log.operator_email || '' });
+      if (!map.has(key)) {
+        const profile = profiles.find(p => p.email === log.operator_email);
+        map.set(key, { 
+          name: log.operator_name, 
+          count: 0, 
+          logs: [], 
+          email: log.operator_email || '',
+          avatar_url: profile?.avatar_url 
+        });
+      }
       const entry = map.get(key)!;
       entry.count++;
       entry.logs.push(log);
@@ -720,7 +732,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
         <nav className="bg-slate-950 p-2 rounded-[2.5rem] shadow-2xl flex items-center gap-1 md:gap-2 border border-slate-800 overflow-x-auto no-scrollbar max-w-full">
           {[
             { id: 'map', label: 'MAPA VIVO', icon: '📍' },
-            { id: 'map_config', label: 'CONFIG MAPA', icon: '⚙️' },
             { id: 'movements', label: 'HISTORIAL', icon: '📋' },
             { id: 'operators', label: 'OPERARIOS', icon: '👥' },
             { id: 'sectors', label: 'SECTORES', icon: '📊' },
@@ -763,7 +774,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                 </button>
                 <button 
                   onClick={() => setActiveSubTab('map_config')}
-                  className="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-indigo-100 transition-all flex items-center gap-2 border border-indigo-100"
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-all flex items-center gap-2 shadow-lg shadow-indigo-100"
                 >
                   <span>⚙️</span>
                   <span>Configurar Plano Real</span>
@@ -800,9 +811,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                       
                       return (
                         <div key={email} className={`flex items-center gap-4 p-4 rounded-2xl border transition-all min-w-[220px] ${isInactive ? 'bg-slate-100 border-slate-200 opacity-60' : 'bg-white border-slate-100 shadow-sm'}`}>
-                          <div className={`w-12 h-12 rounded-full flex items-center justify-center text-sm font-black ${isInactive ? 'bg-slate-200 text-slate-500' : 'bg-indigo-100 text-indigo-600'}`}>
-                            {op.name.charAt(0)}
-                          </div>
+                          {op.avatar_url ? (
+                            <img src={op.avatar_url} alt={op.name} className="w-12 h-12 rounded-full object-cover border border-slate-100" referrerPolicy="no-referrer" />
+                          ) : (
+                            <div className={`w-12 h-12 rounded-full flex items-center justify-center text-sm font-black ${isInactive ? 'bg-slate-200 text-slate-500' : 'bg-indigo-100 text-indigo-600'}`}>
+                              {op.name.charAt(0)}
+                            </div>
+                          )}
                           <div className="flex-1">
                             <p className="text-sm font-black text-slate-800 uppercase leading-tight">{op.name}</p>
                             <p className="text-xs font-bold text-slate-400 uppercase">{lastLog?.slot_code || 'S/Ubicación'}</p>
@@ -873,10 +888,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                                     }}
                                   >
                                     <div className="relative group/op">
-                                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-[10px] font-black shadow-lg border-2 cursor-help transition-all ${isInactive ? 'bg-slate-400 opacity-50 grayscale border-white' : 'bg-indigo-600 animate-bounce ' + (pos.isGPS ? 'border-emerald-400' : 'border-white')}`}>
-                                        {op.name.charAt(0)}
-                                        {pos.isGPS && <span className="absolute -top-1 -right-1 text-[8px]">🛰️</span>}
-                                      </div>
+                                      {op.avatar_url ? (
+                                        <img 
+                                          src={op.avatar_url} 
+                                          alt={op.name} 
+                                          className={`w-8 h-8 rounded-full object-cover shadow-lg border-2 cursor-help transition-all ${isInactive ? 'opacity-50 grayscale border-slate-300' : 'animate-bounce ' + (pos.isGPS ? 'border-emerald-400' : 'border-white')}`} 
+                                          referrerPolicy="no-referrer" 
+                                        />
+                                      ) : (
+                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-[10px] font-black shadow-lg border-2 cursor-help transition-all ${isInactive ? 'bg-slate-400 opacity-50 grayscale border-white' : 'bg-indigo-600 animate-bounce ' + (pos.isGPS ? 'border-emerald-400' : 'border-white')}`}>
+                                          {op.name.charAt(0)}
+                                        </div>
+                                      )}
+                                      {pos.isGPS && <span className="absolute -top-1 -right-1 text-[8px] z-10">🛰️</span>}
                                       <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1 bg-slate-900 text-white text-[7px] font-black uppercase tracking-widest rounded-lg opacity-0 group-hover/op:opacity-100 transition-all whitespace-nowrap z-30">
                                         {op.name}
                                         <br/>
@@ -912,9 +936,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
 
                                         return (
                                           <div key={email} className="relative group/op">
-                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-black shadow-lg border-2 border-white cursor-help transition-all ${isInactive ? 'bg-slate-400 opacity-50 scale-90 grayscale' : 'bg-indigo-600 animate-bounce'}`}>
-                                              {op.name.charAt(0)}
-                                            </div>
+                                            {op.avatar_url ? (
+                                              <img 
+                                                src={op.avatar_url} 
+                                                alt={op.name} 
+                                                className={`w-10 h-10 rounded-full object-cover shadow-lg border-2 border-white cursor-help transition-all ${isInactive ? 'opacity-50 scale-90 grayscale' : 'animate-bounce'}`} 
+                                                referrerPolicy="no-referrer" 
+                                              />
+                                            ) : (
+                                              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-black shadow-lg border-2 border-white cursor-help transition-all ${isInactive ? 'bg-slate-400 opacity-50 scale-90 grayscale' : 'bg-indigo-600 animate-bounce'}`}>
+                                                {op.name.charAt(0)}
+                                              </div>
+                                            )}
                                             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-lg opacity-0 group-hover/op:opacity-100 transition-all whitespace-nowrap z-20">
                                               {op.name} {isInactive && '(INACTIVO)'}
                                               <br/>
@@ -1258,6 +1291,41 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                         <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">2. Calibración GPS</h4>
                         <p className="text-[9px] text-slate-400 font-bold uppercase">Necesitas 2 puntos para calibrar el plano</p>
                         
+                        <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 mb-4">
+                          <p className="text-[8px] font-black text-emerald-700 uppercase tracking-widest mb-2">Calibración Automática</p>
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              if ("geolocation" in navigator) {
+                                navigator.geolocation.getCurrentPosition(
+                                  (pos) => {
+                                    setCalibForm(prev => ({ 
+                                      ...prev, 
+                                      latitude: pos.coords.latitude, 
+                                      longitude: pos.coords.longitude 
+                                    }));
+                                    // Feedback visual
+                                    const btn = document.getElementById('gps-btn');
+                                    if (btn) {
+                                      btn.classList.add('bg-emerald-800');
+                                      setTimeout(() => btn.classList.remove('bg-emerald-800'), 500);
+                                    }
+                                  },
+                                  (err) => alert("Error al obtener ubicación: " + err.message),
+                                  { enableHighAccuracy: true }
+                                );
+                              } else {
+                                alert("GPS no soportado");
+                              }
+                            }}
+                            id="gps-btn"
+                            className="w-full bg-emerald-600 text-white py-3 rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-100"
+                          >
+                            <span>📍</span>
+                            Obtener Ubicación Actual
+                          </button>
+                        </div>
+
                         <form onSubmit={(e) => handleSaveCalibration(e, calibForm)} className="space-y-4">
                           <div className="space-y-1">
                             <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2">Nombre del Punto</label>
@@ -1798,7 +1866,7 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
             </div>
 
             <section className="space-y-6">
-              <h3 className="text-lg font-semibold text-slate-800 uppercase tracking-tight ml-2">Desglose Ocupación por Planta y Tamaño</h3>
+              <h3 className="text-lg font-semibold text-slate-800 uppercase tracking-tight ml-2">Desglose Ocupación por Planta y Tamaño (Huecos)</h3>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                  {warehouseBreakdown.map((plantData: any) => (
                    <div key={plantData.plant} className="bg-slate-50 p-8 rounded-[3rem] border border-slate-100 space-y-6">

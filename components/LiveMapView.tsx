@@ -19,6 +19,7 @@ const LiveMapView: React.FC = () => {
   const [streetCoords, setStreetCoords] = useState<any[]>([]);
   const [calibrationPoints, setCalibrationPoints] = useState<any[]>([]);
   const [operatorLocations, setOperatorLocations] = useState<any[]>([]);
+  const [profiles, setProfiles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(new Date());
 
@@ -35,12 +36,14 @@ const LiveMapView: React.FC = () => {
       const { data: coordsData } = await supabase.from('warehouse_street_coords').select('*');
       const { data: calibData } = await supabase.from('warehouse_map_calibration').select('*');
       const { data: locData } = await supabase.from('operator_locations').select('*').order('created_at', { ascending: false }).limit(100);
+      const { data: profData } = await supabase.from('profiles').select('email, full_name, avatar_url');
       
       setAllLogs(logs || []);
       setWarehouseMaps(mapsData || []);
       setStreetCoords(coordsData || []);
       setCalibrationPoints(calibData || []);
       setOperatorLocations(locData || []);
+      setProfiles(profData || []);
       setLastRefresh(new Date());
     } catch (err) {
       console.error(err);
@@ -56,10 +59,19 @@ const LiveMapView: React.FC = () => {
   }, []);
 
   const getOperatorStats = () => {
-    const map = new Map<string, { name: string, count: number, logs: MovementLog[], email: string }>();
+    const map = new Map<string, { name: string, count: number, logs: MovementLog[], email: string, avatar_url?: string }>();
     allLogs.forEach(log => {
       const key = log.operator_email || log.operator_name;
-      if (!map.has(key)) map.set(key, { name: log.operator_name, count: 0, logs: [], email: log.operator_email || '' });
+      if (!map.has(key)) {
+        const profile = profiles.find(p => p.email === log.operator_email);
+        map.set(key, { 
+          name: log.operator_name, 
+          count: 0, 
+          logs: [], 
+          email: log.operator_email || '',
+          avatar_url: profile?.avatar_url
+        });
+      }
       const entry = map.get(key)!;
       entry.count++;
       entry.logs.push(log);
@@ -148,9 +160,13 @@ const LiveMapView: React.FC = () => {
               
               return (
                 <div key={email} className={`flex items-center gap-3 p-3 rounded-2xl border transition-all min-w-[180px] ${isInactive ? 'bg-slate-100 border-slate-200 opacity-60' : 'bg-white border-slate-100 shadow-sm'}`}>
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black ${isInactive ? 'bg-slate-200 text-slate-500' : 'bg-indigo-100 text-indigo-600'}`}>
-                    {op.name.charAt(0)}
-                  </div>
+                  {op.avatar_url ? (
+                    <img src={op.avatar_url} alt={op.name} className="w-8 h-8 rounded-full object-cover border border-slate-100" referrerPolicy="no-referrer" />
+                  ) : (
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black ${isInactive ? 'bg-slate-200 text-slate-500' : 'bg-indigo-100 text-indigo-600'}`}>
+                      {op.name.charAt(0)}
+                    </div>
+                  )}
                   <div className="flex-1">
                     <p className="text-[10px] font-black text-slate-800 uppercase leading-tight">{op.name}</p>
                     <p className="text-[8px] font-bold text-slate-400 uppercase">{lastLog?.slot_code || 'S/Ubicación'}</p>
@@ -219,10 +235,19 @@ const LiveMapView: React.FC = () => {
                           }}
                         >
                           <div className="relative group/op">
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-[10px] font-black shadow-lg border-2 cursor-help transition-all ${isInactive ? 'bg-slate-400 opacity-50 grayscale border-white' : 'bg-indigo-600 animate-bounce ' + (pos.isGPS ? 'border-emerald-400' : 'border-white')}`}>
-                              {op.name.charAt(0)}
-                              {pos.isGPS && <span className="absolute -top-1 -right-1 text-[8px]">🛰️</span>}
-                            </div>
+                            {op.avatar_url ? (
+                              <img 
+                                src={op.avatar_url} 
+                                alt={op.name} 
+                                className={`w-8 h-8 rounded-full object-cover shadow-lg border-2 cursor-help transition-all ${isInactive ? 'opacity-50 grayscale border-slate-300' : 'animate-bounce ' + (pos.isGPS ? 'border-emerald-400' : 'border-white')}`} 
+                                referrerPolicy="no-referrer" 
+                              />
+                            ) : (
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-[10px] font-black shadow-lg border-2 cursor-help transition-all ${isInactive ? 'bg-slate-400 opacity-50 grayscale border-white' : 'bg-indigo-600 animate-bounce ' + (pos.isGPS ? 'border-emerald-400' : 'border-white')}`}>
+                                {op.name.charAt(0)}
+                              </div>
+                            )}
+                            {pos.isGPS && <span className="absolute -top-1 -right-1 text-[8px] z-10">🛰️</span>}
                             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-lg opacity-0 group-hover/op:opacity-100 transition-all whitespace-nowrap z-30">
                               {op.name}
                               <br/>
