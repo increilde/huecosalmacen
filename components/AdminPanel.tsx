@@ -35,7 +35,7 @@ interface AdminPanelProps {
 }
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
-  const [activeSubTab, setActiveSubTab] = useState<AdminTab>('movements');
+  const [activeSubTab, setActiveSubTab] = useState<AdminTab>('reports');
   const [selectedMachineryId, setSelectedMachineryId] = useState<string | null>(null);
   const [tasksView, setTasksView] = useState<'report' | 'config'>('report');
   const [loading, setLoading] = useState(true);
@@ -63,7 +63,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   
   // Estados para Tareas (Creación / Edición)
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
-  const [taskForm, setTaskForm] = useState({ name: '', allowed_roles: [] as string[], is_timed: false });
+  const [taskForm, setTaskForm] = useState({ 
+    name: '', 
+    description: '',
+    allowed_roles: [] as string[], 
+    assigned_user_emails: [] as string[],
+    task_type: 'free' as 'daily' | 'once' | 'free',
+    is_timed: false 
+  });
 
   // Estados para Filtros de Historial de Tareas de Tiempo
   const [taskLogDateFrom, setTaskLogDateFrom] = useState(todayLocal);
@@ -113,6 +120,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
       if (activeSubTab === 'movements' || activeSubTab === 'reports' || activeSubTab === 'map') {
         let query = supabase.from('movement_logs').select('*');
         
+        // Fetch profiles for reports and map
+        const { data: profData } = await supabase.from('profiles').select('id, email, full_name, avatar_url');
+        setProfiles(profData || []);
+
         if (activeSubTab === 'map') {
           const yesterday = new Date(new Date().getTime() - 24 * 60 * 60 * 1000).toISOString();
           query = query.gte('created_at', yesterday);
@@ -122,7 +133,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
           const { data: coordsData, error: coordsError } = await supabase.from('warehouse_street_coords').select('*');
           const { data: calibData } = await supabase.from('warehouse_map_calibration').select('*');
           const { data: locData } = await supabase.from('operator_locations').select('*').order('created_at', { ascending: false }).limit(100);
-          const { data: profData } = await supabase.from('profiles').select('email, full_name, avatar_url');
           
           if (mapsError || coordsError) {
             console.warn("Map tables might be missing. Ensure SQL is executed.", mapsError || coordsError);
@@ -175,9 +185,29 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
         setMaintenanceRecords(maintData || []);
       } else if (activeSubTab === 'tasks') {
         const { data: tasksData } = await supabase.from('tasks').select('*').order('name');
+        
+        // Migración: Si hay tareas sin tipo o con tipo antiguo, ponerlas como 'free' (Libre)
+        const tasksToUpdate = tasksData?.filter(t => !t.task_type || (t.task_type !== 'daily' && t.task_type !== 'once' && t.task_type !== 'free')) || [];
+        if (tasksToUpdate.length > 0) {
+          for (const t of tasksToUpdate) {
+            try {
+              const { error } = await supabase.from('tasks').update({ task_type: 'free' }).eq('id', t.id);
+              if (error) console.warn("Error migrating task type:", error.message);
+            } catch (e) {
+              console.warn("Migration failed for task", t.id);
+            }
+          }
+          // Re-fetch after update
+          const { data: updatedTasks } = await supabase.from('tasks').select('*').order('name');
+          setTasks(updatedTasks || []);
+        } else {
+          setTasks(tasksData || []);
+        }
+
         const { data: rolesData } = await supabase.from('roles').select('*').order('name');
-        setTasks(tasksData || []);
+        const { data: profData } = await supabase.from('profiles').select('id, email, full_name, avatar_url');
         setRoles(rolesData || []);
+        setProfiles(profData || []);
       } else if (activeSubTab === 'map_config') {
         const { data: mapsData } = await supabase.from('warehouse_maps').select('*');
         const { data: coordsData } = await supabase.from('warehouse_street_coords').select('*');
@@ -528,23 +558,41 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
     
     setLoading(true);
     try {
+      const payload = {
+        name: taskForm.name.toUpperCase().trim(),
+        description: taskForm.description.trim(),
+        allowed_roles: taskForm.allowed_roles,
+        assigned_user_emails: taskForm.assigned_user_emails,
+        task_type: taskForm.task_type,
+        is_timed: taskForm.is_timed
+      };
+
       if (editingTaskId) {
-        const { error } = await supabase.from('tasks').update({
-          name: taskForm.name.toUpperCase().trim(),
-          allowed_roles: taskForm.allowed_roles,
-          is_timed: taskForm.is_timed
-        }).eq('id', editingTaskId);
-        if (error) throw error;
+        const { error } = await supabase.from('tasks').update(payload).eq('id', editingTaskId);
+        if (error) {
+          if (error.code === '23514' && error.message.includes('tasks_task_type_check')) {
+            alert("Error de base de datos: El tipo de tarea 'Libre' no está habilitado en tu base de datos. Por favor, ejecuta el SQL de actualización en tu panel de Supabase.");
+          }
+          throw error;
+        }
       } else {
-        const { error } = await supabase.from('tasks').insert([{
-          name: taskForm.name.toUpperCase().trim(),
-          allowed_roles: taskForm.allowed_roles,
-          is_timed: taskForm.is_timed
-        }]);
-        if (error) throw error;
+        const { error } = await supabase.from('tasks').insert([payload]);
+        if (error) {
+          if (error.code === '23514' && error.message.includes('tasks_task_type_check')) {
+            alert("Error de base de datos: El tipo de tarea 'Libre' no está habilitado en tu base de datos. Por favor, ejecuta el SQL de actualización en tu panel de Supabase.");
+          }
+          throw error;
+        }
       }
 
-      setTaskForm({ name: '', allowed_roles: [], is_timed: false });
+      setTaskForm({ 
+        name: '', 
+        description: '',
+        allowed_roles: [], 
+        assigned_user_emails: [],
+        task_type: 'free',
+        is_timed: false 
+      });
       setEditingTaskId(null);
       setShowTaskModal(false);
       fetchData();
@@ -558,7 +606,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   const openEditTask = (task: Task) => {
     setTaskForm({
       name: task.name,
+      description: task.description || '',
       allowed_roles: task.allowed_roles,
+      assigned_user_emails: task.assigned_user_emails || [],
+      task_type: task.task_type || 'free',
       is_timed: task.is_timed
     });
     setEditingTaskId(task.id);
@@ -578,6 +629,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
       allowed_roles: prev.allowed_roles.includes(roleName)
         ? prev.allowed_roles.filter(r => r !== roleName)
         : [...prev.allowed_roles, roleName]
+    }));
+  };
+
+  const toggleUserForTask = (email: string) => {
+    setTaskForm(prev => ({
+      ...prev,
+      assigned_user_emails: prev.assigned_user_emails.includes(email)
+        ? prev.assigned_user_emails.filter(e => e !== email)
+        : [...prev.assigned_user_emails, email]
     }));
   };
 
@@ -729,28 +789,28 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   return (
     <div className="space-y-8 animate-fade-in pb-20">
       <div className="flex justify-center">
-        <nav className="bg-slate-950 p-2 rounded-[2.5rem] shadow-2xl flex items-center gap-1 md:gap-2 border border-slate-800 overflow-x-auto no-scrollbar max-w-full">
+        <nav className="bg-slate-950 p-1 rounded-[1.5rem] shadow-2xl flex items-center gap-1 border border-slate-800 overflow-x-auto no-scrollbar max-w-full">
           {[
             { id: 'map', label: 'MAPA VIVO', icon: '📍' },
+            { id: 'reports', label: 'INFORME', icon: '📈' },
             { id: 'movements', label: 'HISTORIAL', icon: '📋' },
             { id: 'operators', label: 'OPERARIOS', icon: '👥' },
             { id: 'sectors', label: 'SECTORES', icon: '📊' },
             { id: 'machinery', label: 'MAQUINARIA', icon: '🛠️' },
             { id: 'tasks', label: 'TAREAS', icon: '📌' },
             { id: 'truckers', label: 'CAMIONES', icon: '🚛' },
-            { id: 'reports', label: 'INFORME', icon: '📈' },
           ].map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveSubTab(tab.id as AdminTab)}
-              className={`px-4 md:px-8 py-4 rounded-[2rem] flex flex-col items-center gap-1.5 transition-all min-w-[90px] md:min-w-[120px] ${
+              className={`px-2.5 md:px-4 py-2 rounded-[1.2rem] flex flex-col items-center gap-0.5 transition-all min-w-[60px] md:min-w-[80px] ${
                 activeSubTab === tab.id 
-                ? 'bg-white text-slate-900 shadow-xl' 
+                ? 'bg-white text-slate-900 shadow-xl scale-105' 
                 : 'text-slate-500 hover:text-slate-300'
               }`}
             >
-              <span className="text-sm md:text-base">{tab.icon}</span>
-              <span className="text-[7px] md:text-[9px] font-black uppercase tracking-[0.2em]">{tab.label}</span>
+              <span className="text-xs md:text-sm">{tab.icon}</span>
+              <span className="text-[5px] md:text-[7px] font-black uppercase tracking-widest">{tab.label}</span>
             </button>
           ))}
         </nav>
@@ -1216,7 +1276,7 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                         className="w-full bg-white p-4 rounded-2xl text-xs font-bold outline-none border border-slate-100"
                       />
                     </div>
-                    <button type="submit" className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all">
+                    <button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-slate-800 transition-all">
                       Guardar Plano
                     </button>
                   </form>
@@ -1268,7 +1328,7 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                           <button 
                             type="submit" 
                             disabled={!coordForm.street_id}
-                            className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-700 transition-all disabled:opacity-50"
+                            className="w-full bg-indigo-600 text-white py-3 rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-indigo-700 transition-all disabled:opacity-50"
                           >
                             Guardar Ubicación
                           </button>
@@ -1370,7 +1430,7 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                           </div>
                           <button 
                             type="submit" 
-                            className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-700 transition-all"
+                            className="w-full bg-indigo-600 text-white py-3 rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-indigo-700 transition-all"
                           >
                             Guardar Punto de Calibración
                           </button>
@@ -1544,6 +1604,7 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                       <thead className="bg-slate-950 text-white font-black uppercase tracking-widest text-[8px]">
                         <tr>
                           <th className="px-6 py-4">TAREA</th>
+                          <th className="px-6 py-4">TIPO</th>
                           <th className="px-6 py-4">OPERARIO</th>
                           <th className="px-6 py-4 text-center">INICIO</th>
                           <th className="px-6 py-4 text-center">FIN</th>
@@ -1553,16 +1614,28 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                       </thead>
                       <tbody className="divide-y divide-slate-50">
                         {loadingTaskLogs ? (
-                          <tr><td colSpan={6} className="py-16 text-center animate-pulse text-slate-300 font-black uppercase text-[10px]">Cargando registros...</td></tr>
+                          <tr><td colSpan={7} className="py-16 text-center animate-pulse text-slate-300 font-black uppercase text-[10px]">Cargando registros...</td></tr>
                         ) : taskLogs.length === 0 ? (
-                          <tr><td colSpan={6} className="py-16 text-center text-slate-300 font-black uppercase text-[10px]">Sin actividad en el periodo</td></tr>
+                          <tr><td colSpan={7} className="py-16 text-center text-slate-300 font-black uppercase text-[10px]">Sin actividad en el periodo</td></tr>
                         ) : taskLogs.map(log => {
                           const roundedMs = getRoundedDurationMs(log.start_time, log.end_time);
                           const durationStr = log.end_time ? formatMsToHHMM(roundedMs) : '--:--';
                           
                           return (
                             <tr key={log.id} className="hover:bg-slate-50 transition-colors">
-                              <td className="px-6 py-4 font-black text-slate-800 uppercase">{log.tasks?.name || 'Desconocida'}</td>
+                              <td className="px-6 py-4">
+                                <p className="font-black text-slate-800 uppercase">{log.tasks?.name || 'Desconocida'}</p>
+                                {log.tasks?.description && <p className="text-[7px] text-slate-400 font-bold uppercase mt-0.5">{log.tasks.description}</p>}
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className={`text-[7px] font-black px-1.5 py-0.5 rounded border uppercase ${
+                                  log.tasks?.task_type === 'daily' ? 'bg-amber-50 text-amber-600 border-amber-100' : 
+                                  log.tasks?.task_type === 'once' ? 'bg-slate-50 text-slate-400 border-slate-100' :
+                                  'bg-emerald-50 text-emerald-600 border-emerald-100'
+                                }`}>
+                                  {log.tasks?.task_type === 'daily' ? 'Diaria' : log.tasks?.task_type === 'once' ? 'Puntual' : 'Libre'}
+                                </span>
+                              </td>
                               <td className="px-6 py-4 font-bold text-indigo-600 uppercase">{log.profiles?.full_name || log.operator_email}</td>
                               <td className="px-6 py-4 text-slate-400 font-bold text-center text-[10px]">
                                 {new Date(log.start_time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
@@ -1608,7 +1681,18 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
               <section className="space-y-6 animate-fade-in">
                 <div className="flex justify-between items-center mb-6">
                    <h3 className="text-lg font-black text-slate-800 uppercase tracking-tighter">Gestión de Tareas Disponibles</h3>
-                   <button onClick={() => { setEditingTaskId(null); setTaskForm({ name: '', allowed_roles: [], is_timed: false }); setShowTaskModal(true); }} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-100 active:scale-95 transition-all">Nueva Tarea</button>
+                   <button onClick={() => { 
+                     setEditingTaskId(null); 
+                     setTaskForm({ 
+                       name: '', 
+                       description: '',
+                       allowed_roles: [], 
+                       assigned_user_emails: [],
+                       task_type: 'free',
+                       is_timed: false 
+                     }); 
+                     setShowTaskModal(true); 
+                   }} className="bg-indigo-600 text-white px-4 py-2.5 rounded-xl font-black text-[9px] uppercase tracking-widest shadow-lg shadow-indigo-100 active:scale-95 transition-all">Nueva Tarea</button>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                    {tasks.map(t => (
@@ -1624,10 +1708,21 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                         </div>
                         <div className="mt-4">
                           <p className="font-black text-slate-800 uppercase text-xs line-clamp-1">{t.name}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <p className="text-[7px] font-black text-slate-400 uppercase">
+                              {t.task_type === 'daily' ? '📅 Diaria' : t.task_type === 'once' ? '🎯 Puntual' : '🔓 Libre'}
+                            </p>
+                            {t.assigned_user_emails && t.assigned_user_emails.length > 0 && (
+                              <span className="text-[6px] font-black bg-rose-50 text-rose-500 px-1.5 py-0.5 rounded-full uppercase border border-rose-100 animate-pulse">Personal</span>
+                            )}
+                          </div>
                           <div className="flex flex-wrap gap-1 mt-2">
                             {t.allowed_roles.map(r => (
                               <span key={r} className="text-[7px] font-black text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100 uppercase">{r}</span>
                             ))}
+                            {t.assigned_user_emails && t.assigned_user_emails.length > 0 && (
+                              <span className="text-[7px] font-black text-emerald-500 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 uppercase">+{t.assigned_user_emails.length} Usuarios</span>
+                            )}
                           </div>
                         </div>
                      </div>
@@ -1944,60 +2039,143 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
 
       {showTaskModal && (
         <div className="fixed inset-0 z-[300] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4">
-           <form onSubmit={handleCreateOrUpdateTask} className="bg-white w-full max-sm rounded-[3rem] p-10 shadow-2xl space-y-6 animate-fade-in border border-white">
+           <form 
+            onSubmit={handleCreateOrUpdateTask} 
+            className="bg-white w-full max-w-md rounded-[2.5rem] p-6 md:p-8 shadow-2xl space-y-4 animate-fade-in border border-white max-h-[95vh] overflow-y-auto"
+           >
               <div className="text-center">
-                 <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">{editingTaskId ? 'Editar Tarea' : 'Configurar Tarea'}</h3>
-                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">Definir actividad</p>
+                 <h3 className="text-lg md:text-xl font-black text-slate-800 uppercase tracking-tighter">{editingTaskId ? 'Editar Tarea' : 'Nueva Tarea'}</h3>
+                 <p className="text-[8px] md:text-[9px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Configuración de actividad</p>
               </div>
               
-              <div className="space-y-4">
+              <div className="space-y-3.5">
                 <div className="space-y-1">
-                  <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2">Nombre de la Tarea</label>
+                  <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre</label>
                   <input 
                     autoFocus 
-                    placeholder="EJ: TRASPASOS JUNCARIL" 
-                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-xs text-center outline-none focus:border-indigo-500 uppercase" 
+                    placeholder="EJ: TRASPASOS..." 
+                    className="w-full bg-slate-50 border border-slate-100 rounded-xl py-2.5 px-5 font-black text-xs text-center outline-none focus:border-indigo-500 uppercase" 
                     value={taskForm.name} 
                     onChange={e => setTaskForm({ ...taskForm, name: e.target.value })} 
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2 mb-2 block">Roles Permitidos</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {roles.map(role => (
-                      <button
-                        key={role.id}
-                        type="button"
-                        onClick={() => toggleRoleForTask(role.name)}
-                        className={`py-3 rounded-xl text-[8px] font-black uppercase tracking-widest border transition-all ${taskForm.allowed_roles.includes(role.name) ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-slate-50 text-slate-400 border-slate-100'}`}
-                      >
-                        {role.name.toUpperCase()}
-                      </button>
-                    ))}
+                  <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Descripción</label>
+                  <textarea 
+                    placeholder="DETALLES..." 
+                    className="w-full bg-slate-50 border border-slate-100 rounded-xl py-2.5 px-5 font-black text-[10px] outline-none focus:border-indigo-500 min-h-[50px]" 
+                    value={taskForm.description} 
+                    onChange={e => setTaskForm({ ...taskForm, description: e.target.value })} 
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Tipo</label>
+                    <div className="flex flex-col gap-1.5">
+                      {(['once', 'daily', 'free'] as const).map(type => (
+                        <button
+                          key={type}
+                          type="button"
+                          onClick={() => setTaskForm({ ...taskForm, task_type: type })}
+                          className={`py-2 rounded-lg text-[8px] font-black uppercase tracking-widest border transition-all ${
+                            taskForm.task_type === type 
+                            ? (type === 'once' ? 'bg-slate-900 text-white' : type === 'daily' ? 'bg-indigo-600 text-white' : 'bg-emerald-600 text-white') 
+                            : 'bg-slate-50 text-slate-400 border-slate-100'
+                          }`}
+                        >
+                          {type === 'once' ? 'Puntual' : type === 'daily' ? 'Diaria' : 'Libre'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Roles</label>
+                    <div className="flex flex-col gap-1.5 max-h-28 overflow-y-auto pr-1">
+                      {roles.map(role => (
+                        <button
+                          key={role.id}
+                          type="button"
+                          onClick={() => toggleRoleForTask(role.name)}
+                          className={`py-2 rounded-lg text-[8px] font-black uppercase tracking-widest border transition-all ${taskForm.allowed_roles.includes(role.name) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-400 border-slate-100'}`}
+                        >
+                          {role.name.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between bg-slate-50 p-5 rounded-3xl border border-slate-100">
+                <div className="space-y-1">
+                  <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1 block">Asignación Personal</label>
+                  <div className="max-h-40 overflow-y-auto pr-1 bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                    {profiles.length === 0 ? (
+                      <p className="text-[8px] text-slate-400 text-center py-4 uppercase font-bold">No hay usuarios</p>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-2">
+                        {profiles.map(profile => (
+                          <button
+                            key={profile.id || profile.email}
+                            type="button"
+                            onClick={() => toggleUserForTask(profile.email)}
+                            className={`p-2 rounded-xl border transition-all flex flex-col items-center text-center gap-1.5 group relative ${
+                              taskForm.assigned_user_emails.includes(profile.email) 
+                              ? 'bg-indigo-600 border-indigo-600' 
+                              : 'bg-white border-white shadow-sm'
+                            }`}
+                          >
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] overflow-hidden border transition-all ${
+                              taskForm.assigned_user_emails.includes(profile.email) ? 'border-indigo-400' : 'border-slate-50'
+                            }`}>
+                              {profile.avatar_url ? (
+                                <img src={profile.avatar_url} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              ) : (
+                                <div className={`w-full h-full flex items-center justify-center font-black ${
+                                  taskForm.assigned_user_emails.includes(profile.email) ? 'bg-indigo-500 text-white' : 'bg-slate-100 text-slate-400'
+                                }`}>
+                                  {profile.full_name?.charAt(0) || '?'}
+                                </div>
+                              )}
+                            </div>
+                            <p className={`text-[7px] font-black uppercase tracking-tight leading-tight line-clamp-1 ${
+                              taskForm.assigned_user_emails.includes(profile.email) ? 'text-white' : 'text-slate-800'
+                            }`}>
+                              {profile.full_name}
+                            </p>
+                            {taskForm.assigned_user_emails.includes(profile.email) && (
+                              <div className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-white rounded-full flex items-center justify-center shadow-md text-[8px]">
+                                ⭐
+                              </div>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100">
                   <div className="flex flex-col">
-                    <span className="text-[9px] font-black text-slate-800 uppercase">Tarea de Tiempo</span>
-                    <span className="text-[7px] font-bold text-slate-400 uppercase">Activa cronómetro al iniciar</span>
+                    <span className="text-[8px] font-black text-slate-800 uppercase">Cronómetro</span>
+                    <span className="text-[6px] font-bold text-slate-400 uppercase">Activar al iniciar</span>
                   </div>
                   <button
                     type="button"
                     onClick={() => setTaskForm({ ...taskForm, is_timed: !taskForm.is_timed })}
-                    className={`w-12 h-6 rounded-full relative transition-all ${taskForm.is_timed ? 'bg-indigo-600' : 'bg-slate-300'}`}
+                    className={`w-10 h-5 rounded-full relative transition-all ${taskForm.is_timed ? 'bg-indigo-600' : 'bg-slate-300'}`}
                   >
-                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${taskForm.is_timed ? 'left-7 shadow-sm' : 'left-1 shadow-none'}`}></div>
+                    <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${taskForm.is_timed ? 'left-5.5 shadow-sm' : 'left-0.5 shadow-none'}`}></div>
                   </button>
                 </div>
               </div>
 
-              <div className="space-y-3">
-                 <button type="submit" disabled={loading} className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-xl uppercase tracking-widest text-[10px] active:scale-95 transition-all">
-                    {loading ? 'GUARDANDO...' : (editingTaskId ? 'Actualizar Tarea' : 'Guardar Tarea')}
+              <div className="space-y-2 pt-2">
+                 <button type="submit" disabled={loading} className="w-full bg-indigo-600 text-white font-black py-3 rounded-xl shadow-lg uppercase tracking-widest text-[9px] active:scale-95 transition-all">
+                    {loading ? 'GUARDANDO...' : (editingTaskId ? 'Actualizar' : 'Guardar Tarea')}
                  </button>
-                 <button type="button" onClick={() => { setShowTaskModal(false); setEditingTaskId(null); }} className="w-full py-4 text-slate-400 font-black text-[9px] uppercase tracking-[0.2em]">Cancelar</button>
+                 <button type="button" onClick={() => { setShowTaskModal(false); setEditingTaskId(null); }} className="w-full py-2 text-slate-400 font-black text-[8px] uppercase tracking-[0.2em]">Cancelar</button>
               </div>
            </form>
         </div>

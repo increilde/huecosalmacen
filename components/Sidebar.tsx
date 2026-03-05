@@ -35,19 +35,19 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole, pe
           <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest pl-12">by Ilde</p>
         </div>
 
-        <nav className="space-y-1">
+        <nav className="space-y-0.5">
           {menuItems.map((item) => (
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id as any)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-all ${
                 activeTab === item.id 
                 ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' 
                 : 'hover:bg-slate-800 hover:text-white'
               }`}
             >
-              <span className="text-lg">{item.icon}</span>
-              <span className="font-medium">{item.label}</span>
+              <span className="text-base">{item.icon}</span>
+              <span className="text-[11px] font-bold uppercase tracking-tight">{item.label}</span>
             </button>
           ))}
         </nav>

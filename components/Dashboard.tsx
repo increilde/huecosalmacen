@@ -83,6 +83,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   // Estados para Tareas
   const [showTaskSelection, setShowTaskSelection] = useState(false);
   const [availableTasks, setAvailableTasks] = useState<Task[]>([]);
+  const [personalTasks, setPersonalTasks] = useState<Task[]>([]);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [taskStartTime, setTaskStartTime] = useState<Date | null>(null);
   const [elapsedTime, setElapsedTime] = useState('00:00');
@@ -96,13 +97,51 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const audioCtxRef = useRef<AudioContext | null>(null);
 
   const fetchAvailableTasks = React.useCallback(async () => {
-    const { data } = await supabase.from('tasks').select('*');
-    if (data) {
-      // Filtrar tareas que permiten el rol del usuario actual
-      const filtered = data.filter((t: any) => t.allowed_roles.includes(user.role));
-      setAvailableTasks(filtered);
+    const { data: tasksData } = await supabase.from('tasks').select('*');
+    if (tasksData) {
+      // 1. Filtrar por asignación directa o por rol (si no hay asignaciones específicas)
+      const relevantTasks = tasksData.filter((t: any) => {
+        const isDirectlyAssigned = t.assigned_user_emails && t.assigned_user_emails.includes(user.email);
+        const hasNoSpecificAssignments = !t.assigned_user_emails || t.assigned_user_emails.length === 0;
+        const hasAllowedRole = t.allowed_roles.includes(user.role);
+        
+        return isDirectlyAssigned || (hasNoSpecificAssignments && hasAllowedRole);
+      });
+
+      // 2. Obtener logs del usuario para ver qué ha completado
+      const { data: logsData } = await supabase
+        .from('task_logs')
+        .select('task_id, created_at')
+        .eq('operator_email', user.email)
+        .not('end_time', 'is', null);
+
+      const today = new Date().toISOString().split('T')[0];
+
+      const filtered = relevantTasks.filter((task: any) => {
+        const userLogs = logsData?.filter(l => l.task_id === task.id) || [];
+        
+        if (task.task_type === 'daily') {
+          // Si es diaria, ver si ya la hizo hoy
+          const doneToday = userLogs.some(l => l.created_at.startsWith(today));
+          return !doneToday;
+        } else if (task.task_type === 'once') {
+          // Si es puntual, ver si ya la hizo alguna vez
+          const doneEver = userLogs.length > 0;
+          return !doneEver;
+        } else {
+          // Si es libre, siempre disponible
+          return true;
+        }
+      });
+
+      // Separar personales de generales
+      const personal = filtered.filter(t => t.assigned_user_emails && t.assigned_user_emails.includes(user.email));
+      const general = filtered.filter(t => !t.assigned_user_emails || !t.assigned_user_emails.includes(user.email));
+
+      setPersonalTasks(personal);
+      setAvailableTasks(general);
     }
-  }, [user.role]);
+  }, [user.role, user.email]);
 
   useEffect(() => {
     fetchAvailableTasks();
@@ -168,10 +207,18 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const handleFinishTask = async () => {
     setLoading(true);
     try {
-      if (activeTask?.is_timed && taskLogId) {
+      if (taskLogId) {
         await supabase.from('task_logs').update({
           end_time: new Date().toISOString()
         }).eq('id', taskLogId);
+      } else if (activeTask && !activeTask.is_timed) {
+        // Si no es de tiempo, creamos el log directamente al finalizar
+        await supabase.from('task_logs').insert([{
+          task_id: activeTask.id,
+          operator_email: user.email,
+          start_time: taskStartTime?.toISOString() || new Date().toISOString(),
+          end_time: new Date().toISOString()
+        }]);
       }
       
       setActiveTask(null);
@@ -179,6 +226,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       setTaskLogId(null);
       localStorage.removeItem('wh_active_task');
       if (timerRef.current) clearInterval(timerRef.current);
+      fetchAvailableTasks(); // Refrescar lista de tareas
     } catch (err) {
       console.error(err);
     } finally {
@@ -447,11 +495,28 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
               <h2 className="text-xl font-semibold text-slate-800 tracking-tight uppercase">Entrada Datos</h2>
               <button 
                 onClick={() => setShowTaskSelection(true)}
-                className="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border border-indigo-100 active:scale-95 transition-all"
+                className="relative bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border border-indigo-100 active:scale-95 transition-all"
               >
                 Cambio de Tarea
+                {availableTasks.length + personalTasks.length > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-rose-500 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shadow-lg animate-bounce">
+                    {availableTasks.length + personalTasks.length}
+                  </span>
+                )}
               </button>
             </div>
+            
+            {availableTasks.length + personalTasks.length > 0 && !activeTask && (
+              <div className="bg-amber-50 border border-amber-100 p-4 rounded-2xl mb-2 animate-pulse cursor-pointer" onClick={() => setShowTaskSelection(true)}>
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">🔔</span>
+                  <div>
+                    <p className="text-[10px] font-black text-amber-800 uppercase tracking-tight">Tareas Pendientes</p>
+                    <p className="text-[8px] font-bold text-amber-600 uppercase">Tienes {availableTasks.length + personalTasks.length} tareas asignadas esperando</p>
+                  </div>
+                </div>
+              </div>
+            )}
             
             {!activeTask?.is_timed ? (
               <div className="flex gap-2">
@@ -548,9 +613,33 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                 </div>
 
                 <div className="flex-1 overflow-y-auto space-y-3 pr-1 min-h-0">
+                  {/* Tareas Personales (Asignadas directamente) */}
+                  {personalTasks.length > 0 && (
+                    <div className="space-y-2 mb-6">
+                      <p className="text-[8px] font-black text-indigo-500 uppercase tracking-widest ml-2">Mis Tareas Asignadas</p>
+                      {personalTasks.map(task => (
+                        <button 
+                          key={task.id}
+                          onClick={() => handleStartTask(task)}
+                          className={`w-full p-5 rounded-2xl border-2 text-left flex items-center justify-between transition-all ${activeTask?.id === task.id ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg' : 'bg-indigo-50/50 border-indigo-100 text-slate-800 hover:border-indigo-300'}`}
+                        >
+                          <div className="flex flex-col">
+                            <span className="text-[10px] font-black uppercase tracking-tight">{task.name}</span>
+                            <span className="text-[7px] font-bold uppercase opacity-60">
+                              {task.task_type === 'daily' ? '📅 Diaria' : task.task_type === 'once' ? '🎯 Puntual' : '🔓 Libre'}
+                              {task.is_timed ? ' • ⏱️ Tiempo' : ''}
+                            </span>
+                          </div>
+                          <span className="text-xl">⭐</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2">Tareas Generales</p>
                   <button 
                     onClick={handleFinishTask}
-                    className={`w-full p-5 rounded-2xl border-2 text-left flex items-center justify-between transition-all ${!activeTask ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg' : 'bg-slate-50 border-slate-100 text-slate-800'}`}
+                    className={`w-full p-5 rounded-2xl border-2 text-left flex items-center justify-between transition-all ${!activeTask ? 'bg-slate-900 border-slate-900 text-white shadow-lg' : 'bg-slate-50 border-slate-100 text-slate-800'}`}
                   >
                     <div className="flex flex-col">
                       <span className="text-[10px] font-black uppercase tracking-tight">Entrada de Huecos</span>
@@ -559,21 +648,26 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                     <span>📦</span>
                   </button>
 
-                  <div className="h-[1px] bg-slate-100 my-4"></div>
-
-                  {availableTasks.map(task => (
-                    <button 
-                      key={task.id}
-                      onClick={() => handleStartTask(task)}
-                      className={`w-full p-5 rounded-2xl border-2 text-left flex items-center justify-between transition-all ${activeTask?.id === task.id ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg' : 'bg-slate-50 border-slate-100 text-slate-800 hover:border-indigo-200'}`}
-                    >
-                      <div className="flex flex-col">
-                        <span className="text-[10px] font-black uppercase tracking-tight">{task.name}</span>
-                        <span className="text-[7px] font-bold uppercase opacity-60">{task.is_timed ? 'Tarea de tiempo' : 'Registro de huecos'}</span>
-                      </div>
-                      <span>{task.is_timed ? '⏱️' : '📌'}</span>
-                    </button>
-                  ))}
+                  {availableTasks.length > 0 && (
+                    <div className="space-y-2 mt-4">
+                      {availableTasks.map(task => (
+                        <button 
+                          key={task.id}
+                          onClick={() => handleStartTask(task)}
+                          className={`w-full p-5 rounded-2xl border-2 text-left flex items-center justify-between transition-all ${activeTask?.id === task.id ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg' : 'bg-slate-50 border-slate-100 text-slate-800 hover:border-indigo-200'}`}
+                        >
+                          <div className="flex flex-col">
+                            <span className="text-[10px] font-black uppercase tracking-tight">{task.name}</span>
+                            <span className="text-[7px] font-bold uppercase opacity-60">
+                              {task.task_type === 'daily' ? '📅 Diaria' : task.task_type === 'once' ? '🎯 Puntual' : '🔓 Libre'}
+                              {task.is_timed ? ' • ⏱️ Tiempo' : ''}
+                            </span>
+                          </div>
+                          <span>{task.is_timed ? '⏱️' : '📌'}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <button 

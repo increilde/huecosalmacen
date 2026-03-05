@@ -69,4 +69,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  *     created_at TIMESTAMPTZ DEFAULT now(),
  *     UNIQUE(map_id, street_id)
  * );
+ * 
+ * -- 6. Actualización de Tareas (Nuevos campos)
+ * ALTER TABLE tasks ADD COLUMN IF NOT EXISTS description TEXT;
+ * ALTER TABLE tasks ADD COLUMN IF NOT EXISTS task_type TEXT CHECK (task_type IN ('daily', 'once')) DEFAULT 'once';
+ * ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assigned_user_emails TEXT[] DEFAULT '{}';
  */

@@ -25,7 +25,10 @@ export interface Role {
 export interface Task {
   id: string;
   name: string;
+  description?: string;
   allowed_roles: string[];
+  assigned_user_emails?: string[];
+  task_type: 'daily' | 'once' | 'free';
   is_timed: boolean;
   created_at: string;
 }
