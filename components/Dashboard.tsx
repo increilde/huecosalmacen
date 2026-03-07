@@ -255,46 +255,82 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     speak("Prueba de audio del sistema de almacén. Si escuchas esto, las notificaciones están activas.");
   };
 
-  // Efecto para "desbloquear" y preparar el sistema de voz
+  // Efecto para "desbloquear" y preparar el sistema de voz de forma automática
   useEffect(() => {
     if (audioUnlocked) return;
 
     const primeVoices = () => {
-      window.speechSynthesis.getVoices();
+      if (window.speechSynthesis) {
+        window.speechSynthesis.getVoices();
+      }
     };
     
     const unlockSpeech = () => {
-      console.log("🔓 Desbloqueando SpeechSynthesis por interacción del usuario");
-      setAudioUnlocked(true);
-      // Emitir un silencio para "despertar" el motor de voz
-      const utterance = new window.SpeechSynthesisUtterance("");
-      window.speechSynthesis.speak(utterance);
+      if (audioUnlocked) return;
+      console.log("🔓 Intentando desbloquear SpeechSynthesis...");
       
-      // Si hay algo pendiente al desbloquear, anunciarlo tras un breve delay
-      setTimeout(() => {
-        const waitingCount = activePickups.filter(p => p.status === 'waiting').length;
-        if (waitingCount > 0 && user.role !== 'distribución') {
-          speak(`Hay ${waitingCount} retira cliente pendientes.`);
-        }
-      }, 500);
-
-      window.removeEventListener('click', unlockSpeech);
-      window.removeEventListener('touchstart', unlockSpeech);
-      window.removeEventListener('keydown', unlockSpeech);
+      try {
+        // Intentar emitir un silencio para "despertar" el motor de voz
+        const utterance = new window.SpeechSynthesisUtterance("");
+        window.speechSynthesis.speak(utterance);
+        
+        // Si llegamos aquí, marcamos como desbloqueado
+        setAudioUnlocked(true);
+        
+        // Si hay algo pendiente al desbloquear, anunciarlo tras un breve delay
+        setTimeout(() => {
+          const waitingCount = activePickups.filter(p => p.status === 'waiting').length;
+          if (waitingCount > 0 && user.role !== 'distribución') {
+            speak(`Hay ${waitingCount} retira cliente pendientes.`);
+          }
+        }, 500);
+      } catch (e) {
+        console.warn("El navegador bloqueó el intento de desbloqueo de audio:", e);
+      }
     };
 
-    window.speechSynthesis.onvoiceschanged = primeVoices;
+    // Si llega un nuevo retira cliente y no está desbloqueado, intentamos desbloquear
+    const waitingCount = activePickups.filter(p => p.status === 'waiting').length;
+    if (waitingCount > 0 && !audioUnlocked) {
+      console.log("📦 Nuevo retira cliente detectado, intentando desbloqueo automático...");
+      unlockSpeech();
+    }
+
+    if (window.speechSynthesis) {
+      window.speechSynthesis.onvoiceschanged = primeVoices;
+    }
+    
+    // Listeners de interacción real (estos son los más efectivos)
     window.addEventListener('click', unlockSpeech);
     window.addEventListener('touchstart', unlockSpeech);
     window.addEventListener('keydown', unlockSpeech);
     
+    // Listeners de eventos de ventana y foco
+    window.addEventListener('focus', unlockSpeech);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') unlockSpeech();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    // Intento automático periódico (cada 2 segundos)
+    const autoUnlockInterval = setInterval(() => {
+      if (!audioUnlocked) {
+        unlockSpeech();
+      }
+    }, 2000);
+    
     primeVoices();
 
     return () => {
-      window.speechSynthesis.onvoiceschanged = null;
+      if (window.speechSynthesis) {
+        window.speechSynthesis.onvoiceschanged = null;
+      }
       window.removeEventListener('click', unlockSpeech);
       window.removeEventListener('touchstart', unlockSpeech);
       window.removeEventListener('keydown', unlockSpeech);
+      window.removeEventListener('focus', unlockSpeech);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      clearInterval(autoUnlockInterval);
     };
   }, [activePickups, user.role, speak, audioUnlocked]); // Dependencias para que al desbloquear sepa cuántos hay
 
@@ -394,9 +430,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
             });
             if (newPickup.operator_email === user.email) setMyActivePickup(null);
             
-            // Notificar que se ha finalizado con un pequeño delay para asegurar que se oiga
+            // Notificar que se ha finalizado con un pequeño delay para asegurar que se oiga (solo a distribución)
             setTimeout(() => {
-              announcePickupEvent(`Retira cliente finalizado. Pedido ${newPickup.order_number}`);
+              if (user.role === 'distribución') {
+                announcePickupEvent(`Retira cliente finalizado. Pedido ${newPickup.order_number}`);
+              }
             }, 500);
           } else {
             setActivePickups(prev => {
@@ -436,6 +474,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   // Efecto para avisar de esperas prolongadas
   useEffect(() => {
     const checkWaitingPickups = () => {
+      // Distribución no necesita avisos de espera (ellos los crean)
+      if (user.role === 'distribución') return;
+
       const now = Date.now();
       // Evitar spam: máximo un aviso cada 2 minutos
       if (now - lastWarningRef.current < 120000) return;
