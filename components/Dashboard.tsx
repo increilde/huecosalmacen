@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
-import { WarehouseSlot, UserProfile, Task } from '../types';
+import { WarehouseSlot, UserProfile, Task, CustomerPickup } from '../types';
 import ScannerModal from './ScannerModal';
 import { GoogleGenAI, Modality } from "@google/genai";
 
@@ -88,6 +88,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [taskStartTime, setTaskStartTime] = useState<Date | null>(null);
   const [elapsedTime, setElapsedTime] = useState('00:00');
   const [taskLogId, setTaskLogId] = useState<string | null>(null);
+  
+  // Estados para Retira Cliente (Distribución)
+  const [activePickups, setActivePickups] = useState<CustomerPickup[]>([]);
+  const [myActivePickup, setMyActivePickup] = useState<CustomerPickup | null>(null);
+  const [orderNumber, setOrderNumber] = useState('');
+  const [showPickupsModal, setShowPickupsModal] = useState(false);
+  const [lastPickupId, setLastPickupId] = useState<string | null>(null);
 
   const slotInputRef = useRef<HTMLInputElement>(null);
   const cartInputRef = useRef<HTMLInputElement>(null);
@@ -274,6 +281,247 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       console.error("Error generating speech notification:", err);
     }
   };
+
+  const announcePickupEvent = React.useCallback(async (text: string) => {
+    try {
+      const ctx = getAudioContext();
+      if (ctx.state === 'suspended') await ctx.resume();
+
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash-preview-tts",
+        contents: [{ parts: [{ text }] }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: 'Kore' },
+            },
+          },
+        },
+      });
+
+      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (base64Audio) {
+        const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
+        const source = ctx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(ctx.destination);
+        source.start();
+      }
+    } catch (err) {
+      console.error("Error generating speech notification:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    const fetchPickups = async () => {
+      const { data } = await supabase
+        .from('customer_pickups')
+        .select('*')
+        .neq('status', 'completed')
+        .order('created_at', { ascending: true });
+      if (data) {
+        setActivePickups(data);
+        const mine = data.find(p => p.operator_email === user.email && p.status === 'in_progress');
+        if (mine) setMyActivePickup(mine);
+      }
+    };
+
+    fetchPickups();
+
+    const channel = supabase
+      .channel('customer_pickups_realtime')
+      .on('postgres_changes', { event: '*', table: 'customer_pickups', schema: 'public' }, (payload) => {
+        const newPickup = payload.new as CustomerPickup;
+        const oldPickup = payload.old as CustomerPickup;
+
+        if (payload.eventType === 'INSERT') {
+          setActivePickups(prev => [...prev, newPickup]);
+          if (user.role !== 'distribución') {
+            announcePickupEvent("Retira Cliente a la espera");
+          }
+        } else if (payload.eventType === 'UPDATE') {
+          if (newPickup.status === 'completed') {
+            setActivePickups(prev => prev.filter(p => p.id !== newPickup.id));
+            if (newPickup.operator_email === user.email) setMyActivePickup(null);
+          } else {
+            setActivePickups(prev => {
+              const exists = prev.find(p => p.id === newPickup.id);
+              if (exists) {
+                return prev.map(p => p.id === newPickup.id ? newPickup : p);
+              } else {
+                return [...prev, newPickup];
+              }
+            });
+            
+            // Si alguien aceptó el pedido
+            if (oldPickup && oldPickup.status === 'waiting' && newPickup.status === 'in_progress') {
+              if (newPickup.operator_email !== user.email) {
+                announcePickupEvent(`Retira cliente aceptado por ${newPickup.operator_name}`);
+              } else {
+                setMyActivePickup(newPickup);
+              }
+            }
+          }
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user.email, user.role, user.full_name, announcePickupEvent]);
+
+  const handleCreatePickup = async () => {
+    if (!orderNumber.trim()) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase.from('customer_pickups').insert([{
+        order_number: orderNumber.trim(),
+        status: 'waiting'
+      }]);
+      if (error) throw error;
+      setOrderNumber('');
+      setMessage({ type: 'success', text: 'PEDIDO LANZADO CORRECTAMENTE' });
+      setTimeout(() => setMessage(null), 3000);
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAcceptPickup = async (pickup: CustomerPickup) => {
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('customer_pickups')
+        .update({
+          status: 'in_progress',
+          operator_email: user.email,
+          operator_name: user.full_name,
+          accepted_at: new Date().toISOString()
+        })
+        .eq('id', pickup.id);
+      if (error) throw error;
+      setShowPickupsModal(false);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFinishPickup = async () => {
+    if (!myActivePickup) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('customer_pickups')
+        .update({
+          status: 'completed',
+          completed_at: new Date().toISOString()
+        })
+        .eq('id', myActivePickup.id);
+      if (error) throw error;
+      setMyActivePickup(null);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getWaitTime = (createdAt: string) => {
+    const start = new Date(createdAt).getTime();
+    const now = new Date().getTime();
+    const diff = now - start;
+    const mins = Math.floor(diff / 60000);
+    const secs = Math.floor((diff % 60000) / 1000);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const getWorkTime = (acceptedAt: string) => {
+    const start = new Date(acceptedAt).getTime();
+    const now = new Date().getTime();
+    const diff = now - start;
+    const mins = Math.floor(diff / 60000);
+    const secs = Math.floor((diff % 60000) / 1000);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const waitingPickups = activePickups.filter(p => p.status === 'waiting');
+  const totalWaitTime = waitingPickups.reduce((acc, p) => {
+    const diff = new Date().getTime() - new Date(p.created_at).getTime();
+    return acc + diff;
+  }, 0);
+  const avgWaitMins = waitingPickups.length > 0 ? Math.floor((totalWaitTime / waitingPickups.length) / 60000) : 0;
+
+  if (user.role === 'distribución') {
+    return (
+      <div className="max-w-md mx-auto space-y-6 animate-fade-in">
+        <div className="bg-white p-10 rounded-[2.5rem] shadow-xl border border-slate-100 relative overflow-hidden">
+          <div className="absolute -right-8 -top-8 text-slate-50 text-9xl font-medium opacity-10 pointer-events-none">📦</div>
+          <div className="relative z-10">
+            <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight mb-8">Distribución</h2>
+            
+            <div className="space-y-4">
+              <div className="relative">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Número de Pedido</label>
+                <input 
+                  type="text" 
+                  value={orderNumber}
+                  onChange={e => setOrderNumber(e.target.value)}
+                  placeholder="EJ: 123456"
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-5 px-6 focus:border-indigo-500 font-black text-2xl outline-none uppercase transition-all text-center"
+                />
+              </div>
+              <button 
+                onClick={handleCreatePickup}
+                disabled={loading || !orderNumber.trim()}
+                className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl shadow-xl uppercase tracking-widest text-xs active:scale-95 transition-all disabled:opacity-50"
+              >
+                {loading ? 'ENVIANDO...' : 'ENVIAR PEDIDO'}
+              </button>
+            </div>
+
+            {message && (
+              <div className={`mt-6 p-4 rounded-2xl text-[10px] font-black text-center uppercase tracking-widest ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                {message.text}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100">
+          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 px-2">Pedidos en Curso</h3>
+          <div className="space-y-3">
+            {activePickups.length === 0 ? (
+              <p className="text-center py-10 text-slate-300 font-black text-[10px] uppercase tracking-widest">No hay pedidos activos</p>
+            ) : activePickups.map(pickup => (
+              <div key={pickup.id} className="bg-slate-50 p-5 rounded-2xl border border-slate-100 flex items-center justify-between">
+                <div>
+                  <p className="text-lg font-black text-slate-800 tracking-tighter">#{pickup.order_number}</p>
+                  <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-1">
+                    {pickup.status === 'waiting' ? '⌛ ESPERANDO' : `👷 ${pickup.operator_name}`}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs font-black text-indigo-600">
+                    {pickup.status === 'waiting' ? getWaitTime(pickup.created_at) : getWorkTime(pickup.accepted_at!)}
+                  </p>
+                  <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">
+                    {pickup.status === 'waiting' ? 'TIEMPO ESPERA' : 'TIEMPO TRABAJO'}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const checkSlotAndPrepare = async () => {
     const codeToSearch = slotCode.trim().toUpperCase();
@@ -493,18 +741,53 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
           <div className="flex flex-col gap-3 mb-10">
             <div className="flex justify-between items-center">
               <h2 className="text-xl font-semibold text-slate-800 tracking-tight uppercase">Entrada Datos</h2>
-              <button 
-                onClick={() => setShowTaskSelection(true)}
-                className="relative bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border border-indigo-100 active:scale-95 transition-all"
-              >
-                Cambio de Tarea
-                {availableTasks.length + personalTasks.length > 0 && (
-                  <span className="absolute -top-2 -right-2 bg-rose-500 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shadow-lg animate-bounce">
-                    {availableTasks.length + personalTasks.length}
-                  </span>
+              <div className="flex gap-2">
+                {user.role === 'carretillero' && (
+                  <button 
+                    onClick={() => setShowPickupsModal(true)}
+                    className={`relative px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-all active:scale-95 ${waitingPickups.length > 0 ? 'bg-amber-500 text-white border-amber-600 animate-pulse' : 'bg-slate-50 text-slate-400 border-slate-100'}`}
+                  >
+                    Retira Cliente
+                    {waitingPickups.length > 0 && (
+                      <span className="absolute -top-2 -right-2 bg-rose-600 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shadow-lg">
+                        {waitingPickups.length}
+                      </span>
+                    )}
+                  </button>
                 )}
-              </button>
+                <button 
+                  onClick={() => setShowTaskSelection(true)}
+                  className="relative bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border border-indigo-100 active:scale-95 transition-all"
+                >
+                  Cambio de Tarea
+                  {availableTasks.length + personalTasks.length > 0 && (
+                    <span className="absolute -top-2 -right-2 bg-rose-500 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shadow-lg animate-bounce">
+                      {availableTasks.length + personalTasks.length}
+                    </span>
+                  )}
+                </button>
+              </div>
             </div>
+            
+            {myActivePickup && (
+              <div className="bg-indigo-600 p-6 rounded-3xl mb-4 text-white shadow-xl shadow-indigo-200 animate-fade-in">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-widest opacity-70">Pedido en Curso</p>
+                    <h3 className="text-2xl font-black tracking-tighter">#{myActivePickup.order_number}</h3>
+                  </div>
+                  <div className="bg-white/20 px-3 py-1 rounded-full">
+                    <p className="text-[10px] font-black">{getWorkTime(myActivePickup.accepted_at!)}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={handleFinishPickup}
+                  className="w-full bg-white text-indigo-600 font-black py-3 rounded-2xl uppercase text-[10px] tracking-widest shadow-lg active:scale-95 transition-all"
+                >
+                  Finalizar Retira Cliente
+                </button>
+              </div>
+            )}
             
             {availableTasks.length + personalTasks.length > 0 && !activeTask && (
               <div className="bg-amber-50 border border-amber-100 p-4 rounded-2xl mb-2 animate-pulse cursor-pointer" onClick={() => setShowTaskSelection(true)}>
@@ -905,6 +1188,51 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         </div>
       )}
       <ScannerModal isOpen={scannerOpen} onClose={() => setScannerOpen(false)} onScan={handleScanResult} title="Escáner" />
+
+      {showPickupsModal && (
+        <div className="fixed inset-0 z-[200] bg-slate-900/95 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white w-full max-sm rounded-[3rem] p-8 shadow-2xl flex flex-col max-h-[85vh] animate-fade-in relative overflow-hidden">
+             <div className="absolute -right-8 -top-8 text-slate-50 text-9xl font-medium opacity-10 pointer-events-none">🚛</div>
+             <div className="relative z-10 flex flex-col h-full min-h-0">
+                <div className="text-center mb-8 shrink-0">
+                  <h3 className="text-xl font-semibold text-slate-800 uppercase tracking-tighter">Retira Cliente</h3>
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">Pedidos esperando ser atendidos</p>
+                  {waitingPickups.length > 0 && (
+                    <div className="mt-4 bg-amber-50 p-3 rounded-2xl border border-amber-100">
+                      <p className="text-[8px] font-black text-amber-600 uppercase">Tiempo medio de espera: {avgWaitMins} min</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex-1 overflow-y-auto space-y-3 pr-1 min-h-0">
+                  {waitingPickups.length === 0 ? (
+                    <p className="text-center py-20 text-slate-300 font-black text-[10px] uppercase tracking-widest">No hay pedidos esperando</p>
+                  ) : waitingPickups.map(pickup => (
+                    <div key={pickup.id} className="bg-slate-50 p-5 rounded-2xl border border-slate-100 flex items-center justify-between">
+                      <div>
+                        <p className="text-lg font-black text-slate-800 tracking-tighter">#{pickup.order_number}</p>
+                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-1">Lanzado hace {getWaitTime(pickup.created_at)}</p>
+                      </div>
+                      <button 
+                        onClick={() => handleAcceptPickup(pickup)}
+                        className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all"
+                      >
+                        Aceptar
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <button 
+                  onClick={() => setShowPickupsModal(false)}
+                  className="mt-8 shrink-0 w-full bg-slate-900 text-white py-4 rounded-2xl font-bold uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all"
+                >
+                  Cerrar
+                </button>
+             </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

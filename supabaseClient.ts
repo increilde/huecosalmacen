@@ -36,7 +36,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  * ('admin', '["dashboard", "slots", "expedition", "supplies", "admin", "users"]'), 
  * ('operator', '["dashboard", "slots"]'), 
  * ('expedition', '["expedition"]'), 
- * ('viewer', '["slots"]')
+ * ('viewer', '["slots"]'),
+ * ('distribución', '["dashboard"]'),
+ * ('carretillero', '["dashboard", "slots"]')
  * ON CONFLICT (name) DO UPDATE SET permissions = EXCLUDED.permissions;
  * 
  * -- 4. Tabla de Mantenimiento de Maquinaria
@@ -74,4 +76,16 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  * ALTER TABLE tasks ADD COLUMN IF NOT EXISTS description TEXT;
  * ALTER TABLE tasks ADD COLUMN IF NOT EXISTS task_type TEXT CHECK (task_type IN ('daily', 'once')) DEFAULT 'once';
  * ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assigned_user_emails TEXT[] DEFAULT '{}';
+ * 
+ * -- 7. Tabla de Retira Cliente (Distribución)
+ * CREATE TABLE IF NOT EXISTS customer_pickups (
+ *     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+ *     order_number TEXT NOT NULL,
+ *     status TEXT CHECK (status IN ('waiting', 'in_progress', 'completed')) DEFAULT 'waiting',
+ *     operator_email TEXT REFERENCES profiles(email) ON UPDATE CASCADE,
+ *     operator_name TEXT,
+ *     created_at TIMESTAMPTZ DEFAULT now(),
+ *     accepted_at TIMESTAMPTZ,
+ *     completed_at TIMESTAMPTZ
+ * );
  */

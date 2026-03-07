@@ -105,3 +105,14 @@ export interface MachineryMaintenance {
   created_at: string;
   completed_at?: string;
 }
+
+export interface CustomerPickup {
+  id: string;
+  order_number: string;
+  status: 'waiting' | 'in_progress' | 'completed';
+  operator_email?: string;
+  operator_name?: string;
+  created_at: string;
+  accepted_at?: string;
+  completed_at?: string;
+}
