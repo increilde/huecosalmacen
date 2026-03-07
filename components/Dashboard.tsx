@@ -319,6 +319,19 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [activePickups, user.role, speak]);
 
+  // Efecto para comprobación automática cada 30 segundos
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      const waitingCount = activePickups.filter(p => p.status === 'waiting').length;
+      if (waitingCount > 0 && user.role !== 'distribución') {
+        console.log("⏰ Comprobación automática de 30s. Pendientes:", waitingCount);
+        speak(`Hay ${waitingCount} retira cliente pendientes.`);
+      }
+    }, 30000); // 30 segundos
+
+    return () => clearInterval(intervalId);
+  }, [activePickups, user.role, speak]);
+
   useEffect(() => {
     const fetchPickups = async () => {
       console.log("Fetching pickups...");
