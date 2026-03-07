@@ -3,7 +3,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { WarehouseSlot, UserProfile, Task, CustomerPickup } from '../types';
 import ScannerModal from './ScannerModal';
-import { GoogleGenAI, Modality } from "@google/genai";
 
 interface DashboardProps {
   user: UserProfile;
@@ -18,35 +17,7 @@ interface MovementLog {
   operator_name?: string;
 }
 
-// Funciones auxiliares para decodificación de audio PCM de Gemini TTS
-function decode(base64: string) {
-  const binaryString = atob(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes;
-}
-
-async function decodeAudioData(
-  data: Uint8Array,
-  ctx: AudioContext,
-  sampleRate: number,
-  numChannels: number,
-): Promise<AudioBuffer> {
-  const dataInt16 = new Int16Array(data.buffer);
-  const frameCount = dataInt16.length / numChannels;
-  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
-
-  for (let channel = 0; channel < numChannels; channel++) {
-    const channelData = buffer.getChannelData(channel);
-    for (let i = 0; i < frameCount; i++) {
-      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
-    }
-  }
-  return buffer;
-}
+// Eliminadas funciones auxiliares de Gemini TTS para usar Web Speech API (Gratis)
 
 const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [cartId, setCartId] = useState('');
@@ -101,9 +72,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const slotInputRef = useRef<HTMLInputElement>(null);
   const cartInputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<number | null>(null);
-  
-  // Ref para AudioContext persistente
-  const audioCtxRef = useRef<AudioContext | null>(null);
 
   const fetchAvailableTasks = React.useCallback(async () => {
     const { data: tasksData } = await supabase.from('tasks').select('*');
@@ -243,89 +211,73 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     }
   };
 
-  const getAudioContext = () => {
-    if (!audioCtxRef.current) {
-      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+  const speak = React.useCallback((text: string) => {
+    console.log("📢 Intentando anunciar:", text);
+    if (!window.speechSynthesis) {
+      console.error("❌ El navegador no soporta SpeechSynthesis");
+      return;
     }
-    return audioCtxRef.current;
-  };
 
-  const announceLocation = async (operatorName: string, cartId: string) => {
-    try {
-      const ctx = getAudioContext();
-      if (ctx.state === 'suspended') await ctx.resume();
+    // Cancelar cualquier anuncio previo para evitar cola infinita
+    window.speechSynthesis.cancel();
 
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = `Notifica por voz de forma clara: El operario ${operatorName} ha ubicado el carro ${cartId}.`;
-      
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: prompt }] }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: 'Kore' },
-            },
-          },
-        },
-      });
-
-      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (base64Audio) {
-        const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
-        const source = ctx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(ctx.destination);
-        source.start();
-      }
-    } catch (err) {
-      console.error("Error generating speech notification:", err);
+    const utterance = new window.SpeechSynthesisUtterance(text);
+    utterance.lang = 'es-ES';
+    utterance.rate = 0.9; 
+    utterance.pitch = 1.0;
+    
+    // Intentar encontrar una voz en español si está disponible
+    const voices = window.speechSynthesis.getVoices();
+    const spanishVoice = voices.find(v => v.lang.startsWith('es'));
+    if (spanishVoice) {
+      utterance.voice = spanishVoice;
     }
-  };
 
-  const announcePickupEvent = React.useCallback(async (text: string) => {
-    console.log("Anunciando evento:", text);
-    try {
-      const ctx = getAudioContext();
-      if (ctx.state === 'suspended') await ctx.resume();
+    utterance.onstart = () => console.log("🎙️ Empezando a hablar:", text);
+    utterance.onend = () => console.log("✅ Fin del anuncio");
+    utterance.onerror = (e) => console.error("❌ Error en SpeechSynthesis:", e);
 
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || process.env.API_KEY });
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text }] }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: 'Kore' },
-            },
-          },
-        },
-      });
-
-      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (base64Audio) {
-        const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
-        const source = ctx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(ctx.destination);
-        source.start();
-      }
-    } catch (err) {
-      console.error("Error generating speech notification:", err);
-    }
+    window.speechSynthesis.speak(utterance);
   }, []);
 
+  const announceLocation = (operatorName: string, cartId: string) => {
+    speak(`El operario ${operatorName} ha ubicado el carro ${cartId}.`);
+  };
+
+  const announcePickupEvent = React.useCallback((text: string) => {
+    speak(text);
+  }, [speak]);
+
+  const testAudio = () => {
+    console.log("🧪 Ejecutando test de audio...");
+    speak("Prueba de audio del sistema de almacén. Si escuchas esto, las notificaciones están activas.");
+  };
+
+  // Efecto para "desbloquear" y preparar el sistema de voz
   useEffect(() => {
-    const resumeAudio = () => {
-      const ctx = getAudioContext();
-      if (ctx.state === 'suspended') {
-        ctx.resume().then(() => console.log("AudioContext resumed"));
-      }
+    const primeVoices = () => {
+      window.speechSynthesis.getVoices();
     };
-    window.addEventListener('click', resumeAudio);
-    return () => window.removeEventListener('click', resumeAudio);
+    
+    const unlockSpeech = () => {
+      console.log("🔓 Desbloqueando SpeechSynthesis por interacción del usuario");
+      const utterance = new window.SpeechSynthesisUtterance("");
+      window.speechSynthesis.speak(utterance);
+      window.removeEventListener('click', unlockSpeech);
+      window.removeEventListener('touchstart', unlockSpeech);
+    };
+
+    window.speechSynthesis.addEventListener('voiceschanged', primeVoices);
+    window.addEventListener('click', unlockSpeech);
+    window.addEventListener('touchstart', unlockSpeech);
+    
+    primeVoices();
+
+    return () => {
+      window.speechSynthesis.removeEventListener('voiceschanged', primeVoices);
+      window.removeEventListener('click', unlockSpeech);
+      window.removeEventListener('touchstart', unlockSpeech);
+    };
   }, []);
 
   useEffect(() => {
@@ -726,10 +678,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       return;
     }
 
-    // Inicializar AudioContext ante el gesto del usuario para asegurar la locución posterior
-    const ctx = getAudioContext();
-    if (ctx.state === 'suspended') ctx.resume().catch(console.error);
-
     setLoading(true);
     try {
       const { error: slotError } = await supabase
@@ -761,7 +709,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       if (logError) throw logError;
 
       // Disparar locución inmediatamente tras el éxito del guardado
-      announceLocation(user.full_name, finalCartId).catch(console.error);
+      announceLocation(user.full_name, finalCartId);
 
       setMessage({ type: 'success', text: `UBICACIÓN ${slotCode} ACTUALIZADA AL ${newQuantity}%` });
       setCartId('');
@@ -853,6 +801,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
             <div className="flex justify-between items-center">
               <h2 className="text-xl font-semibold text-slate-800 tracking-tight uppercase">Entrada Datos</h2>
               <div className="flex gap-2">
+                <button 
+                  onClick={testAudio}
+                  className="bg-slate-50 text-slate-400 border border-slate-100 px-3 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest hover:bg-slate-100 transition-all flex items-center gap-2"
+                  title="Probar Audio"
+                >
+                  <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
+                  🔊 TEST
+                </button>
                 {user.role === 'carretillero' && (
                   <button 
                     onClick={() => setShowPickupsModal(true)}
