@@ -88,4 +88,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  *     accepted_at TIMESTAMPTZ,
  *     completed_at TIMESTAMPTZ
  * );
+ * 
+ * -- 8. Habilitar Realtime (CRÍTICO para notificaciones automáticas)
+ * ALTER PUBLICATION supabase_realtime ADD TABLE customer_pickups;
  */

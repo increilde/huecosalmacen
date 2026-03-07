@@ -95,6 +95,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [orderNumber, setOrderNumber] = useState('');
   const [showPickupsModal, setShowPickupsModal] = useState(false);
   const [lastPickupId, setLastPickupId] = useState<string | null>(null);
+  const [distribTab, setDistribTab] = useState<'active' | 'finished'>('active');
+  const [finishedPickups, setFinishedPickups] = useState<CustomerPickup[]>([]);
 
   const slotInputRef = useRef<HTMLInputElement>(null);
   const cartInputRef = useRef<HTMLInputElement>(null);
@@ -283,11 +285,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   };
 
   const announcePickupEvent = React.useCallback(async (text: string) => {
+    console.log("Anunciando evento:", text);
     try {
       const ctx = getAudioContext();
       if (ctx.state === 'suspended') await ctx.resume();
 
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
         contents: [{ parts: [{ text }] }],
@@ -315,35 +318,75 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   }, []);
 
   useEffect(() => {
+    const resumeAudio = () => {
+      const ctx = getAudioContext();
+      if (ctx.state === 'suspended') {
+        ctx.resume().then(() => console.log("AudioContext resumed"));
+      }
+    };
+    window.addEventListener('click', resumeAudio);
+    return () => window.removeEventListener('click', resumeAudio);
+  }, []);
+
+  useEffect(() => {
     const fetchPickups = async () => {
-      const { data } = await supabase
+      console.log("Fetching pickups...");
+      const today = new Date().toISOString().split('T')[0];
+
+      // Activos
+      const { data: activeData } = await supabase
         .from('customer_pickups')
         .select('*')
         .neq('status', 'completed')
         .order('created_at', { ascending: true });
-      if (data) {
-        setActivePickups(data);
-        const mine = data.find(p => p.operator_email === user.email && p.status === 'in_progress');
+      
+      if (activeData) {
+        setActivePickups(activeData);
+        const mine = activeData.find(p => p.operator_email === user.email && p.status === 'in_progress');
         if (mine) setMyActivePickup(mine);
+      }
+
+      // Finalizados de hoy
+      const { data: finishedData } = await supabase
+        .from('customer_pickups')
+        .select('*')
+        .eq('status', 'completed')
+        .gte('created_at', `${today}T00:00:00`)
+        .lte('created_at', `${today}T23:59:59`)
+        .order('completed_at', { ascending: false });
+      
+      if (finishedData) {
+        setFinishedPickups(finishedData);
       }
     };
 
     fetchPickups();
+    const interval = setInterval(fetchPickups, 10000);
 
     const channel = supabase
       .channel('customer_pickups_realtime')
       .on('postgres_changes', { event: '*', table: 'customer_pickups', schema: 'public' }, (payload) => {
+        console.log("Realtime event received:", payload);
         const newPickup = payload.new as CustomerPickup;
         const oldPickup = payload.old as CustomerPickup;
 
         if (payload.eventType === 'INSERT') {
-          setActivePickups(prev => [...prev, newPickup]);
+          setActivePickups(prev => {
+            const exists = prev.find(p => p.id === newPickup.id);
+            if (exists) return prev;
+            return [...prev, newPickup];
+          });
           if (user.role !== 'distribución') {
             announcePickupEvent("Retira Cliente a la espera");
           }
         } else if (payload.eventType === 'UPDATE') {
           if (newPickup.status === 'completed') {
             setActivePickups(prev => prev.filter(p => p.id !== newPickup.id));
+            setFinishedPickups(prev => {
+              const exists = prev.find(p => p.id === newPickup.id);
+              if (exists) return prev;
+              return [newPickup, ...prev];
+            });
             if (newPickup.operator_email === user.email) setMyActivePickup(null);
           } else {
             setActivePickups(prev => {
@@ -356,20 +399,27 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
             });
             
             // Si alguien aceptó el pedido
-            if (oldPickup && oldPickup.status === 'waiting' && newPickup.status === 'in_progress') {
-              if (newPickup.operator_email !== user.email) {
-                announcePickupEvent(`Retira cliente aceptado por ${newPickup.operator_name}`);
-              } else {
+            if (newPickup.status === 'in_progress') {
+              if (newPickup.operator_email === user.email) {
                 setMyActivePickup(newPickup);
+              } else {
+                // Anunciar si el estado cambió a in_progress y no somos nosotros
+                // Usamos una comprobación simple para evitar anuncios duplicados si el evento se repite
+                if (!oldPickup || oldPickup.status !== 'in_progress') {
+                  announcePickupEvent(`Retira cliente aceptado por ${newPickup.operator_name}`);
+                }
               }
             }
           }
         }
       })
-      .subscribe();
+      .subscribe((status) => {
+        console.log("Subscription status:", status);
+      });
 
     return () => {
       supabase.removeChannel(channel);
+      clearInterval(interval);
     };
   }, [user.email, user.role, user.full_name, announcePickupEvent]);
 
@@ -393,9 +443,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   };
 
   const handleAcceptPickup = async (pickup: CustomerPickup) => {
+    if (myActivePickup) {
+      alert("Ya tienes un pedido en curso. Finalízalo antes de aceptar otro.");
+      return;
+    }
     setLoading(true);
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('customer_pickups')
         .update({
           status: 'in_progress',
@@ -403,8 +457,21 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
           operator_name: user.full_name,
           accepted_at: new Date().toISOString()
         })
-        .eq('id', pickup.id);
+        .eq('id', pickup.id)
+        .eq('status', 'waiting')
+        .select();
+
       if (error) throw error;
+      
+      if (!data || data.length === 0) {
+        alert("Este pedido ya ha sido aceptado por otro operario o ya no está disponible.");
+        setShowPickupsModal(false);
+        return;
+      }
+
+      const updated = data[0];
+      setActivePickups(prev => prev.map(p => p.id === updated.id ? updated : p));
+      setMyActivePickup(updated);
       setShowPickupsModal(false);
     } catch (err: any) {
       alert(err.message);
@@ -425,6 +492,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         })
         .eq('id', myActivePickup.id);
       if (error) throw error;
+      const finishedId = myActivePickup.id;
+      setActivePickups(prev => prev.filter(p => p.id !== finishedId));
       setMyActivePickup(null);
     } catch (err: any) {
       alert(err.message);
@@ -457,6 +526,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     return acc + diff;
   }, 0);
   const avgWaitMins = waitingPickups.length > 0 ? Math.floor((totalWaitTime / waitingPickups.length) / 60000) : 0;
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const activeToday = activePickups.filter(p => p.created_at.startsWith(todayStr));
 
   if (user.role === 'distribución') {
     return (
@@ -495,28 +567,67 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         </div>
 
         <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100">
-          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 px-2">Pedidos en Curso</h3>
+          <div className="flex items-center justify-between mb-6 px-2">
+            <div className="flex space-x-4">
+              <button 
+                onClick={() => setDistribTab('active')}
+                className={`text-xs font-black uppercase tracking-widest transition-all ${distribTab === 'active' ? 'text-indigo-600' : 'text-slate-300 hover:text-slate-400'}`}
+              >
+                En Curso ({activeToday.length})
+              </button>
+              <button 
+                onClick={() => setDistribTab('finished')}
+                className={`text-xs font-black uppercase tracking-widest transition-all ${distribTab === 'finished' ? 'text-indigo-600' : 'text-slate-300 hover:text-slate-400'}`}
+              >
+                Finalizados ({finishedPickups.length})
+              </button>
+            </div>
+          </div>
+
           <div className="space-y-3">
-            {activePickups.length === 0 ? (
-              <p className="text-center py-10 text-slate-300 font-black text-[10px] uppercase tracking-widest">No hay pedidos activos</p>
-            ) : activePickups.map(pickup => (
-              <div key={pickup.id} className="bg-slate-50 p-5 rounded-2xl border border-slate-100 flex items-center justify-between">
-                <div>
-                  <p className="text-lg font-black text-slate-800 tracking-tighter">#{pickup.order_number}</p>
-                  <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-1">
-                    {pickup.status === 'waiting' ? '⌛ ESPERANDO' : `👷 ${pickup.operator_name}`}
-                  </p>
+            {distribTab === 'active' ? (
+              activeToday.length === 0 ? (
+                <p className="text-center py-10 text-slate-300 font-black text-[10px] uppercase tracking-widest">No hay pedidos activos de hoy</p>
+              ) : activeToday.map(pickup => (
+                <div key={pickup.id} className="bg-slate-50 p-5 rounded-2xl border border-slate-100 flex items-center justify-between">
+                  <div>
+                    <p className="text-lg font-black text-slate-800 tracking-tighter">#{pickup.order_number}</p>
+                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-1">
+                      {pickup.status === 'waiting' ? '⌛ ESPERANDO' : `👷 ${pickup.operator_name}`}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs font-black text-indigo-600">
+                      {pickup.status === 'waiting' ? getWaitTime(pickup.created_at) : getWorkTime(pickup.accepted_at!)}
+                    </p>
+                    <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">
+                      {pickup.status === 'waiting' ? 'TIEMPO ESPERA' : 'TIEMPO TRABAJO'}
+                    </p>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-xs font-black text-indigo-600">
-                    {pickup.status === 'waiting' ? getWaitTime(pickup.created_at) : getWorkTime(pickup.accepted_at!)}
-                  </p>
-                  <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">
-                    {pickup.status === 'waiting' ? 'TIEMPO ESPERA' : 'TIEMPO TRABAJO'}
-                  </p>
+              ))
+            ) : (
+              finishedPickups.length === 0 ? (
+                <p className="text-center py-10 text-slate-300 font-black text-[10px] uppercase tracking-widest">No hay pedidos finalizados hoy</p>
+              ) : finishedPickups.map(pickup => (
+                <div key={pickup.id} className="bg-emerald-50/30 p-5 rounded-2xl border border-emerald-100 flex items-center justify-between">
+                  <div>
+                    <p className="text-lg font-black text-slate-800 tracking-tighter">#{pickup.order_number}</p>
+                    <p className="text-[8px] font-black text-emerald-600 uppercase tracking-widest mt-1">
+                      ✅ FINALIZADO POR {pickup.operator_name}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs font-black text-slate-400">
+                      {pickup.completed_at ? new Date(pickup.completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
+                    </p>
+                    <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">
+                      HORA CIERRE
+                    </p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -1191,7 +1302,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
       {showPickupsModal && (
         <div className="fixed inset-0 z-[200] bg-slate-900/95 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white w-full max-sm rounded-[3rem] p-8 shadow-2xl flex flex-col max-h-[85vh] animate-fade-in relative overflow-hidden">
+          <div className="bg-white w-full max-w-sm rounded-[3rem] p-8 shadow-2xl flex flex-col max-h-[85vh] animate-fade-in relative overflow-hidden">
              <div className="absolute -right-8 -top-8 text-slate-50 text-9xl font-medium opacity-10 pointer-events-none">🚛</div>
              <div className="relative z-10 flex flex-col h-full min-h-0">
                 <div className="text-center mb-8 shrink-0">
@@ -1215,9 +1326,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                       </div>
                       <button 
                         onClick={() => handleAcceptPickup(pickup)}
-                        className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all"
+                        disabled={loading || !!myActivePickup}
+                        className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all disabled:opacity-50"
                       >
-                        Aceptar
+                        {loading ? '...' : 'Aceptar'}
                       </button>
                     </div>
                   ))}
