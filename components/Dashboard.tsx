@@ -68,6 +68,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [lastPickupId, setLastPickupId] = useState<string | null>(null);
   const [distribTab, setDistribTab] = useState<'active' | 'finished'>('active');
   const [finishedPickups, setFinishedPickups] = useState<CustomerPickup[]>([]);
+  const lastWarningRef = useRef<number>(0);
 
   const slotInputRef = useRef<HTMLInputElement>(null);
   const cartInputRef = useRef<HTMLInputElement>(null);
@@ -340,6 +341,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
               return [newPickup, ...prev];
             });
             if (newPickup.operator_email === user.email) setMyActivePickup(null);
+            
+            // Notificar a distribución que se ha finalizado
+            if (user.role === 'distribución') {
+              announcePickupEvent("Retira cliente Finalizado");
+            }
           } else {
             setActivePickups(prev => {
               const exists = prev.find(p => p.id === newPickup.id);
@@ -374,6 +380,34 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       clearInterval(interval);
     };
   }, [user.email, user.role, user.full_name, announcePickupEvent]);
+
+  // Efecto para avisar de esperas prolongadas
+  useEffect(() => {
+    const checkWaitingPickups = () => {
+      // Solo avisar a operarios, no a distribución
+      if (user.role === 'distribución') return;
+      
+      const now = Date.now();
+      // Evitar spam: máximo un aviso cada 2 minutos
+      if (now - lastWarningRef.current < 120000) return;
+
+      const hasLongWaiting = activePickups.some(p => {
+        if (p.status !== 'waiting') return false;
+        const createdAt = new Date(p.created_at).getTime();
+        const diffMinutes = (now - createdAt) / (1000 * 60);
+        return diffMinutes >= 3;
+      });
+
+      if (hasLongWaiting) {
+        console.log("⚠️ Detectada espera prolongada, lanzando aviso...");
+        announcePickupEvent("Retira Cliente con tiempo de espera de 5 minutos");
+        lastWarningRef.current = now;
+      }
+    };
+
+    const interval = setInterval(checkWaitingPickups, 30000); // Revisar cada 30 segundos
+    return () => clearInterval(interval);
+  }, [activePickups, user.role, announcePickupEvent]);
 
   const handleCreatePickup = async () => {
     if (!orderNumber.trim()) return;
