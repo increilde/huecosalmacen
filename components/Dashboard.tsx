@@ -68,6 +68,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [lastPickupId, setLastPickupId] = useState<string | null>(null);
   const [distribTab, setDistribTab] = useState<'active' | 'finished'>('active');
   const [finishedPickups, setFinishedPickups] = useState<CustomerPickup[]>([]);
+  const [audioUnlocked, setAudioUnlocked] = useState(false);
   const lastWarningRef = useRef<number>(0);
 
   const slotInputRef = useRef<HTMLInputElement>(null);
@@ -256,30 +257,67 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
   // Efecto para "desbloquear" y preparar el sistema de voz
   useEffect(() => {
+    if (audioUnlocked) return;
+
     const primeVoices = () => {
       window.speechSynthesis.getVoices();
     };
     
     const unlockSpeech = () => {
       console.log("🔓 Desbloqueando SpeechSynthesis por interacción del usuario");
+      setAudioUnlocked(true);
+      // Emitir un silencio para "despertar" el motor de voz
       const utterance = new window.SpeechSynthesisUtterance("");
       window.speechSynthesis.speak(utterance);
+      
+      // Si hay algo pendiente al desbloquear, anunciarlo tras un breve delay
+      setTimeout(() => {
+        const waitingCount = activePickups.filter(p => p.status === 'waiting').length;
+        if (waitingCount > 0 && user.role !== 'distribución') {
+          speak(`Hay ${waitingCount} retira cliente pendientes.`);
+        }
+      }, 500);
+
       window.removeEventListener('click', unlockSpeech);
       window.removeEventListener('touchstart', unlockSpeech);
+      window.removeEventListener('keydown', unlockSpeech);
     };
 
-    window.speechSynthesis.addEventListener('voiceschanged', primeVoices);
+    window.speechSynthesis.onvoiceschanged = primeVoices;
     window.addEventListener('click', unlockSpeech);
     window.addEventListener('touchstart', unlockSpeech);
+    window.addEventListener('keydown', unlockSpeech);
     
     primeVoices();
 
     return () => {
-      window.speechSynthesis.removeEventListener('voiceschanged', primeVoices);
+      window.speechSynthesis.onvoiceschanged = null;
       window.removeEventListener('click', unlockSpeech);
       window.removeEventListener('touchstart', unlockSpeech);
+      window.removeEventListener('keydown', unlockSpeech);
     };
-  }, []);
+  }, [activePickups, user.role, speak, audioUnlocked]); // Dependencias para que al desbloquear sepa cuántos hay
+
+  // Efecto para detectar cuando el navegador vuelve a estar en primer plano (PDA desbloqueada)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log("👁️ Navegador visible de nuevo. Comprobando pendientes...");
+        
+        // Pequeño delay para asegurar que el motor de voz esté listo tras el despertar del sistema
+        // y que los datos de Supabase se hayan refrescado si hubo desconexión
+        setTimeout(() => {
+          const waitingCount = activePickups.filter(p => p.status === 'waiting').length;
+          if (waitingCount > 0 && user.role !== 'distribución') {
+            speak(`Hay ${waitingCount} retira cliente pendientes.`);
+          }
+        }, 2000);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [activePickups, user.role, speak]);
 
   useEffect(() => {
     const fetchPickups = async () => {
@@ -333,6 +371,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
             announcePickupEvent("Retira Cliente a la espera");
           }
         } else if (payload.eventType === 'UPDATE') {
+          console.log(`🔄 Update en pedido ${newPickup.id}. Status: ${newPickup.status}`);
           if (newPickup.status === 'completed') {
             setActivePickups(prev => prev.filter(p => p.id !== newPickup.id));
             setFinishedPickups(prev => {
@@ -342,10 +381,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
             });
             if (newPickup.operator_email === user.email) setMyActivePickup(null);
             
-            // Notificar a distribución que se ha finalizado
-            if (user.role === 'distribución') {
-              announcePickupEvent("Retira cliente Finalizado");
-            }
+            // Notificar que se ha finalizado con un pequeño delay para asegurar que se oiga
+            setTimeout(() => {
+              announcePickupEvent(`Retira cliente finalizado. Pedido ${newPickup.order_number}`);
+            }, 500);
           } else {
             setActivePickups(prev => {
               const exists = prev.find(p => p.id === newPickup.id);
@@ -384,23 +423,32 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   // Efecto para avisar de esperas prolongadas
   useEffect(() => {
     const checkWaitingPickups = () => {
-      // Solo avisar a operarios, no a distribución
-      if (user.role === 'distribución') return;
-      
       const now = Date.now();
       // Evitar spam: máximo un aviso cada 2 minutos
       if (now - lastWarningRef.current < 120000) return;
 
-      const hasLongWaiting = activePickups.some(p => {
-        if (p.status !== 'waiting') return false;
-        const createdAt = new Date(p.created_at).getTime();
-        const diffMinutes = (now - createdAt) / (1000 * 60);
-        return diffMinutes >= 3;
+      // Encontrar el pedido que lleva más tiempo esperando
+      const waitingPickups = activePickups.filter(p => p.status === 'waiting');
+      if (waitingPickups.length === 0) return;
+
+      const oldest = waitingPickups.reduce((prev, curr) => {
+        const prevTime = new Date(prev.created_at).getTime();
+        const currTime = new Date(curr.created_at).getTime();
+        return prevTime < currTime ? prev : curr;
       });
 
-      if (hasLongWaiting) {
-        console.log("⚠️ Detectada espera prolongada, lanzando aviso...");
-        announcePickupEvent("Retira Cliente con tiempo de espera de 5 minutos");
+      const createdAt = new Date(oldest.created_at).getTime();
+      const diffMinutes = Math.floor((now - createdAt) / (1000 * 60));
+
+      if (diffMinutes >= 3) {
+        console.log(`⚠️ Detectada espera prolongada (${diffMinutes} min), lanzando aviso...`);
+        // Si hay varios, indicar cuántos
+        const count = waitingPickups.length;
+        const message = count > 1 
+          ? `Atención. Hay ${count} pedidos esperando. El más antiguo lleva ${diffMinutes} minutos.`
+          : `Atención. Un pedido lleva esperando ${diffMinutes} minutos.`;
+        
+        announcePickupEvent(message);
         lastWarningRef.current = now;
       }
     };
@@ -835,14 +883,21 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
             <div className="flex justify-between items-center">
               <h2 className="text-xl font-semibold text-slate-800 tracking-tight uppercase">Entrada Datos</h2>
               <div className="flex gap-2">
-                <button 
-                  onClick={testAudio}
-                  className="bg-slate-50 text-slate-400 border border-slate-100 px-3 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest hover:bg-slate-100 transition-all flex items-center gap-2"
-                  title="Probar Audio"
-                >
-                  <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
-                  🔊 TEST
-                </button>
+                {!audioUnlocked ? (
+                  <div className="bg-amber-50 text-amber-600 border border-amber-100 px-3 py-2 rounded-xl text-[7px] font-black uppercase tracking-widest flex items-center gap-2 animate-pulse">
+                    <span className="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
+                    Toca para Activar Audio
+                  </div>
+                ) : (
+                  <button 
+                    onClick={testAudio}
+                    className="bg-slate-50 text-slate-400 border border-slate-100 px-3 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest hover:bg-slate-100 transition-all flex items-center gap-2"
+                    title="Probar Audio"
+                  >
+                    <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
+                    🔊 AUDIO OK
+                  </button>
+                )}
                 {user.role === 'carretillero' && (
                   <button 
                     onClick={() => setShowPickupsModal(true)}
