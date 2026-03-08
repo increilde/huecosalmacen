@@ -218,6 +218,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
   // Función para emitir un pitido de alerta (más fiable que la voz)
   const playAlertBeep = React.useCallback(() => {
+    console.log("🔔 Reproduciendo pitido de alerta...");
     try {
       if (!audioContextRef.current) {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -225,7 +226,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       
       const ctx = audioContextRef.current;
       if (ctx.state === 'suspended') {
-        ctx.resume();
+        ctx.resume().catch(err => console.warn("No se pudo resumir el AudioContext:", err));
       }
       
       const osc = ctx.createOscillator();
@@ -235,7 +236,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       osc.frequency.setValueAtTime(880, ctx.currentTime); // La nota La5
       osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.5); // Baja a La4
       
-      gain.gain.setValueAtTime(0.1, ctx.currentTime);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime); // Un poco más de volumen
       gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
       
       osc.connect(gain);
@@ -259,14 +260,17 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       return;
     }
 
-    // Pequeño delay tras el pitido para que no se solapen
-    setTimeout(() => {
-      // Cancelar cualquier anuncio previo para evitar cola infinita
-      window.speechSynthesis.cancel();
+    // Cancelar cualquier anuncio previo y asegurar que no esté pausado
+    window.speechSynthesis.cancel();
+    if (window.speechSynthesis.paused) {
+      window.speechSynthesis.resume();
+    }
 
+    // Pequeño delay tras el pitido y el cancel para que el motor se estabilice
+    setTimeout(() => {
       const utterance = new window.SpeechSynthesisUtterance(text);
       utterance.lang = 'es-ES';
-      utterance.rate = 1.0; 
+      utterance.rate = 0.95; // Ligeramente más lento para mejor claridad en PDAs
       utterance.pitch = 1.0;
       utterance.volume = 1.0;
       
@@ -280,11 +284,17 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       utterance.onstart = () => console.log("🎙️ Empezando a hablar:", text);
       utterance.onend = () => console.log("✅ Fin del anuncio");
       utterance.onerror = (e) => {
-        console.error("❌ Error en SpeechSynthesis:", e);
+        console.error(`❌ Error en SpeechSynthesis (Código: ${e.error}):`, e);
+        // Si falla la voz, re-intentamos el pitido como último recurso
+        if (e.error === 'not-allowed') {
+          console.warn("⚠️ Permiso de audio denegado por el navegador. Se requiere interacción del usuario.");
+          setAudioUnlocked(false); // Forzar que aparezca el botón de activar audio
+        }
+        playAlertBeep();
       };
 
       window.speechSynthesis.speak(utterance);
-    }, 100);
+    }, 150);
   }, [playAlertBeep]);
 
   const announceLocation = (operatorName: string, cartId: string) => {
@@ -322,11 +332,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
           audioContextRef.current.resume();
         }
 
-        // Emitir un pitido de prueba silencioso
+        // Emitir un pitido de prueba
         playAlertBeep();
 
         // Intentar emitir un silencio para "despertar" el motor de voz
         if (window.speechSynthesis) {
+          window.speechSynthesis.cancel();
           const utterance = new window.SpeechSynthesisUtterance("");
           window.speechSynthesis.speak(utterance);
         }
@@ -376,6 +387,24 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         unlockSpeech();
       }
     }, 2000);
+
+    // Keep-alive: Emitir un sonido casi inaudible cada 25 segundos para evitar que el navegador duerma el audio
+    const keepAliveInterval = setInterval(() => {
+      if (audioUnlocked && audioContextRef.current) {
+        try {
+          const ctx = audioContextRef.current;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          gain.gain.setValueAtTime(0.001, ctx.currentTime); // Casi inaudible
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.1);
+        } catch (e) {
+          // Ignorar errores de keep-alive
+        }
+      }
+    }, 25000);
     
     primeVoices();
     unlockSpeech(); // Intento inicial
@@ -390,6 +419,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       window.removeEventListener('focus', unlockSpeech);
       document.removeEventListener('visibilitychange', handleVisibility);
       clearInterval(autoUnlockInterval);
+      clearInterval(keepAliveInterval);
     };
   }, [activePickups, user.role, speak, audioUnlocked, playAlertBeep]); // Dependencias para que al desbloquear sepa cuántos hay
 
