@@ -69,7 +69,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [distribTab, setDistribTab] = useState<'active' | 'finished'>('active');
   const [finishedPickups, setFinishedPickups] = useState<CustomerPickup[]>([]);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
+  const [hasLoadedInitialData, setHasLoadedInitialData] = useState(false);
   const lastWarningRef = useRef<number>(0);
+  const prevWaitingCountRef = useRef<number>(0);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   const slotInputRef = useRef<HTMLInputElement>(null);
   const cartInputRef = useRef<HTMLInputElement>(null);
@@ -213,34 +216,76 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     }
   };
 
+  // Función para emitir un pitido de alerta (más fiable que la voz)
+  const playAlertBeep = React.useCallback(() => {
+    try {
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      
+      const ctx = audioContextRef.current;
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
+      
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, ctx.currentTime); // La nota La5
+      osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.5); // Baja a La4
+      
+      gain.gain.setValueAtTime(0.1, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+      
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      
+      osc.start();
+      osc.stop(ctx.currentTime + 0.5);
+    } catch (e) {
+      console.warn("No se pudo reproducir el pitido:", e);
+    }
+  }, []);
+
   const speak = React.useCallback((text: string) => {
     console.log("📢 Intentando anunciar:", text);
+    
+    // Siempre intentamos el pitido primero como señal de atención
+    playAlertBeep();
+
     if (!window.speechSynthesis) {
       console.error("❌ El navegador no soporta SpeechSynthesis");
       return;
     }
 
-    // Cancelar cualquier anuncio previo para evitar cola infinita
-    window.speechSynthesis.cancel();
+    // Pequeño delay tras el pitido para que no se solapen
+    setTimeout(() => {
+      // Cancelar cualquier anuncio previo para evitar cola infinita
+      window.speechSynthesis.cancel();
 
-    const utterance = new window.SpeechSynthesisUtterance(text);
-    utterance.lang = 'es-ES';
-    utterance.rate = 0.9; 
-    utterance.pitch = 1.0;
-    
-    // Intentar encontrar una voz en español si está disponible
-    const voices = window.speechSynthesis.getVoices();
-    const spanishVoice = voices.find(v => v.lang.startsWith('es'));
-    if (spanishVoice) {
-      utterance.voice = spanishVoice;
-    }
+      const utterance = new window.SpeechSynthesisUtterance(text);
+      utterance.lang = 'es-ES';
+      utterance.rate = 1.0; 
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+      
+      // Intentar encontrar una voz en español si está disponible
+      const voices = window.speechSynthesis.getVoices();
+      const spanishVoice = voices.find(v => v.lang.startsWith('es'));
+      if (spanishVoice) {
+        utterance.voice = spanishVoice;
+      }
 
-    utterance.onstart = () => console.log("🎙️ Empezando a hablar:", text);
-    utterance.onend = () => console.log("✅ Fin del anuncio");
-    utterance.onerror = (e) => console.error("❌ Error en SpeechSynthesis:", e);
+      utterance.onstart = () => console.log("🎙️ Empezando a hablar:", text);
+      utterance.onend = () => console.log("✅ Fin del anuncio");
+      utterance.onerror = (e) => {
+        console.error("❌ Error en SpeechSynthesis:", e);
+      };
 
-    window.speechSynthesis.speak(utterance);
-  }, []);
+      window.speechSynthesis.speak(utterance);
+    }, 100);
+  }, [playAlertBeep]);
 
   const announceLocation = (operatorName: string, cartId: string) => {
     speak(`El operario ${operatorName} ha ubicado el carro ${cartId}.`);
@@ -266,16 +311,29 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     };
     
     const unlockSpeech = () => {
-      if (audioUnlocked) return;
-      console.log("🔓 Intentando desbloquear SpeechSynthesis...");
+      console.log("🔓 Intentando desbloquear Audio y Speech...");
       
       try {
+        // Desbloquear Web Audio API
+        if (!audioContextRef.current) {
+          audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        }
+        if (audioContextRef.current.state === 'suspended') {
+          audioContextRef.current.resume();
+        }
+
+        // Emitir un pitido de prueba silencioso
+        playAlertBeep();
+
         // Intentar emitir un silencio para "despertar" el motor de voz
-        const utterance = new window.SpeechSynthesisUtterance("");
-        window.speechSynthesis.speak(utterance);
+        if (window.speechSynthesis) {
+          const utterance = new window.SpeechSynthesisUtterance("");
+          window.speechSynthesis.speak(utterance);
+        }
         
-        // Si llegamos aquí, marcamos como desbloqueado
+        // Marcamos como desbloqueado
         setAudioUnlocked(true);
+        console.log("✅ Audio desbloqueado correctamente");
         
         // Si hay algo pendiente al desbloquear, anunciarlo tras un breve delay
         setTimeout(() => {
@@ -283,7 +341,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
           if (waitingCount > 0 && user.role !== 'distribución') {
             speak(`Hay ${waitingCount} retira cliente pendientes.`);
           }
-        }, 500);
+        }, 800);
       } catch (e) {
         console.warn("El navegador bloqueó el intento de desbloqueo de audio:", e);
       }
@@ -320,6 +378,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     }, 2000);
     
     primeVoices();
+    unlockSpeech(); // Intento inicial
 
     return () => {
       if (window.speechSynthesis) {
@@ -332,7 +391,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       document.removeEventListener('visibilitychange', handleVisibility);
       clearInterval(autoUnlockInterval);
     };
-  }, [activePickups, user.role, speak, audioUnlocked]); // Dependencias para que al desbloquear sepa cuántos hay
+  }, [activePickups, user.role, speak, audioUnlocked, playAlertBeep]); // Dependencias para que al desbloquear sepa cuántos hay
 
   // Efecto para detectar cuando el navegador vuelve a estar en primer plano (PDA desbloqueada)
   useEffect(() => {
@@ -368,33 +427,24 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     return () => clearInterval(intervalId);
   }, [activePickups, user.role, speak]);
 
-  const prevWaitingCountRef = useRef<number>(0);
-  const isFirstLoadRef = useRef<boolean>(true);
-
-  // Efecto para marcar el final de la carga inicial
+  // Efecto para detectar nuevos pedidos en espera y anunciar
   useEffect(() => {
-    const timer = setTimeout(() => {
-      isFirstLoadRef.current = false;
-      console.log("🏁 Carga inicial completada. Notificaciones de nuevos pedidos activas.");
-    }, 2000); // 2 segundos para dar tiempo al primer fetch
-    return () => window.clearTimeout(timer);
-  }, []);
+    // No hacer nada hasta que la carga inicial haya terminado
+    if (!hasLoadedInitialData) return;
 
-  // Efecto para detectar nuevos pedidos en espera y anunciar (Fallback del tiempo real)
-  useEffect(() => {
     const currentWaitingCount = activePickups.filter(p => p.status === 'waiting').length;
     
-    // Si el contador aumenta y no es la carga inicial, anunciamos
-    if (currentWaitingCount > prevWaitingCountRef.current && !isFirstLoadRef.current) {
+    // Si el contador aumenta, anunciamos
+    if (currentWaitingCount > prevWaitingCountRef.current) {
       if (user.role !== 'distribución') {
-        console.log(`🔊 Detectado aumento de pedidos en espera (${prevWaitingCountRef.current} -> ${currentWaitingCount}). Anunciando...`);
+        console.log(`🔊 NUEVO PEDIDO DETECTADO (${prevWaitingCountRef.current} -> ${currentWaitingCount}). Lanzando locución...`);
         announcePickupEvent("Nuevo retira cliente a la espera");
       }
     }
     
-    // Actualizar el contador previo
+    // Actualizar el contador previo siempre
     prevWaitingCountRef.current = currentWaitingCount;
-  }, [activePickups, user.role, announcePickupEvent]);
+  }, [activePickups, user.role, announcePickupEvent, hasLoadedInitialData]);
 
   useEffect(() => {
     const fetchPickups = async () => {
@@ -412,6 +462,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         setActivePickups(activeData);
         const mine = activeData.find(p => p.operator_email === user.email && p.status === 'in_progress');
         if (mine) setMyActivePickup(mine);
+        
+        // Si es la primera vez que cargamos datos, inicializamos el ref y marcamos como cargado
+        if (!hasLoadedInitialData) {
+          prevWaitingCountRef.current = activeData.filter(p => p.status === 'waiting').length;
+          setHasLoadedInitialData(true);
+          console.log("✅ Datos iniciales cargados. Monitoreo de audio activo.");
+        }
       }
 
       // Finalizados de hoy
@@ -498,7 +555,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       supabase.removeChannel(channel);
       clearInterval(interval);
     };
-  }, [user.email, user.role, user.full_name, announcePickupEvent]);
+  }, [user.email, user.role, user.full_name, announcePickupEvent, hasLoadedInitialData]);
 
   // Efecto para avisar de esperas prolongadas
   useEffect(() => {
