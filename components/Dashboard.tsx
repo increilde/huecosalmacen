@@ -145,6 +145,30 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     }
   }, []);
 
+  // Función para emitir un pitido corto al escribir (feedback táctil/sonoro)
+  const playTypeBeep = React.useCallback(() => {
+    try {
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      const ctx = audioContextRef.current;
+      if (ctx.state === 'running') {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(1200, ctx.currentTime);
+        gain.gain.setValueAtTime(0.05, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.05);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.05);
+      }
+    } catch (e) {
+      // Ignorar errores en el pitido de escritura
+    }
+  }, []);
+
   const speak = React.useCallback((text: string) => {
     console.log(`📢 Intentando anunciar (AudioUnlocked: ${audioUnlocked}):`, text);
     
@@ -519,6 +543,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     prevWaitingCountRef.current = currentWaitingCount;
   }, [activePickups, user.role, announcePickupEvent, hasLoadedInitialData]);
 
+  // Efecto para intentar activar el audio automáticamente si hay pedidos pendientes
+  useEffect(() => {
+    const waitingCount = activePickups.filter(p => p.status === 'waiting').length;
+    if (waitingCount > 0 && !audioUnlocked) {
+      console.log("📢 Pedidos pendientes detectados. Intentando activar audio automáticamente...");
+      unlockSpeech();
+    }
+  }, [activePickups, audioUnlocked, unlockSpeech]);
+
   useEffect(() => {
     const fetchPickups = async () => {
       console.log("Fetching pickups...");
@@ -791,7 +824,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                 <input 
                   type="text" 
                   value={orderNumber}
-                  onChange={e => setOrderNumber(e.target.value)}
+                  onChange={e => {
+                    setOrderNumber(e.target.value);
+                    if (user.role === 'distribución') playTypeBeep();
+                  }}
                   placeholder="EJ: 123456"
                   className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-5 px-6 focus:border-indigo-500 font-black text-2xl outline-none uppercase transition-all text-center"
                 />
