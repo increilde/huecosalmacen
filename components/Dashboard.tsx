@@ -258,10 +258,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     speak(text);
   }, [speak]);
 
-  const testAudio = () => {
+  const testAudio = React.useCallback(() => {
     console.log("🧪 Ejecutando test de audio...");
+    unlockSpeech(); // Intentar asegurar que el audio está activo
     speak("Prueba de audio del sistema de almacén. Si escuchas esto, las notificaciones están activas.");
-  };
+  }, [speak, unlockSpeech]);
 
   // Efecto para gestionar el ciclo de vida del audio (desbloqueo, keep-alive, listeners)
   useEffect(() => {
@@ -621,11 +622,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       // Solo anunciar si no somos distribución (ellos son los que crean el pedido)
       if (user.role !== 'distribución') {
         announcePickupEvent("Nuevo retira cliente a la espera");
+        
+        // Pulsar automáticamente el botón de test audio cuando entra un pedido
+        // para asegurar que el sistema de voz está "despierto" y activo
+        testAudio();
       }
     }
     
     prevWaitingCountRef.current = currentWaiting;
-  }, [activePickups, user.role, announcePickupEvent, hasLoadedInitialData]);
+  }, [activePickups, user.role, announcePickupEvent, hasLoadedInitialData, testAudio]);
 
   // 3. Avisos de espera prolongada y recordatorios periódicos
   useEffect(() => {
