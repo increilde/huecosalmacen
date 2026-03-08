@@ -261,8 +261,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const testAudio = React.useCallback(() => {
     console.log("🧪 Ejecutando test de audio...");
     unlockSpeech(); // Intentar asegurar que el audio está activo
-    speak("Prueba de audio del sistema de almacén. Si escuchas esto, las notificaciones están activas.");
-  }, [speak, unlockSpeech]);
+  }, [unlockSpeech]);
 
   // Efecto para gestionar el ciclo de vida del audio (desbloqueo, keep-alive, listeners)
   useEffect(() => {
