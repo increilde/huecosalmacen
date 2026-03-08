@@ -72,6 +72,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [isScreenLocked, setIsScreenLocked] = useState(false);
   const [hasLoadedInitialData, setHasLoadedInitialData] = useState(false);
   const lastWarningRef = useRef<number>(0);
+  const myActivePickupIdRef = useRef<string | null>(null);
+
+  // Sincronizar el ref con el estado para usar en el callback de realtime
+  useEffect(() => {
+    myActivePickupIdRef.current = myActivePickup?.id || null;
+  }, [myActivePickup]);
   const prevWaitingCountRef = useRef<number>(0);
   const audioContextRef = useRef<AudioContext | null>(null);
   const wakeLockRef = useRef<any>(null);
@@ -142,30 +148,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       }
     } catch (e) {
       console.warn("❌ Error fatal reproduciendo el pitido:", e);
-    }
-  }, []);
-
-  // Función para emitir un pitido corto al escribir (feedback táctil/sonoro)
-  const playTypeBeep = React.useCallback(() => {
-    try {
-      if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      }
-      const ctx = audioContextRef.current;
-      if (ctx.state === 'running') {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(1200, ctx.currentTime);
-        gain.gain.setValueAtTime(0.05, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.05);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.05);
-      }
-    } catch (e) {
-      // Ignorar errores en el pitido de escritura
     }
   }, []);
 
@@ -246,13 +228,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         window.speechSynthesis.speak(utterance);
       }
       
-      // Solo marcamos como desbloqueado si realmente fue un gesto de usuario
-      if (isUserGesture) {
+      // Solo marcamos como desbloqueado y pitamos si realmente fue un gesto de usuario Y estaba bloqueado
+      if (isUserGesture && !audioUnlocked) {
         setAudioUnlocked(true);
         requestWakeLock(); // Aprovechar el gesto para pedir Wake Lock
         console.log("✅ Audio marcado como DESBLOQUEADO por el usuario");
         
-        // Pitido de confirmación
+        // Pitido de confirmación (SOLO UNA VEZ AL DESBLOQUEAR)
         playAlertBeep();
 
         // Si hay algo pendiente al desbloquear, anunciarlo tras un breve delay
@@ -511,197 +493,199 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [activePickups, user.role, speak]);
 
-  // Efecto para comprobación automática cada 30 segundos
+  // ==========================================
+  // GESTIÓN DE RETIRA CLIENTE (REFACTORIZADO)
+  // ==========================================
+
+  // 1. Carga inicial y Suscripción Realtime
   useEffect(() => {
-    const intervalId = setInterval(() => {
-      const waitingCount = activePickups.filter(p => p.status === 'waiting').length;
-      if (waitingCount > 0 && user.role !== 'distribución') {
-        console.log("⏰ Comprobación automática de 30s. Pendientes:", waitingCount);
-        speak(`Hay ${waitingCount} retira cliente pendientes.`);
-      }
-    }, 30000); // 30 segundos
+    let isMounted = true;
 
-    return () => clearInterval(intervalId);
-  }, [activePickups, user.role, speak]);
-
-  // Efecto para detectar nuevos pedidos en espera y anunciar
-  useEffect(() => {
-    // No hacer nada hasta que la carga inicial haya terminado
-    if (!hasLoadedInitialData) return;
-
-    const currentWaitingCount = activePickups.filter(p => p.status === 'waiting').length;
-    
-    // Si el contador aumenta, anunciamos
-    if (currentWaitingCount > prevWaitingCountRef.current) {
-      if (user.role !== 'distribución') {
-        console.log(`🔊 NUEVO PEDIDO DETECTADO (${prevWaitingCountRef.current} -> ${currentWaitingCount}). Lanzando locución...`);
-        announcePickupEvent("Nuevo retira cliente a la espera");
-      }
-    }
-    
-    // Actualizar el contador previo siempre
-    prevWaitingCountRef.current = currentWaitingCount;
-  }, [activePickups, user.role, announcePickupEvent, hasLoadedInitialData]);
-
-  // Efecto para intentar activar el audio automáticamente si hay pedidos pendientes
-  useEffect(() => {
-    const waitingCount = activePickups.filter(p => p.status === 'waiting').length;
-    if (waitingCount > 0 && !audioUnlocked) {
-      console.log("📢 Pedidos pendientes detectados. Intentando activar audio automáticamente...");
-      unlockSpeech();
-    }
-  }, [activePickups, audioUnlocked, unlockSpeech]);
-
-  useEffect(() => {
-    const fetchPickups = async () => {
-      console.log("Fetching pickups...");
+    const fetchInitialData = async () => {
+      console.log("📦 Cargando datos iniciales de Retira Cliente...");
       const today = new Date().toISOString().split('T')[0];
 
-      // Activos
-      const { data: activeData } = await supabase
-        .from('customer_pickups')
-        .select('*')
-        .neq('status', 'completed')
-        .order('created_at', { ascending: true });
-      
-      if (activeData) {
-        setActivePickups(activeData);
-        const mine = activeData.find(p => p.operator_email === user.email && p.status === 'in_progress');
-        if (mine) setMyActivePickup(mine);
-        
-        // Si es la primera vez que cargamos datos, inicializamos el ref y marcamos como cargado
-        if (!hasLoadedInitialData) {
+      try {
+        // Cargar pedidos activos (waiting e in_progress)
+        const { data: activeData, error: activeError } = await supabase
+          .from('customer_pickups')
+          .select('*')
+          .neq('status', 'completed')
+          .order('created_at', { ascending: true });
+
+        if (activeError) throw activeError;
+
+        if (isMounted && activeData) {
+          setActivePickups(activeData);
+          
+          // Detectar si tengo un pedido asignado
+          const mine = activeData.find(p => p.operator_email === user.email && p.status === 'in_progress');
+          if (mine) setMyActivePickup(mine);
+
+          // Inicializar el contador previo para evitar anuncios de lo que ya estaba
           prevWaitingCountRef.current = activeData.filter(p => p.status === 'waiting').length;
           setHasLoadedInitialData(true);
-          console.log("✅ Datos iniciales cargados. Monitoreo de audio activo.");
+          console.log("✅ Datos iniciales de Retira Cliente cargados.");
         }
-      }
 
-      // Finalizados de hoy
-      const { data: finishedData } = await supabase
-        .from('customer_pickups')
-        .select('*')
-        .eq('status', 'completed')
-        .gte('created_at', `${today}T00:00:00`)
-        .lte('created_at', `${today}T23:59:59`)
-        .order('completed_at', { ascending: false });
-      
-      if (finishedData) {
-        setFinishedPickups(finishedData);
+        // Cargar pedidos finalizados de hoy
+        const { data: finishedData, error: finishedError } = await supabase
+          .from('customer_pickups')
+          .select('*')
+          .eq('status', 'completed')
+          .gte('created_at', `${today}T00:00:00`)
+          .lte('created_at', `${today}T23:59:59`)
+          .order('completed_at', { ascending: false });
+
+        if (finishedError) throw finishedError;
+        if (isMounted && finishedData) setFinishedPickups(finishedData);
+
+      } catch (err) {
+        console.error("❌ Error cargando datos de Retira Cliente:", err);
       }
     };
 
-    fetchPickups();
-    const interval = setInterval(fetchPickups, 10000);
+    fetchInitialData();
 
+    // Suscripción Realtime
     const channel = supabase
-      .channel('customer_pickups_realtime')
+      .channel('retira_cliente_global')
       .on('postgres_changes', { event: '*', table: 'customer_pickups', schema: 'public' }, (payload) => {
-        console.log("Realtime event received:", payload);
-        const newPickup = payload.new as CustomerPickup;
-        const oldPickup = payload.old as CustomerPickup;
+        if (!isMounted) return;
+        
+        const { eventType, new: newRow, old: oldRow } = payload;
+        const pickup = newRow as CustomerPickup;
+        const oldPickup = oldRow as CustomerPickup;
 
-        if (payload.eventType === 'INSERT' && newPickup) {
-          console.log("🆕 Nuevo pedido insertado por tiempo real:", newPickup);
+        console.log(`🔔 Evento Realtime [${eventType}]:`, pickup || oldRow);
+
+        if (eventType === 'INSERT') {
           setActivePickups(prev => {
-            const exists = prev.find(p => p.id === newPickup.id);
-            if (exists) return prev;
-            return [...prev, newPickup];
+            if (prev.some(p => p.id === pickup.id)) return prev;
+            return [...prev, pickup];
           });
-          // El anuncio se hará a través del useEffect de monitoreo para evitar duplicados
-          // y asegurar que se oye aunque el evento venga por polling
-        } else if (payload.eventType === 'UPDATE' && newPickup) {
-          console.log(`🔄 Update en pedido ${newPickup.id}. Status: ${newPickup.status}`);
-          if (newPickup.status === 'completed') {
-            setActivePickups(prev => prev.filter(p => p.id !== newPickup.id));
-            setFinishedPickups(prev => {
-              const exists = prev.find(p => p.id === newPickup.id);
-              if (exists) return prev;
-              return [newPickup, ...prev];
-            });
-            if (newPickup.operator_email === user.email) setMyActivePickup(null);
+          // El anuncio de "Nuevo pedido" se gestiona en el useEffect de monitoreo de contador
+        } 
+        else if (eventType === 'UPDATE') {
+          if (pickup.status === 'completed') {
+            // Mover de activos a finalizados
+            setActivePickups(prev => prev.filter(p => p.id !== pickup.id));
+            setFinishedPickups(prev => [pickup, ...prev.filter(p => p.id !== pickup.id)]);
             
-            // Notificar que se ha finalizado con un pequeño delay para asegurar que se oiga (solo a distribución)
-            setTimeout(() => {
-              if (user.role === 'distribución') {
-                announcePickupEvent(`Retira cliente finalizado. Pedido ${newPickup.order_number}`);
-              }
-            }, 500);
+            if (pickup.operator_email === user.email) setMyActivePickup(null);
+
+            // Anunciar a distribución que se ha terminado
+            if (user.role === 'distribución') {
+              announcePickupEvent(`Pedido ${pickup.order_number} finalizado.`);
+            }
           } else {
-            setActivePickups(prev => {
-              const exists = prev.find(p => p.id === newPickup.id);
-              if (exists) {
-                return prev.map(p => p.id === newPickup.id ? newPickup : p);
-              } else {
-                return [...prev, newPickup];
-              }
-            });
+            // Actualizar en la lista de activos
+            setActivePickups(prev => prev.map(p => p.id === pickup.id ? pickup : p));
             
-            // Si alguien aceptó el pedido
-            if (newPickup.status === 'in_progress') {
-              if (newPickup.operator_email === user.email) {
-                setMyActivePickup(newPickup);
-              } else {
-                // Anunciar si el estado cambió a in_progress y no somos nosotros
-                // Usamos una comprobación simple para evitar anuncios duplicados si el evento se repite
-                if (!oldPickup || oldPickup.status !== 'in_progress') {
-                  announcePickupEvent(`Retira cliente aceptado por ${newPickup.operator_name}`);
-                }
+            if (pickup.operator_email === user.email) {
+              setMyActivePickup(pickup.status === 'in_progress' ? pickup : null);
+            }
+
+            // Anunciar si alguien aceptó un pedido
+            if (pickup.status === 'in_progress' && (!oldPickup || oldPickup.status !== 'in_progress')) {
+              if (pickup.operator_email !== user.email) {
+                announcePickupEvent(`${pickup.operator_name} ha cogido el pedido ${pickup.order_number}`);
               }
             }
           }
         }
+        else if (eventType === 'DELETE') {
+          setActivePickups(prev => prev.filter(p => p.id !== oldRow.id));
+          if (oldRow.id === myActivePickupIdRef.current) setMyActivePickup(null);
+        }
       })
-      .subscribe((status, err) => {
-        console.log("Subscription status:", status);
-        if (err) console.error("Subscription error:", err);
-      });
+      .subscribe();
+
+    // Polling de seguridad cada 20 segundos
+    const pollingInterval = setInterval(fetchInitialData, 20000);
 
     return () => {
+      isMounted = false;
       supabase.removeChannel(channel);
-      clearInterval(interval);
+      clearInterval(pollingInterval);
     };
-  }, [user.email, user.role, user.full_name, announcePickupEvent, hasLoadedInitialData]);
+  }, [user.email, user.role, user.full_name, announcePickupEvent]);
 
-  // Efecto para avisar de esperas prolongadas
+  // 2. Monitoreo de nuevos pedidos para anuncios de voz
   useEffect(() => {
-    const checkWaitingPickups = () => {
-      // Distribución no necesita avisos de espera (ellos los crean)
+    if (!hasLoadedInitialData) return;
+
+    const currentWaiting = activePickups.filter(p => p.status === 'waiting').length;
+    
+    if (currentWaiting > prevWaitingCountRef.current) {
+      // Solo anunciar si no somos distribución (ellos son los que crean el pedido)
+      if (user.role !== 'distribución') {
+        announcePickupEvent("Nuevo retira cliente a la espera");
+      }
+    }
+    
+    prevWaitingCountRef.current = currentWaiting;
+  }, [activePickups, user.role, announcePickupEvent, hasLoadedInitialData]);
+
+  // 3. Avisos de espera prolongada y recordatorios periódicos
+  useEffect(() => {
+    const checkStatus = () => {
       if (user.role === 'distribución') return;
 
+      const waiting = activePickups.filter(p => p.status === 'waiting');
+      if (waiting.length === 0) return;
+
       const now = Date.now();
-      // Evitar spam: máximo un aviso cada 2 minutos
-      if (now - lastWarningRef.current < 120000) return;
-
-      // Encontrar el pedido que lleva más tiempo esperando
-      const waitingPickups = activePickups.filter(p => p.status === 'waiting');
-      if (waitingPickups.length === 0) return;
-
-      const oldest = waitingPickups.reduce((prev, curr) => {
-        const prevTime = new Date(prev.created_at).getTime();
-        const currTime = new Date(curr.created_at).getTime();
-        return prevTime < currTime ? prev : curr;
+      
+      // Encontrar el más antiguo
+      const oldest = waiting.reduce((prev, curr) => {
+        return new Date(prev.created_at).getTime() < new Date(curr.created_at).getTime() ? prev : curr;
       });
 
-      const createdAt = new Date(oldest.created_at).getTime();
-      const diffMinutes = Math.floor((now - createdAt) / (1000 * 60));
+      const waitTimeMs = now - new Date(oldest.created_at).getTime();
+      const waitMins = Math.floor(waitTimeMs / 60000);
 
-      if (diffMinutes >= 3) {
-        console.log(`⚠️ Detectada espera prolongada (${diffMinutes} min), lanzando aviso...`);
-        // Si hay varios, indicar cuántos
-        const count = waitingPickups.length;
-        const message = count > 1 
-          ? `Atención. Hay ${count} pedidos esperando. El más antiguo lleva ${diffMinutes} minutos.`
-          : `Atención. Un pedido lleva esperando ${diffMinutes} minutos.`;
+      // Si lleva más de 3 minutos y han pasado al menos 2 min desde el último aviso
+      if (waitMins >= 3 && (now - lastWarningRef.current > 120000)) {
+        const msg = waiting.length > 1 
+          ? `Atención. Hay ${waiting.length} pedidos esperando. El más antiguo lleva ${waitMins} minutos.`
+          : `Atención. Un pedido lleva esperando ${waitMins} minutos.`;
         
-        announcePickupEvent(message);
+        announcePickupEvent(msg);
         lastWarningRef.current = now;
       }
     };
 
-    const interval = setInterval(checkWaitingPickups, 30000); // Revisar cada 30 segundos
+    const interval = setInterval(checkStatus, 30000);
     return () => clearInterval(interval);
   }, [activePickups, user.role, announcePickupEvent]);
+
+  // 4. Recuperación al volver a la pestaña (Visibility Change)
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        // Pequeño delay para que el audio se desbloquee si es necesario
+        setTimeout(() => {
+          const waiting = activePickups.filter(p => p.status === 'waiting').length;
+          if (waiting > 0 && user.role !== 'distribución') {
+            speak(`Recordatorio: Hay ${waiting} retira cliente pendientes.`);
+          }
+        }, 1500);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [activePickups, user.role, speak]);
+
+  // 5. Auto-activación de audio si hay pedidos
+  useEffect(() => {
+    const waiting = activePickups.filter(p => p.status === 'waiting');
+    if (waiting.length > 0 && !audioUnlocked) {
+      console.log("📢 Detectados pedidos pendientes. Intentando auto-activar audio...");
+      unlockSpeech();
+    }
+  }, [activePickups, audioUnlocked, unlockSpeech]);
 
   const handleCreatePickup = async () => {
     if (!orderNumber.trim()) return;
@@ -824,10 +808,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                 <input 
                   type="text" 
                   value={orderNumber}
-                  onChange={e => {
-                    setOrderNumber(e.target.value);
-                    if (user.role === 'distribución') playTypeBeep();
-                  }}
+                  onChange={e => setOrderNumber(e.target.value)}
                   placeholder="EJ: 123456"
                   className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-5 px-6 focus:border-indigo-500 font-black text-2xl outline-none uppercase transition-all text-center"
                 />
