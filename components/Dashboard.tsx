@@ -368,6 +368,34 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     return () => clearInterval(intervalId);
   }, [activePickups, user.role, speak]);
 
+  const prevWaitingCountRef = useRef<number>(0);
+  const isFirstLoadRef = useRef<boolean>(true);
+
+  // Efecto para marcar el final de la carga inicial
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      isFirstLoadRef.current = false;
+      console.log("🏁 Carga inicial completada. Notificaciones de nuevos pedidos activas.");
+    }, 2000); // 2 segundos para dar tiempo al primer fetch
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  // Efecto para detectar nuevos pedidos en espera y anunciar (Fallback del tiempo real)
+  useEffect(() => {
+    const currentWaitingCount = activePickups.filter(p => p.status === 'waiting').length;
+    
+    // Si el contador aumenta y no es la carga inicial, anunciamos
+    if (currentWaitingCount > prevWaitingCountRef.current && !isFirstLoadRef.current) {
+      if (user.role !== 'distribución') {
+        console.log(`🔊 Detectado aumento de pedidos en espera (${prevWaitingCountRef.current} -> ${currentWaitingCount}). Anunciando...`);
+        announcePickupEvent("Nuevo retira cliente a la espera");
+      }
+    }
+    
+    // Actualizar el contador previo
+    prevWaitingCountRef.current = currentWaitingCount;
+  }, [activePickups, user.role, announcePickupEvent]);
+
   useEffect(() => {
     const fetchPickups = async () => {
       console.log("Fetching pickups...");
@@ -410,16 +438,16 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         const newPickup = payload.new as CustomerPickup;
         const oldPickup = payload.old as CustomerPickup;
 
-        if (payload.eventType === 'INSERT') {
+        if (payload.eventType === 'INSERT' && newPickup) {
+          console.log("🆕 Nuevo pedido insertado por tiempo real:", newPickup);
           setActivePickups(prev => {
             const exists = prev.find(p => p.id === newPickup.id);
             if (exists) return prev;
             return [...prev, newPickup];
           });
-          if (user.role !== 'distribución') {
-            announcePickupEvent("Retira Cliente a la espera");
-          }
-        } else if (payload.eventType === 'UPDATE') {
+          // El anuncio se hará a través del useEffect de monitoreo para evitar duplicados
+          // y asegurar que se oye aunque el evento venga por polling
+        } else if (payload.eventType === 'UPDATE' && newPickup) {
           console.log(`🔄 Update en pedido ${newPickup.id}. Status: ${newPickup.status}`);
           if (newPickup.status === 'completed') {
             setActivePickups(prev => prev.filter(p => p.id !== newPickup.id));
@@ -461,8 +489,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
           }
         }
       })
-      .subscribe((status) => {
+      .subscribe((status, err) => {
         console.log("Subscription status:", status);
+        if (err) console.error("Subscription error:", err);
       });
 
     return () => {
