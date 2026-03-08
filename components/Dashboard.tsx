@@ -69,10 +69,260 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [distribTab, setDistribTab] = useState<'active' | 'finished'>('active');
   const [finishedPickups, setFinishedPickups] = useState<CustomerPickup[]>([]);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
+  const [isScreenLocked, setIsScreenLocked] = useState(false);
   const [hasLoadedInitialData, setHasLoadedInitialData] = useState(false);
   const lastWarningRef = useRef<number>(0);
   const prevWaitingCountRef = useRef<number>(0);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const wakeLockRef = useRef<any>(null);
+
+  // Función para solicitar Wake Lock (mantener pantalla encendida)
+  const requestWakeLock = async () => {
+    if ('wakeLock' in navigator) {
+      try {
+        if (wakeLockRef.current) return;
+        wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+        setIsScreenLocked(true);
+        console.log("🔆 Wake Lock activado: La pantalla no se apagará.");
+        
+        wakeLockRef.current.addEventListener('release', () => {
+          console.log("🔅 Wake Lock liberado.");
+          setIsScreenLocked(false);
+          wakeLockRef.current = null;
+        });
+      } catch (err: any) {
+        console.warn(`❌ Error solicitando Wake Lock: ${err.name}, ${err.message}`);
+      }
+    }
+  };
+
+  const primeVoices = React.useCallback(() => {
+    if (window.speechSynthesis) {
+      window.speechSynthesis.getVoices();
+    }
+  }, []);
+
+  // Función para emitir un pitido de alerta (más fiable que la voz)
+  const playAlertBeep = React.useCallback(() => {
+    console.log("🔔 Reproduciendo pitido de alerta...");
+    try {
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      
+      const ctx = audioContextRef.current;
+      
+      // Si está suspendido, intentamos resumir (esto solo funcionará si viene de un gesto de usuario)
+      if (ctx.state === 'suspended') {
+        ctx.resume().then(() => {
+          console.log("🔊 AudioContext resumido correctamente");
+        }).catch(err => {
+          console.warn("⚠️ No se pudo resumir el AudioContext automáticamente:", err);
+        });
+      }
+      
+      if (ctx.state === 'running') {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, ctx.currentTime); // La nota La5
+        osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.5); // Baja a La4
+        
+        gain.gain.setValueAtTime(0.3, ctx.currentTime); // Un poco más de volumen
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+        
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        
+        osc.start();
+        osc.stop(ctx.currentTime + 0.5);
+      } else {
+        console.warn("🔇 AudioContext sigue suspendido. El pitido no sonará.");
+      }
+    } catch (e) {
+      console.warn("❌ Error fatal reproduciendo el pitido:", e);
+    }
+  }, []);
+
+  const speak = React.useCallback((text: string) => {
+    console.log(`📢 Intentando anunciar (AudioUnlocked: ${audioUnlocked}):`, text);
+    
+    // Vibración táctil si está disponible
+    if (navigator.vibrate) {
+      navigator.vibrate([200, 100, 200]);
+    }
+    
+    // Siempre intentamos el pitido primero como señal de atención
+    playAlertBeep();
+
+    if (!window.speechSynthesis) {
+      console.error("❌ El navegador no soporta SpeechSynthesis");
+      return;
+    }
+
+    // Cancelar cualquier anuncio previo y asegurar que no esté pausado
+    window.speechSynthesis.cancel();
+    if (window.speechSynthesis.paused) {
+      window.speechSynthesis.resume();
+    }
+
+    // Pequeño delay tras el pitido y el cancel para que el motor se estabilice
+    setTimeout(() => {
+      const utterance = new window.SpeechSynthesisUtterance(text);
+      utterance.lang = 'es-ES';
+      utterance.rate = 0.95; 
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+      
+      const voices = window.speechSynthesis.getVoices();
+      const spanishVoice = voices.find(v => v.lang.startsWith('es'));
+      if (spanishVoice) {
+        utterance.voice = spanishVoice;
+      }
+
+      utterance.onstart = () => console.log("🎙️ Empezando a hablar:", text);
+      utterance.onend = () => console.log("✅ Fin del anuncio");
+      utterance.onerror = (e) => {
+        console.error(`❌ Error en SpeechSynthesis (Código: ${e.error}):`, e);
+        if (e.error === 'not-allowed') {
+          console.warn("⚠️ Permiso de audio denegado. Marcando como bloqueado.");
+          setAudioUnlocked(false); 
+        }
+      };
+
+      window.speechSynthesis.speak(utterance);
+    }, 150);
+  }, [playAlertBeep, audioUnlocked]);
+
+  const unlockSpeech = React.useCallback((e?: any) => {
+    const isUserGesture = e && (e.type === 'click' || e.type === 'touchstart' || e.type === 'keydown');
+    
+    // Solo logueamos si es un gesto o si realmente necesitamos desbloquear
+    if (isUserGesture || !audioUnlocked) {
+      console.log(`🔓 Intento de desbloqueo (Gesto usuario: ${!!isUserGesture})...`);
+    }
+    
+    try {
+      // Desbloquear Web Audio API
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      
+      if (audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume().then(() => {
+          console.log("✅ AudioContext resumido");
+        });
+      }
+
+      // Solo intentamos "despertar" la voz si es un gesto real
+      if (isUserGesture && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+        const utterance = new window.SpeechSynthesisUtterance("");
+        window.speechSynthesis.speak(utterance);
+      }
+      
+      // Solo marcamos como desbloqueado si realmente fue un gesto de usuario
+      if (isUserGesture) {
+        setAudioUnlocked(true);
+        requestWakeLock(); // Aprovechar el gesto para pedir Wake Lock
+        console.log("✅ Audio marcado como DESBLOQUEADO por el usuario");
+        
+        // Pitido de confirmación
+        playAlertBeep();
+
+        // Si hay algo pendiente al desbloquear, anunciarlo tras un breve delay
+        setTimeout(() => {
+          const waitingCount = activePickups.filter(p => p.status === 'waiting').length;
+          if (waitingCount > 0 && user.role !== 'distribución') {
+            speak(`Hay ${waitingCount} retira cliente pendientes.`);
+          }
+        }, 800);
+      }
+    } catch (e) {
+      console.warn("⚠️ Error en el intento de desbloqueo:", e);
+    }
+  }, [playAlertBeep, audioUnlocked, activePickups, user.role, speak]);
+
+  const announceLocation = React.useCallback((operatorName: string, cartId: string) => {
+    speak(`El operario ${operatorName} ha ubicado el carro ${cartId}.`);
+  }, [speak]);
+
+  const announcePickupEvent = React.useCallback((text: string) => {
+    speak(text);
+  }, [speak]);
+
+  const testAudio = () => {
+    console.log("🧪 Ejecutando test de audio...");
+    speak("Prueba de audio del sistema de almacén. Si escuchas esto, las notificaciones están activas.");
+  };
+
+  // Efecto para gestionar el ciclo de vida del audio (desbloqueo, keep-alive, listeners)
+  useEffect(() => {
+    if (window.speechSynthesis) {
+      window.speechSynthesis.onvoiceschanged = primeVoices;
+    }
+    
+    // Listeners de interacción real
+    window.addEventListener('click', unlockSpeech);
+    window.addEventListener('touchstart', unlockSpeech);
+    window.addEventListener('keydown', unlockSpeech);
+    window.addEventListener('focus', unlockSpeech);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        unlockSpeech();
+        requestWakeLock();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    // Intento automático periódico (cada 5 segundos)
+    const autoUnlockInterval = setInterval(() => {
+      if (!audioUnlocked) {
+        unlockSpeech();
+      }
+    }, 5000);
+
+    // Keep-alive: Emitir un sonido casi inaudible cada 20 segundos
+    const keepAliveInterval = setInterval(() => {
+      if (audioUnlocked && audioContextRef.current) {
+        try {
+          const ctx = audioContextRef.current;
+          if (ctx.state === 'running') {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            gain.gain.setValueAtTime(0.0001, ctx.currentTime); 
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.1);
+          }
+        } catch (e) {
+          // Ignorar errores en el keep-alive
+        }
+      }
+    }, 20000);
+    
+    primeVoices();
+    unlockSpeech(); // Intento inicial
+
+    return () => {
+      if (window.speechSynthesis) {
+        window.speechSynthesis.onvoiceschanged = null;
+      }
+      window.removeEventListener('click', unlockSpeech);
+      window.removeEventListener('touchstart', unlockSpeech);
+      window.removeEventListener('keydown', unlockSpeech);
+      window.removeEventListener('focus', unlockSpeech);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      clearInterval(autoUnlockInterval);
+      clearInterval(keepAliveInterval);
+      if (wakeLockRef.current) {
+        wakeLockRef.current.release();
+      }
+    };
+  }, [audioUnlocked, playAlertBeep, primeVoices, unlockSpeech]);
 
   const slotInputRef = useRef<HTMLInputElement>(null);
   const cartInputRef = useRef<HTMLInputElement>(null);
@@ -215,213 +465,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       setLoading(false);
     }
   };
-
-  // Función para emitir un pitido de alerta (más fiable que la voz)
-  const playAlertBeep = React.useCallback(() => {
-    console.log("🔔 Reproduciendo pitido de alerta...");
-    try {
-      if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      }
-      
-      const ctx = audioContextRef.current;
-      if (ctx.state === 'suspended') {
-        ctx.resume().catch(err => console.warn("No se pudo resumir el AudioContext:", err));
-      }
-      
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(880, ctx.currentTime); // La nota La5
-      osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.5); // Baja a La4
-      
-      gain.gain.setValueAtTime(0.2, ctx.currentTime); // Un poco más de volumen
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
-      
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      
-      osc.start();
-      osc.stop(ctx.currentTime + 0.5);
-    } catch (e) {
-      console.warn("No se pudo reproducir el pitido:", e);
-    }
-  }, []);
-
-  const speak = React.useCallback((text: string) => {
-    console.log("📢 Intentando anunciar:", text);
-    
-    // Siempre intentamos el pitido primero como señal de atención
-    playAlertBeep();
-
-    if (!window.speechSynthesis) {
-      console.error("❌ El navegador no soporta SpeechSynthesis");
-      return;
-    }
-
-    // Cancelar cualquier anuncio previo y asegurar que no esté pausado
-    window.speechSynthesis.cancel();
-    if (window.speechSynthesis.paused) {
-      window.speechSynthesis.resume();
-    }
-
-    // Pequeño delay tras el pitido y el cancel para que el motor se estabilice
-    setTimeout(() => {
-      const utterance = new window.SpeechSynthesisUtterance(text);
-      utterance.lang = 'es-ES';
-      utterance.rate = 0.95; // Ligeramente más lento para mejor claridad en PDAs
-      utterance.pitch = 1.0;
-      utterance.volume = 1.0;
-      
-      // Intentar encontrar una voz en español si está disponible
-      const voices = window.speechSynthesis.getVoices();
-      const spanishVoice = voices.find(v => v.lang.startsWith('es'));
-      if (spanishVoice) {
-        utterance.voice = spanishVoice;
-      }
-
-      utterance.onstart = () => console.log("🎙️ Empezando a hablar:", text);
-      utterance.onend = () => console.log("✅ Fin del anuncio");
-      utterance.onerror = (e) => {
-        console.error(`❌ Error en SpeechSynthesis (Código: ${e.error}):`, e);
-        // Si falla la voz, re-intentamos el pitido como último recurso
-        if (e.error === 'not-allowed') {
-          console.warn("⚠️ Permiso de audio denegado por el navegador. Se requiere interacción del usuario.");
-          setAudioUnlocked(false); // Forzar que aparezca el botón de activar audio
-        }
-        playAlertBeep();
-      };
-
-      window.speechSynthesis.speak(utterance);
-    }, 150);
-  }, [playAlertBeep]);
-
-  const announceLocation = (operatorName: string, cartId: string) => {
-    speak(`El operario ${operatorName} ha ubicado el carro ${cartId}.`);
-  };
-
-  const announcePickupEvent = React.useCallback((text: string) => {
-    speak(text);
-  }, [speak]);
-
-  const testAudio = () => {
-    console.log("🧪 Ejecutando test de audio...");
-    speak("Prueba de audio del sistema de almacén. Si escuchas esto, las notificaciones están activas.");
-  };
-
-  // Efecto para "desbloquear" y preparar el sistema de voz de forma automática
-  useEffect(() => {
-    if (audioUnlocked) return;
-
-    const primeVoices = () => {
-      if (window.speechSynthesis) {
-        window.speechSynthesis.getVoices();
-      }
-    };
-    
-    const unlockSpeech = () => {
-      console.log("🔓 Intentando desbloquear Audio y Speech...");
-      
-      try {
-        // Desbloquear Web Audio API
-        if (!audioContextRef.current) {
-          audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-        }
-        if (audioContextRef.current.state === 'suspended') {
-          audioContextRef.current.resume();
-        }
-
-        // Emitir un pitido de prueba
-        playAlertBeep();
-
-        // Intentar emitir un silencio para "despertar" el motor de voz
-        if (window.speechSynthesis) {
-          window.speechSynthesis.cancel();
-          const utterance = new window.SpeechSynthesisUtterance("");
-          window.speechSynthesis.speak(utterance);
-        }
-        
-        // Marcamos como desbloqueado
-        setAudioUnlocked(true);
-        console.log("✅ Audio desbloqueado correctamente");
-        
-        // Si hay algo pendiente al desbloquear, anunciarlo tras un breve delay
-        setTimeout(() => {
-          const waitingCount = activePickups.filter(p => p.status === 'waiting').length;
-          if (waitingCount > 0 && user.role !== 'distribución') {
-            speak(`Hay ${waitingCount} retira cliente pendientes.`);
-          }
-        }, 800);
-      } catch (e) {
-        console.warn("El navegador bloqueó el intento de desbloqueo de audio:", e);
-      }
-    };
-
-    // Si llega un nuevo retira cliente y no está desbloqueado, intentamos desbloquear
-    const waitingCount = activePickups.filter(p => p.status === 'waiting').length;
-    if (waitingCount > 0 && !audioUnlocked) {
-      console.log("📦 Nuevo retira cliente detectado, intentando desbloqueo automático...");
-      unlockSpeech();
-    }
-
-    if (window.speechSynthesis) {
-      window.speechSynthesis.onvoiceschanged = primeVoices;
-    }
-    
-    // Listeners de interacción real (estos son los más efectivos)
-    window.addEventListener('click', unlockSpeech);
-    window.addEventListener('touchstart', unlockSpeech);
-    window.addEventListener('keydown', unlockSpeech);
-    
-    // Listeners de eventos de ventana y foco
-    window.addEventListener('focus', unlockSpeech);
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') unlockSpeech();
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-
-    // Intento automático periódico (cada 2 segundos)
-    const autoUnlockInterval = setInterval(() => {
-      if (!audioUnlocked) {
-        unlockSpeech();
-      }
-    }, 2000);
-
-    // Keep-alive: Emitir un sonido casi inaudible cada 25 segundos para evitar que el navegador duerma el audio
-    const keepAliveInterval = setInterval(() => {
-      if (audioUnlocked && audioContextRef.current) {
-        try {
-          const ctx = audioContextRef.current;
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          gain.gain.setValueAtTime(0.001, ctx.currentTime); // Casi inaudible
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.start();
-          osc.stop(ctx.currentTime + 0.1);
-        } catch (e) {
-          // Ignorar errores de keep-alive
-        }
-      }
-    }, 25000);
-    
-    primeVoices();
-    unlockSpeech(); // Intento inicial
-
-    return () => {
-      if (window.speechSynthesis) {
-        window.speechSynthesis.onvoiceschanged = null;
-      }
-      window.removeEventListener('click', unlockSpeech);
-      window.removeEventListener('touchstart', unlockSpeech);
-      window.removeEventListener('keydown', unlockSpeech);
-      window.removeEventListener('focus', unlockSpeech);
-      document.removeEventListener('visibilitychange', handleVisibility);
-      clearInterval(autoUnlockInterval);
-      clearInterval(keepAliveInterval);
-    };
-  }, [activePickups, user.role, speak, audioUnlocked, playAlertBeep]); // Dependencias para que al desbloquear sepa cuántos hay
 
   // Efecto para detectar cuando el navegador vuelve a estar en primer plano (PDA desbloqueada)
   useEffect(() => {
