@@ -93,6 +93,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  * ALTER PUBLICATION supabase_realtime ADD TABLE customer_pickups;
  * 
  * -- 9. Tabla de Repartos (Distribución)
+ * ALTER TABLE truckers ADD COLUMN IF NOT EXISTS zone TEXT;
  * ALTER TABLE deliveries ALTER COLUMN postal_code DROP NOT NULL;
  * 
  * CREATE TABLE IF NOT EXISTS deliveries (

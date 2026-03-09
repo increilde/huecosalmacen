@@ -33,6 +33,8 @@ const WAREHOUSES = [
   { id: '73', label: '73' }
 ];
 
+const ZONES = ['GRANADA', 'COSTA', 'ANTEQUERA', 'ALMERÍA'];
+
 const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [trucks, setTrucks] = useState<Trucker[]>([]);
@@ -41,6 +43,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [view, setView] = useState<'agenda' | 'create'>('agenda');
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeZone, setActiveZone] = useState<string>('TODOS');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showHistoryId, setShowHistoryId] = useState<string | null>(null);
   const [deliveryLogs, setDeliveryLogs] = useState<DeliveryLog[]>([]);
@@ -63,7 +66,12 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
       const { data, error } = await supabase.from('truckers').select('*').order('full_name');
       if (error) throw error;
       
-      let sortedTrucks = data?.map((t: any) => ({ id: t.id, label: t.full_name, created_at: t.created_at })) || [];
+      let sortedTrucks = data?.map((t: any) => ({ 
+        id: t.id, 
+        label: t.full_name, 
+        zone: t.zone,
+        created_at: t.created_at 
+      })) || [];
       
       // Mover "PENDIENTE ASIGNAR" al principio
       sortedTrucks.sort((a, b) => {
@@ -75,6 +83,21 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
       setTrucks(sortedTrucks);
     } catch (err) {
       console.error("Error fetching trucks:", err);
+    }
+  };
+
+  const handleUpdateTruckZone = async (truckId: string, zone: string) => {
+    try {
+      const { error } = await supabase
+        .from('truckers')
+        .update({ zone })
+        .eq('id', truckId);
+      
+      if (error) throw error;
+      
+      setTrucks(prev => prev.map(t => t.id === truckId ? { ...t, zone } : t));
+    } catch (err) {
+      console.error("Error updating truck zone:", err);
     }
   };
 
@@ -261,10 +284,10 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
 
   return (
     <div className="p-2 md:p-4 w-full animate-fade-in">
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-6 max-w-[1600px] mx-auto">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-6 max-w-[1800px] mx-auto">
         <div>
-          <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Agenda de Repartos</h2>
-          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Distribución y Logística</p>
+          <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Agenda de Repartos</h2>
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Distribución y Logística</p>
         </div>
         
         <div className="flex flex-wrap items-center gap-2">
@@ -433,42 +456,60 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
           >
             {loading ? 'PROCESANDO...' : editingId ? 'GUARDAR CAMBIOS' : 'CONFIRMAR Y CREAR REPARTO'}
           </button>
-          {editingId && (
-            <button 
-              onClick={() => {
-                setEditingId(null);
-                setNewDelivery({
-                  warehouse_origin: '3',
-                  delivery_time: 'morning',
-                  merchandise_type: ''
-                });
-                setView('agenda');
-              }}
-              className="w-full mt-4 py-2 text-slate-400 font-black text-[9px] uppercase tracking-widest hover:text-slate-600 transition-all"
-            >
-              Cancelar Edición
-            </button>
-          )}
+          
+          <button 
+            onClick={() => {
+              setEditingId(null);
+              setNewDelivery({
+                warehouse_origin: '3',
+                delivery_time: 'morning',
+                merchandise_type: ''
+              });
+              setView('agenda');
+            }}
+            className="w-full mt-4 py-4 bg-slate-100 text-slate-600 font-black rounded-[2rem] uppercase tracking-widest text-xs active:scale-95 transition-all hover:bg-slate-200"
+          >
+            CANCELAR Y VOLVER
+          </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-6 w-full">
+        <div className="flex flex-col gap-6 w-full max-w-[1800px] mx-auto">
+          {/* Tabs de Zonas */}
+          <div className="flex flex-wrap gap-2 mb-2 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm">
+            {['TODOS', ...ZONES].map(zone => (
+              <button
+                key={zone}
+                onClick={() => setActiveZone(zone)}
+                className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                  activeZone === zone 
+                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' 
+                    : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
+                }`}
+              >
+                {zone}
+              </button>
+            ))}
+          </div>
+
           {loading ? (
             <div className="py-20 text-center animate-pulse">
               <p className="text-[11px] font-black text-slate-300 uppercase tracking-widest">Cargando agenda de repartos...</p>
             </div>
           ) : trucks.filter(truck => 
               deliveries.some(d => d.truck_id === truck.id) && 
-              truck.label.toLowerCase().includes(searchTerm.toLowerCase())
+              truck.label.toLowerCase().includes(searchTerm.toLowerCase()) &&
+              (activeZone === 'TODOS' || truck.zone === activeZone)
             ).length === 0 ? (
-            <div className="bg-white rounded-[3rem] p-20 text-center border border-slate-100 max-w-2xl mx-auto w-full">
+            <div className="bg-white rounded-[3rem] p-20 text-center border border-slate-100 w-full">
               <p className="text-4xl mb-4">🚛</p>
               <p className="text-[11px] font-black text-slate-300 uppercase tracking-widest">
-                {searchTerm ? 'No se encontraron camiones con ese nombre' : 'No hay repartos asignados para esta fecha'}
+                {searchTerm ? 'No se encontraron camiones con ese nombre' : 'No hay repartos asignados para esta zona/fecha'}
               </p>
             </div>
           ) : trucks.filter(truck => 
               deliveries.some(d => d.truck_id === truck.id) && 
-              truck.label.toLowerCase().includes(searchTerm.toLowerCase())
+              truck.label.toLowerCase().includes(searchTerm.toLowerCase()) &&
+              (activeZone === 'TODOS' || truck.zone === activeZone)
             ).map(truck => {
             const truckDeliveries = deliveries
               .filter(d => d.truck_id === truck.id)
@@ -479,12 +520,30 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
               });
             return (
               <div key={truck.id} className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden flex flex-col w-full">
-                <div className="bg-slate-900 px-6 py-2 flex justify-between items-center">
-                  <div className="flex items-center gap-3">
-                    <span className="text-lg">🚚</span>
-                    <h4 className="text-white text-xs font-black uppercase tracking-widest">{truck.label}</h4>
+                <div className="bg-slate-900 px-6 py-3 flex justify-between items-center">
+                  <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xl">🚚</span>
+                      <h4 className="text-white text-sm font-black uppercase tracking-widest">{truck.label}</h4>
+                    </div>
+                    
+                    <div className="h-6 w-px bg-white/20" />
+                    
+                    <div className="flex items-center gap-2">
+                      <span className="text-[9px] font-black text-white/40 uppercase tracking-widest">ZONA:</span>
+                      <select
+                        value={truck.zone || ''}
+                        onChange={(e) => handleUpdateTruckZone(truck.id, e.target.value)}
+                        className="bg-white/10 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg border border-white/10 outline-none focus:border-indigo-500 transition-all cursor-pointer"
+                      >
+                        <option value="" className="text-slate-900">SIN ZONA</option>
+                        {ZONES.map(z => (
+                          <option key={z} value={z} className="text-slate-900">{z}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
-                  <span className="bg-white/10 text-white/80 px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest">
+                  <span className="bg-white/10 text-white/80 px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest">
                     {truckDeliveries.length} REPARTOS
                   </span>
                 </div>
@@ -496,61 +555,68 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                       </div>
                     ) : truckDeliveries.map(delivery => (
                       <React.Fragment key={delivery.id}>
-                        <div className={`p-1.5 px-4 rounded-xl border transition-all group flex items-center justify-between gap-2 ${
+                        <div className={`p-2 px-6 rounded-xl border transition-all group flex items-center justify-between gap-3 ${
                           delivery.is_scheduled 
                             ? 'bg-emerald-50 border-emerald-100' 
                             : 'bg-slate-50 border-slate-100 hover:border-indigo-200'
                         }`}>
-                        <div className="flex items-center gap-4 flex-1">
-                          <div className="w-16 shrink-0">
-                            <p className="text-xs font-black text-slate-800 tracking-tighter">#{delivery.order_number}</p>
-                            <p className="text-[8px] font-black text-indigo-600 uppercase tracking-widest">
+                        <div className="flex items-center gap-8 flex-1">
+                          <div className="w-28 shrink-0">
+                            <p className="text-base font-black text-slate-800 tracking-tighter">#{delivery.order_number}</p>
+                            <p className="text-[11px] font-black text-indigo-600 uppercase tracking-widest">
                               {WAREHOUSES.find(w => w.id === delivery.warehouse_origin)?.label || delivery.warehouse_origin}
                             </p>
                           </div>
 
-                          <div className="h-6 w-px bg-slate-200 shrink-0" />
+                          <div className="h-12 w-px bg-slate-200 shrink-0" />
 
-                          <div className="flex-1 flex items-center gap-4">
-                            <div className="flex items-center gap-2 min-w-[140px]">
-                              <span className="text-xs">📍</span>
-                              <div>
-                                <p className="text-[9px] font-bold text-slate-700 uppercase">
+                          <div className="flex-1 flex flex-col justify-center gap-2 py-1">
+                            <div className="flex flex-wrap items-start gap-x-8 gap-y-1">
+                              <div className="flex items-center gap-2 min-w-[180px]">
+                                <span className="text-lg">📍</span>
+                                <p className="text-[12px] font-bold text-slate-700 uppercase leading-tight">
                                   {delivery.postal_code} - {delivery.locality}
                                 </p>
-                                {delivery.created_by_name && (
-                                  <p className="text-[6px] font-black text-slate-400 uppercase tracking-widest">Por: {delivery.created_by_name}</p>
-                                )}
+                              </div>
+                              <div className="flex items-center gap-2 flex-1 min-w-[150px]">
+                                <span className="text-lg">📦</span>
+                                <p className="text-[12px] font-bold text-slate-700 uppercase leading-tight break-words">
+                                  {delivery.merchandise_type}
+                                </p>
                               </div>
                             </div>
-                            <div className="flex items-center gap-2 min-w-[110px]">
-                              <span className="text-xs">📦</span>
-                              <p className="text-[9px] font-bold text-slate-700 uppercase truncate max-w-[120px]">{delivery.merchandise_type}</p>
+                            
+                            <div className="flex flex-col gap-1">
+                              {delivery.created_by_name && (
+                                <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Por: {delivery.created_by_name}</p>
+                              )}
+                              {delivery.comments && (
+                                <div className="bg-slate-100/80 px-3 py-1.5 rounded-lg border-l-4 border-indigo-500 w-full mt-0.5">
+                                  <p className="text-[11px] text-slate-900 font-bold italic leading-snug break-words">
+                                    {delivery.comments}
+                                  </p>
+                                </div>
+                              )}
                             </div>
-                            {delivery.comments && (
-                              <div className="hidden xl:block flex-1 min-w-0">
-                                <p className="text-[8px] text-slate-900 font-bold italic truncate">"{delivery.comments}"</p>
-                              </div>
-                            )}
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className={`text-[7px] font-black px-2 py-1.5 rounded-lg uppercase shadow-sm ${delivery.delivery_time === 'morning' ? 'bg-amber-100 text-amber-700 border border-amber-200' : 'bg-indigo-100 text-indigo-700 border border-indigo-200'}`}>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className={`text-[9px] font-black px-3 py-1.5 rounded-lg uppercase shadow-sm ${delivery.delivery_time === 'morning' ? 'bg-amber-100 text-amber-700 border border-amber-200' : 'bg-indigo-100 text-indigo-700 border border-indigo-200'}`}>
                             {delivery.delivery_time === 'morning' ? 'MAÑANA' : 'TARDE'}
                           </span>
 
                           <div className="flex items-center gap-0.5 bg-white p-0.5 rounded-xl border border-slate-100 shadow-sm">
                             <button 
                               onClick={() => toggleScheduled(delivery)}
-                              className={`flex items-center gap-1.5 px-2 py-1 rounded-lg transition-all ${delivery.is_scheduled ? 'bg-emerald-500 text-white shadow-md shadow-emerald-100' : 'hover:bg-slate-50 text-slate-400'}`}
+                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${delivery.is_scheduled ? 'bg-emerald-500 text-white shadow-md shadow-emerald-100' : 'hover:bg-slate-50 text-slate-400'}`}
                               title={delivery.is_scheduled ? 'Desmarcar agendado' : 'Marcar como agendado'}
                             >
-                              <span className="text-[9px]">{delivery.is_scheduled ? '✓' : '📅'}</span>
-                              <span className="text-[8px] font-black uppercase tracking-widest">{delivery.is_scheduled ? 'AGENDADO' : 'AGENDAR'}</span>
+                              <span className="text-xs">{delivery.is_scheduled ? '✓' : '📅'}</span>
+                              <span className="text-[9px] font-black uppercase tracking-widest">{delivery.is_scheduled ? 'AGENDADO' : 'AGENDAR'}</span>
                             </button>
 
-                            <div className="w-px h-3 bg-slate-100 mx-0.5" />
+                            <div className="w-px h-4 bg-slate-100 mx-0.5" />
 
                             <button 
                               onClick={() => {

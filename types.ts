@@ -44,6 +44,7 @@ export interface Machinery {
 export interface Trucker {
   id: string;
   label: string;
+  zone?: string; // Granada, Costa, Antequera, Almería
   created_at: string;
 }
 
