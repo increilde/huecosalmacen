@@ -458,7 +458,13 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
               deliveries.some(d => d.truck_id === truck.id) && 
               truck.label.toLowerCase().includes(searchTerm.toLowerCase())
             ).map(truck => {
-            const truckDeliveries = deliveries.filter(d => d.truck_id === truck.id);
+            const truckDeliveries = deliveries
+              .filter(d => d.truck_id === truck.id)
+              .sort((a, b) => {
+                if (a.delivery_time === 'morning' && b.delivery_time === 'afternoon') return -1;
+                if (a.delivery_time === 'afternoon' && b.delivery_time === 'morning') return 1;
+                return 0;
+              });
             return (
               <div key={truck.id} className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden flex flex-col w-full">
                 <div className="bg-slate-900 px-6 py-2 flex justify-between items-center">
@@ -478,7 +484,11 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                       </div>
                     ) : truckDeliveries.map(delivery => (
                       <React.Fragment key={delivery.id}>
-                        <div className="bg-slate-50 p-1.5 px-4 rounded-xl border border-slate-100 hover:border-indigo-200 transition-all group flex items-center justify-between gap-2">
+                        <div className={`p-1.5 px-4 rounded-xl border transition-all group flex items-center justify-between gap-2 ${
+                          delivery.is_scheduled 
+                            ? 'bg-emerald-50 border-emerald-100' 
+                            : 'bg-slate-50 border-slate-100 hover:border-indigo-200'
+                        }`}>
                         <div className="flex items-center gap-4 flex-1">
                           <div className="w-16 shrink-0">
                             <p className="text-xs font-black text-slate-800 tracking-tighter">#{delivery.order_number}</p>
