@@ -130,5 +130,15 @@ export interface Delivery {
   merchandise_type: string;
   comments?: string;
   created_by_name?: string;
+  is_scheduled?: boolean;
+  created_at: string;
+}
+
+export interface DeliveryLog {
+  id: string;
+  delivery_id: string;
+  user_name: string;
+  action: string;
+  details?: string;
   created_at: string;
 }

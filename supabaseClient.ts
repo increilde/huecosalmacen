@@ -105,6 +105,17 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  *     comments TEXT,
  *     delivery_date DATE NOT NULL,
  *     created_by_name TEXT,
+ *     is_scheduled BOOLEAN DEFAULT FALSE,
+ *     created_at TIMESTAMPTZ DEFAULT now()
+ * );
+ *
+ * -- 10. Histórico de Repartos
+ * CREATE TABLE IF NOT EXISTS delivery_logs (
+ *     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+ *     delivery_id UUID REFERENCES deliveries(id) ON DELETE CASCADE,
+ *     user_name TEXT NOT NULL,
+ *     action TEXT NOT NULL,
+ *     details TEXT,
  *     created_at TIMESTAMPTZ DEFAULT now()
  * );
  */

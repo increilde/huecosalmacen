@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { UserProfile, Delivery, Trucker } from '../types';
+import { UserProfile, Delivery, Trucker, DeliveryLog } from '../types';
 
 interface DeliveriesPanelProps {
   user: UserProfile;
@@ -42,6 +42,8 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
   const [view, setView] = useState<'agenda' | 'create'>('agenda');
   const [searchTerm, setSearchTerm] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showHistoryId, setShowHistoryId] = useState<string | null>(null);
+  const [deliveryLogs, setDeliveryLogs] = useState<DeliveryLog[]>([]);
   
   const [newDelivery, setNewDelivery] = useState<Partial<Delivery>>({
     warehouse_origin: '3',
@@ -60,7 +62,17 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
     try {
       const { data, error } = await supabase.from('truckers').select('*').order('full_name');
       if (error) throw error;
-      setTrucks(data?.map((t: any) => ({ id: t.id, label: t.full_name, created_at: t.created_at })) || []);
+      
+      let sortedTrucks = data?.map((t: any) => ({ id: t.id, label: t.full_name, created_at: t.created_at })) || [];
+      
+      // Mover "PENDIENTE ASIGNAR" al principio
+      sortedTrucks.sort((a, b) => {
+        if (a.label.toUpperCase().includes('PENDIENTE ASIGNAR')) return -1;
+        if (b.label.toUpperCase().includes('PENDIENTE ASIGNAR')) return 1;
+        return 0;
+      });
+      
+      setTrucks(sortedTrucks);
     } catch (err) {
       console.error("Error fetching trucks:", err);
     }
@@ -84,6 +96,34 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
     }
   };
 
+  const fetchLogs = async (deliveryId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('delivery_logs')
+        .select('*')
+        .eq('delivery_id', deliveryId)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      setDeliveryLogs(data || []);
+    } catch (err) {
+      console.error("Error fetching logs:", err);
+    }
+  };
+
+  const addLog = async (deliveryId: string, action: string, details?: string) => {
+    try {
+      await supabase.from('delivery_logs').insert([{
+        delivery_id: deliveryId,
+        user_name: user.full_name,
+        action,
+        details
+      }]);
+    } catch (err) {
+      console.error("Error adding log:", err);
+    }
+  };
+
   const handleCreateDelivery = async () => {
     if (!newDelivery.truck_id || !newDelivery.order_number || !newDelivery.postal_code) {
       setMessage({ type: 'error', text: 'Faltan campos obligatorios' });
@@ -104,10 +144,14 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
           .update(payload)
           .eq('id', editingId);
         if (error) throw error;
+        await addLog(editingId, 'EDICIÓN', `Pedido: ${payload.order_number}, CP: ${payload.postal_code}`);
         setMessage({ type: 'success', text: 'Reparto actualizado correctamente' });
       } else {
-        const { error } = await supabase.from('deliveries').insert([payload]);
+        const { data, error } = await supabase.from('deliveries').insert([payload]).select();
         if (error) throw error;
+        if (data && data[0]) {
+          await addLog(data[0].id, 'CREACIÓN', `Pedido inicial: ${payload.order_number}`);
+        }
         setMessage({ type: 'success', text: 'Reparto creado correctamente' });
       }
 
@@ -136,11 +180,54 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
       delivery_time: delivery.delivery_time,
       postal_code: delivery.postal_code,
       merchandise_type: delivery.merchandise_type,
-      comments: delivery.comments
+      comments: delivery.comments,
+      is_scheduled: delivery.is_scheduled
     });
     setPostalCodeLocality(delivery.locality || '');
     setEditingId(delivery.id);
     setView('create');
+  };
+
+  const toggleScheduled = async (delivery: Delivery) => {
+    try {
+      const newStatus = !delivery.is_scheduled;
+      const { error } = await supabase
+        .from('deliveries')
+        .update({ is_scheduled: newStatus })
+        .eq('id', delivery.id);
+      
+      if (error) throw error;
+      
+      await addLog(delivery.id, newStatus ? 'AGENDADO' : 'DESAGENDADO');
+      
+      setDeliveries(prev => prev.map(d => 
+        d.id === delivery.id ? { ...d, is_scheduled: newStatus } : d
+      ));
+    } catch (err) {
+      console.error("Error toggling scheduled status:", err);
+    }
+  };
+
+  const handleDeleteDelivery = async (id: string) => {
+    if (!window.confirm('¿Estás seguro de que deseas eliminar este reparto?')) return;
+    
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('deliveries')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
+      
+      setDeliveries(prev => prev.filter(d => d.id !== id));
+      setMessage({ type: 'success', text: 'Reparto eliminado correctamente' });
+      setTimeout(() => setMessage(null), 3000);
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handlePostalCodeChange = async (code: string) => {
@@ -390,9 +477,10 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                         <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest italic">Sin repartos para hoy</p>
                       </div>
                     ) : truckDeliveries.map(delivery => (
-                      <div key={delivery.id} className="bg-slate-50 p-2 px-6 rounded-2xl border border-slate-100 hover:border-indigo-200 transition-all group flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-8 flex-1">
-                          <div className="w-28 shrink-0">
+                      <React.Fragment key={delivery.id}>
+                        <div className="bg-slate-50 p-2 px-6 rounded-2xl border border-slate-100 hover:border-indigo-200 transition-all group flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-6 flex-1">
+                          <div className="w-20 shrink-0">
                             <p className="text-sm font-black text-slate-800 tracking-tighter">#{delivery.order_number}</p>
                             <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">
                               {WAREHOUSES.find(w => w.id === delivery.warehouse_origin)?.label || delivery.warehouse_origin}
@@ -401,8 +489,8 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
 
                           <div className="h-8 w-px bg-slate-200 shrink-0" />
 
-                          <div className="flex-1 flex items-center gap-10">
-                            <div className="flex items-center gap-3 min-w-[200px]">
+                          <div className="flex-1 flex items-center gap-6">
+                            <div className="flex items-center gap-3 min-w-[180px]">
                               <span className="text-sm">📍</span>
                               <div>
                                 <p className="text-[10px] font-bold text-slate-700 uppercase">
@@ -413,7 +501,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                                 )}
                               </div>
                             </div>
-                            <div className="flex items-center gap-3 min-w-[160px]">
+                            <div className="flex items-center gap-3 min-w-[140px]">
                               <span className="text-sm">📦</span>
                               <p className="text-[10px] font-bold text-slate-700 uppercase">{delivery.merchandise_type}</p>
                             </div>
@@ -425,21 +513,95 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-4 shrink-0">
+                        <div className="flex items-center gap-2 shrink-0">
                           <span className={`text-[8px] font-black px-4 py-2 rounded-xl uppercase shadow-sm ${delivery.delivery_time === 'morning' ? 'bg-amber-100 text-amber-700 border border-amber-200' : 'bg-indigo-100 text-indigo-700 border border-indigo-200'}`}>
                             {delivery.delivery_time === 'morning' ? 'MAÑANA' : 'TARDE'}
                           </span>
-                          <button 
-                            onClick={() => handleEdit(delivery)}
-                            className="p-2.5 hover:bg-white rounded-xl text-slate-400 hover:text-indigo-600 transition-all border border-transparent hover:border-slate-200 shadow-sm"
-                            title="Editar reparto"
-                          >
-                            ✏️
-                          </button>
+
+                          <div className="flex items-center gap-1 bg-white p-1 rounded-2xl border border-slate-100 shadow-sm">
+                            <button 
+                              onClick={() => toggleScheduled(delivery)}
+                              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all ${delivery.is_scheduled ? 'bg-emerald-500 text-white shadow-md shadow-emerald-100' : 'hover:bg-slate-50 text-slate-400'}`}
+                              title={delivery.is_scheduled ? 'Desmarcar agendado' : 'Marcar como agendado'}
+                            >
+                              <span className="text-[10px]">{delivery.is_scheduled ? '✓' : '📅'}</span>
+                              <span className="text-[9px] font-black uppercase tracking-widest">{delivery.is_scheduled ? 'AGENDADO' : 'AGENDAR'}</span>
+                            </button>
+
+                            <div className="w-px h-4 bg-slate-100 mx-1" />
+
+                            <button 
+                              onClick={() => {
+                                if (showHistoryId === delivery.id) {
+                                  setShowHistoryId(null);
+                                } else {
+                                  setShowHistoryId(delivery.id);
+                                  fetchLogs(delivery.id);
+                                }
+                              }}
+                              className={`p-2 rounded-xl transition-all ${showHistoryId === delivery.id ? 'bg-indigo-600 text-white' : 'hover:bg-slate-50 text-slate-400'}`}
+                              title="Ver histórico"
+                            >
+                              📜
+                            </button>
+
+                            <div className="w-px h-4 bg-slate-100 mx-1" />
+
+                            <button 
+                              onClick={() => handleEdit(delivery)}
+                              className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 hover:text-indigo-600 transition-all"
+                              title="Editar reparto"
+                            >
+                              ✏️
+                            </button>
+
+                            <button 
+                              onClick={() => handleDeleteDelivery(delivery.id)}
+                              className="p-2 hover:bg-rose-50 rounded-xl text-slate-400 hover:text-rose-600 transition-all"
+                              title="Eliminar reparto"
+                            >
+                              🗑️
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    ))}
-                  </div>
+                      
+                      {showHistoryId === delivery.id && (
+                        <div className="mx-6 mb-4 bg-white rounded-2xl border border-slate-100 shadow-inner p-4 animate-fade-in">
+                          <div className="flex items-center justify-between mb-3 border-b border-slate-50 pb-2">
+                            <h5 className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Histórico de Movimientos</h5>
+                            <button onClick={() => setShowHistoryId(null)} className="text-slate-300 hover:text-slate-500 text-xs">✕</button>
+                          </div>
+                          <div className="space-y-3">
+                            {deliveryLogs.length === 0 ? (
+                              <p className="text-[9px] text-slate-400 italic text-center py-2">No hay registros para este reparto</p>
+                            ) : deliveryLogs.map(log => (
+                              <div key={log.id} className="flex items-start gap-3 text-[9px]">
+                                <div className="w-20 shrink-0 text-slate-400 font-medium">
+                                  {new Date(log.created_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                </div>
+                                <div className="shrink-0">
+                                  <span className={`px-2 py-0.5 rounded-md font-black uppercase tracking-tighter ${
+                                    log.action === 'CREACIÓN' ? 'bg-emerald-100 text-emerald-700' :
+                                    log.action === 'EDICIÓN' ? 'bg-blue-100 text-blue-700' :
+                                    log.action === 'AGENDADO' ? 'bg-indigo-100 text-indigo-700' :
+                                    'bg-slate-100 text-slate-600'
+                                  }`}>
+                                    {log.action}
+                                  </span>
+                                </div>
+                                <div className="flex-1">
+                                  <span className="font-bold text-slate-700">{log.user_name}:</span>
+                                  <span className="ml-2 text-slate-500">{log.details || 'Sin detalles adicionales'}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </div>
               </div>
             );
           })}
