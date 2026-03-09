@@ -7,11 +7,12 @@ import SlotGrid from './components/SlotGrid';
 import AdminPanel from './components/AdminPanel';
 import ExpeditionPanel from './components/ExpeditionPanel';
 import SuppliesPanel from './components/SuppliesPanel';
+import DeliveriesPanel from './components/DeliveriesPanel';
 import LiveMapView from './components/LiveMapView';
 import { supabase } from './supabaseClient';
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'slots' | 'admin' | 'expedition' | 'supplies'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'slots' | 'admin' | 'expedition' | 'supplies' | 'deliveries'>('dashboard');
   const [dbStatus, setDbStatus] = useState<{connected: boolean | null, error: string | null}>({
     connected: null,
     error: null
@@ -31,19 +32,33 @@ const App: React.FC = () => {
     try {
       const { data } = await supabase.from('roles').select('permissions').eq('name', roleName).single();
       if (data && data.permissions) {
-        const perms = Array.isArray(data.permissions) ? data.permissions : JSON.parse(data.permissions || '[]');
-        setUserPermissions(perms);
+        let perms = Array.isArray(data.permissions) ? data.permissions : JSON.parse(data.permissions || '[]');
         
-        if (perms.length > 0 && !perms.includes(activeTab)) {
-          if (perms.includes('dashboard')) setActiveTab('dashboard');
-          else if (perms.includes('expedition')) setActiveTab('expedition');
-          else setActiveTab(perms[0] as any);
+        // Asegurar que el nuevo tab de repartos esté disponible para admin y distribución
+        if (roleName === 'admin' || roleName === 'distribución') {
+          if (!perms.includes('deliveries')) perms.push('deliveries');
         }
+
+        setUserPermissions(perms);
       }
     } catch (e) {
       console.error("Error al obtener permisos:", e);
     }
-  }, [activeTab]);
+  }, []); // No dependencies, fetch once
+
+  // Efecto para validar permisos de la pestaña activa
+  useEffect(() => {
+    if (user && userPermissions.length > 0) {
+      const hasAccess = userPermissions.includes(activeTab) || 
+                       (activeTab === 'deliveries' && (user.role === 'admin' || user.role === 'distribución'));
+      
+      if (!hasAccess) {
+        if (userPermissions.includes('dashboard')) setActiveTab('dashboard');
+        else if (userPermissions.includes('expedition')) setActiveTab('expedition');
+        else setActiveTab(userPermissions[0] as any);
+      }
+    }
+  }, [user, userPermissions, activeTab]);
 
   // Efecto para cierre de sesión automático a las 23:59
   useEffect(() => {
@@ -309,6 +324,7 @@ const App: React.FC = () => {
           {activeTab === 'admin' && <AdminPanel user={user} />}
           {activeTab === 'expedition' && <ExpeditionPanel user={user} />}
           {activeTab === 'supplies' && <SuppliesPanel />}
+          {activeTab === 'deliveries' && <DeliveriesPanel user={user} />}
         </div>
       </main>
 
@@ -331,6 +347,11 @@ const App: React.FC = () => {
         {userPermissions.includes('supplies') && (
           <button onClick={() => setActiveTab('supplies')} className={`flex flex-col items-center gap-1 ${activeTab === 'supplies' ? 'text-indigo-400' : 'text-slate-500'}`}>
             <span className="text-xl">🛠️</span>
+          </button>
+        )}
+        {(userPermissions.includes('deliveries') || user.role === 'admin' || user.role === 'distribución') && (
+          <button onClick={() => setActiveTab('deliveries')} className={`flex flex-col items-center gap-1 ${activeTab === 'deliveries' ? 'text-indigo-400' : 'text-slate-500'}`}>
+            <span className="text-xl">📅</span>
           </button>
         )}
         {userPermissions.includes('admin') && (

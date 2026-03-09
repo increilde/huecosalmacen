@@ -3,7 +3,8 @@ export enum UserRole {
   ADMIN = 'admin',
   OPERATOR = 'operator',
   VIEWER = 'viewer',
-  EXPEDITION = 'expedition'
+  EXPEDITION = 'expedition',
+  DISTRIBUTION = 'distribución'
 }
 
 export interface UserProfile {
@@ -115,4 +116,19 @@ export interface CustomerPickup {
   created_at: string;
   accepted_at?: string;
   completed_at?: string;
+}
+
+export interface Delivery {
+  id: string;
+  delivery_date: string;
+  truck_id: string;
+  order_number: string;
+  warehouse_origin: string;
+  delivery_time: 'morning' | 'afternoon';
+  postal_code: string;
+  locality: string;
+  merchandise_type: string;
+  comments?: string;
+  created_by_name?: string;
+  created_at: string;
 }

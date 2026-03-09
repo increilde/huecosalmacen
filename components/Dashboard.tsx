@@ -72,6 +72,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [rtcHistoryDate, setRtcHistoryDate] = useState(new Date().toISOString().split('T')[0]);
   const [rtcHistory, setRtcHistory] = useState<CustomerPickup[]>([]);
   const [loadingRtcHistory, setLoadingRtcHistory] = useState(false);
+
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const [isScreenLocked, setIsScreenLocked] = useState(false);
   const [hasLoadedInitialData, setHasLoadedInitialData] = useState(false);
@@ -1763,6 +1764,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
           </div>
         </div>
       )}
+
     </div>
   );
 };

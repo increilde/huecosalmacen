@@ -33,11 +33,11 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  * 
  * -- 3. Población inicial de roles
  * INSERT INTO roles (name, permissions) VALUES 
- * ('admin', '["dashboard", "slots", "expedition", "supplies", "admin", "users"]'), 
+ * ('admin', '["dashboard", "slots", "expedition", "supplies", "admin", "users", "deliveries"]'), 
  * ('operator', '["dashboard", "slots"]'), 
  * ('expedition', '["expedition"]'), 
  * ('viewer', '["slots"]'),
- * ('distribución', '["dashboard"]'),
+ * ('distribución', '["dashboard", "deliveries"]'),
  * ('carretillero', '["dashboard", "slots"]')
  * ON CONFLICT (name) DO UPDATE SET permissions = EXCLUDED.permissions;
  * 
@@ -91,4 +91,20 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  * 
  * -- 8. Habilitar Realtime (CRÍTICO para notificaciones automáticas)
  * ALTER PUBLICATION supabase_realtime ADD TABLE customer_pickups;
+ * 
+ * -- 9. Tabla de Repartos (Distribución)
+ * CREATE TABLE IF NOT EXISTS deliveries (
+ *     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+ *     truck_id UUID REFERENCES truckers(id) ON DELETE CASCADE,
+ *     order_number TEXT NOT NULL,
+ *     warehouse_origin TEXT NOT NULL,
+ *     delivery_time TEXT CHECK (delivery_time IN ('morning', 'afternoon')),
+ *     postal_code TEXT NOT NULL,
+ *     locality TEXT,
+ *     merchandise_type TEXT,
+ *     comments TEXT,
+ *     delivery_date DATE NOT NULL,
+ *     created_by_name TEXT,
+ *     created_at TIMESTAMPTZ DEFAULT now()
+ * );
  */

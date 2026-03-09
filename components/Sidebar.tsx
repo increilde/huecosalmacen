@@ -4,7 +4,7 @@ import { UserRole } from '../types';
 
 interface SidebarProps {
   activeTab: string;
-  setActiveTab: (tab: 'dashboard' | 'slots' | 'admin' | 'expedition' | 'supplies') => void;
+  setActiveTab: (tab: 'dashboard' | 'slots' | 'admin' | 'expedition' | 'supplies' | 'deliveries') => void;
   userRole: string;
   permissions: string[];
   onLogout: () => void;
@@ -15,12 +15,17 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole, pe
     { id: 'dashboard', label: 'Dashboard Captura', icon: '📊' },
     { id: 'slots', label: 'Huecos Almacén', icon: '📦' },
     { id: 'expedition', label: 'Control Muelles', icon: '🚛' },
+    { id: 'deliveries', label: 'Repartos', icon: '📅' },
     { id: 'supplies', label: 'Suministros', icon: '🛠️' },
     { id: 'admin', label: 'Administración', icon: '⚙️' },
   ];
 
   // Filtrar items según permisos (si no hay permisos definidos, se muestra vacío o admin ve todo por seguridad)
-  const menuItems = allItems.filter(item => permissions.includes(item.id));
+  const menuItems = allItems.filter(item => {
+    if (userRole === 'admin') return true;
+    if (userRole === 'distribución' && item.id === 'deliveries') return true;
+    return permissions.includes(item.id);
+  });
 
   return (
     <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col border-r border-slate-800">
