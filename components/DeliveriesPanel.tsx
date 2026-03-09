@@ -125,8 +125,8 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
   };
 
   const handleCreateDelivery = async () => {
-    if (!newDelivery.truck_id || !newDelivery.order_number || !newDelivery.postal_code) {
-      setMessage({ type: 'error', text: 'Faltan campos obligatorios' });
+    if (!newDelivery.truck_id || !newDelivery.order_number) {
+      setMessage({ type: 'error', text: 'Faltan campos obligatorios (Camión y Pedido)' });
       return;
     }
     setLoading(true);
@@ -322,21 +322,33 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
               </div>
 
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Código Postal</label>
-                <div className="flex gap-3 items-center">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Código Postal (Opcional)</label>
+                <input 
+                  type="text" 
+                  value={newDelivery.postal_code || ''}
+                  onChange={e => handlePostalCodeChange(e.target.value)}
+                  placeholder="Ej: 28001"
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 text-sm font-bold outline-none focus:border-indigo-500 transition-all"
+                  tabIndex={2}
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Población / Localidad</label>
+                <div className="relative">
                   <input 
                     type="text" 
-                    value={newDelivery.postal_code || ''}
-                    onChange={e => handlePostalCodeChange(e.target.value)}
-                    placeholder="28001"
-                    className="flex-1 bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 text-sm font-bold outline-none focus:border-indigo-500 transition-all"
-                    tabIndex={2}
+                    value={postalCodeLocality}
+                    onChange={e => setPostalCodeLocality(e.target.value)}
+                    placeholder="Ej: Madrid"
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 text-sm font-bold outline-none focus:border-indigo-500 transition-all"
+                    tabIndex={2.5}
                   />
-                    {postalCodeLocality && (
-                      <div className="bg-indigo-50 text-indigo-600 px-4 py-4 rounded-2xl border border-indigo-100 font-black text-[10px] uppercase animate-fade-in">
-                        {isSearchingLocality ? 'Buscando...' : postalCodeLocality}
-                      </div>
-                    )}
+                  {isSearchingLocality && (
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                      <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                    </div>
+                  )}
                 </div>
               </div>
 

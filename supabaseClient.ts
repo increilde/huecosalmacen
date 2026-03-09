@@ -93,13 +93,15 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  * ALTER PUBLICATION supabase_realtime ADD TABLE customer_pickups;
  * 
  * -- 9. Tabla de Repartos (Distribución)
+ * ALTER TABLE deliveries ALTER COLUMN postal_code DROP NOT NULL;
+ * 
  * CREATE TABLE IF NOT EXISTS deliveries (
  *     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
  *     truck_id UUID REFERENCES truckers(id) ON DELETE CASCADE,
  *     order_number TEXT NOT NULL,
  *     warehouse_origin TEXT NOT NULL,
  *     delivery_time TEXT CHECK (delivery_time IN ('morning', 'afternoon')),
- *     postal_code TEXT NOT NULL,
+ *     postal_code TEXT,
  *     locality TEXT,
  *     merchandise_type TEXT,
  *     comments TEXT,
