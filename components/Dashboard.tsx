@@ -250,10 +250,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     }
   }, [playAlertBeep, audioUnlocked, activePickups, user.role, speak]);
 
-  const announceLocation = React.useCallback((operatorName: string, cartId: string) => {
-    speak(`El operario ${operatorName} ha ubicado el carro ${cartId}.`);
-  }, [speak]);
-
   const announcePickupEvent = React.useCallback((text: string) => {
     speak(text);
   }, [speak]);
@@ -1023,9 +1019,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         }]);
 
       if (logError) throw logError;
-
-      // Disparar locución inmediatamente tras el éxito del guardado
-      announceLocation(user.full_name, finalCartId);
 
       setMessage({ type: 'success', text: `UBICACIÓN ${slotCode} ACTUALIZADA AL ${newQuantity}%` });
       setCartId('');
