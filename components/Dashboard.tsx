@@ -68,6 +68,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [lastPickupId, setLastPickupId] = useState<string | null>(null);
   const [distribTab, setDistribTab] = useState<'active' | 'finished'>('active');
   const [finishedPickups, setFinishedPickups] = useState<CustomerPickup[]>([]);
+  const [showRTCAdminModal, setShowRTCAdminModal] = useState(false);
+  const [rtcHistoryDate, setRtcHistoryDate] = useState(new Date().toISOString().split('T')[0]);
+  const [rtcHistory, setRtcHistory] = useState<CustomerPickup[]>([]);
+  const [loadingRtcHistory, setLoadingRtcHistory] = useState(false);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const [isScreenLocked, setIsScreenLocked] = useState(false);
   const [hasLoadedInitialData, setHasLoadedInitialData] = useState(false);
@@ -984,6 +988,32 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     fetchMyLogs(newDate);
   };
 
+  const fetchRtcHistory = async (date: string) => {
+    setLoadingRtcHistory(true);
+    try {
+      const { data, error } = await supabase
+        .from('customer_pickups')
+        .select('*')
+        .eq('status', 'completed')
+        .gte('created_at', `${date}T00:00:00`)
+        .lte('created_at', `${date}T23:59:59`)
+        .order('completed_at', { ascending: false });
+
+      if (error) throw error;
+      setRtcHistory(data || []);
+    } catch (err) {
+      console.error("Error fetching RTC history:", err);
+    } finally {
+      setLoadingRtcHistory(false);
+    }
+  };
+
+  const handleRtcDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newDate = e.target.value;
+    setRtcHistoryDate(newDate);
+    fetchRtcHistory(newDate);
+  };
+
   const handleFinalSave = async (newQuantity: number) => {
     if (!slotCode || !selectedSize) {
       setMessage({ type: 'error', text: 'Faltan datos para guardar' });
@@ -1125,12 +1155,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                     🔊 AUDIO OK
                   </button>
                 )}
-                {user.role === 'carretillero' && (
+                {(user.role === 'carretillero' || user.role === 'admin') && (
                   <button 
-                    onClick={() => setShowPickupsModal(true)}
+                    onClick={() => user.role === 'admin' ? setShowRTCAdminModal(true) : setShowPickupsModal(true)}
                     className={`relative px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-all active:scale-95 ${waitingPickups.length > 0 ? 'bg-amber-500 text-white border-amber-600 animate-pulse' : 'bg-slate-50 text-slate-400 border-slate-100'}`}
                   >
-                    Retira Cliente
+                    {user.role === 'admin' ? 'RTC' : 'Retira Cliente'}
                     {waitingPickups.length > 0 && (
                       <span className="absolute -top-2 -right-2 bg-rose-600 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shadow-lg">
                         {waitingPickups.length}
@@ -1609,6 +1639,122 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
                 <button 
                   onClick={() => setShowPickupsModal(false)}
+                  className="mt-8 shrink-0 w-full bg-slate-900 text-white py-4 rounded-2xl font-bold uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all"
+                >
+                  Cerrar
+                </button>
+             </div>
+          </div>
+        </div>
+      )}
+
+      {showRTCAdminModal && (
+        <div className="fixed inset-0 z-[200] bg-slate-900/95 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-[3rem] p-8 shadow-2xl flex flex-col max-h-[85vh] animate-fade-in relative overflow-hidden">
+             <div className="absolute -right-8 -top-8 text-slate-50 text-9xl font-medium opacity-10 pointer-events-none">📦</div>
+             <div className="relative z-10 flex flex-col h-full min-h-0">
+                <div className="text-center mb-6 shrink-0">
+                  <h3 className="text-xl font-semibold text-slate-800 uppercase tracking-tighter">RTC - Admin</h3>
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">Gestión de Retira Cliente</p>
+                </div>
+
+                <div className="flex bg-slate-100 p-1 rounded-2xl mb-6 shrink-0">
+                  <button 
+                    onClick={() => setDistribTab('active')}
+                    className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${distribTab === 'active' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}
+                  >
+                    Nuevo / Activos
+                  </button>
+                  <button 
+                    onClick={() => { setDistribTab('finished'); fetchRtcHistory(rtcHistoryDate); }}
+                    className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${distribTab === 'finished' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}
+                  >
+                    Historial
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto pr-1 min-h-0">
+                  {distribTab === 'active' ? (
+                    <div className="space-y-6">
+                      <div className="space-y-4">
+                        <div className="relative">
+                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Número de Pedido</label>
+                          <input 
+                            type="text" 
+                            value={orderNumber}
+                            onChange={e => setOrderNumber(e.target.value)}
+                            placeholder="EJ: 123456"
+                            className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 focus:border-indigo-500 font-black text-xl outline-none uppercase transition-all text-center"
+                          />
+                        </div>
+                        <button 
+                          onClick={handleCreatePickup}
+                          disabled={loading || !orderNumber.trim()}
+                          className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-xl uppercase tracking-widest text-[10px] active:scale-95 transition-all disabled:opacity-50"
+                        >
+                          {loading ? 'ENVIANDO...' : 'ENVIAR AL CARRETILLERO'}
+                        </button>
+                      </div>
+
+                      <div className="pt-4 border-t border-slate-100">
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-4">Pedidos en Curso ({activeToday.length})</p>
+                        <div className="space-y-2">
+                          {activeToday.length === 0 ? (
+                            <p className="text-center py-4 text-slate-300 font-black text-[9px] uppercase tracking-widest">No hay pedidos hoy</p>
+                          ) : activeToday.map(pickup => (
+                            <div key={pickup.id} className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex items-center justify-between">
+                              <div>
+                                <p className="text-sm font-black text-slate-800 tracking-tighter">#{pickup.order_number}</p>
+                                <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">
+                                  {pickup.status === 'waiting' ? '⏳ Esperando' : `🚜 ${pickup.operator_name || 'En curso'}`}
+                                </p>
+                              </div>
+                              <span className="text-[8px] font-black text-slate-400">{getWaitTime(pickup.created_at)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2 bg-slate-50 px-4 py-3 rounded-2xl border border-slate-100 mb-4">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase">Fecha:</span>
+                        <input 
+                          type="date" 
+                          value={rtcHistoryDate} 
+                          onChange={handleRtcDateChange}
+                          className="bg-transparent text-[11px] font-bold text-slate-700 outline-none flex-1"
+                        />
+                      </div>
+
+                      {loadingRtcHistory ? (
+                        <div className="py-10 text-center animate-pulse">
+                          <p className="text-[9px] font-semibold text-slate-300 uppercase tracking-widest">Cargando historial...</p>
+                        </div>
+                      ) : rtcHistory.length === 0 ? (
+                        <div className="py-10 text-center">
+                          <p className="text-[9px] font-semibold text-slate-300 uppercase tracking-widest">Sin registros este día</p>
+                        </div>
+                      ) : rtcHistory.map(pickup => (
+                        <div key={pickup.id} className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                          <div className="flex justify-between items-start mb-1">
+                            <span className="text-sm font-black text-slate-800 tracking-tighter">#{pickup.order_number}</span>
+                            <span className="text-[7px] font-black text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100 uppercase">Completado</span>
+                          </div>
+                          <div className="flex justify-between items-center mt-2">
+                            <span className="text-[8px] font-bold text-slate-400 uppercase">{pickup.operator_name || 'Operario'}</span>
+                            <span className="text-[8px] font-bold text-slate-400 uppercase">
+                              {new Date(pickup.completed_at!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <button 
+                  onClick={() => setShowRTCAdminModal(false)}
                   className="mt-8 shrink-0 w-full bg-slate-900 text-white py-4 rounded-2xl font-bold uppercase text-[10px] tracking-widest shadow-xl active:scale-95 transition-all"
                 >
                   Cerrar
