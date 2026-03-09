@@ -260,36 +260,36 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
   };
 
   return (
-    <div className="p-4 md:p-6 w-full animate-fade-in">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 max-w-7xl mx-auto">
+    <div className="p-2 md:p-4 w-full animate-fade-in">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-6 max-w-[1600px] mx-auto">
         <div>
-          <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Agenda de Repartos</h2>
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Distribución y Logística</p>
+          <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Agenda de Repartos</h2>
+          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Distribución y Logística</p>
         </div>
         
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-sm">
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Buscar:</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm">
+            <span className="text-[9px] font-bold text-slate-400 uppercase">Buscar:</span>
             <input 
               type="text" 
               placeholder="Camión..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="bg-transparent text-xs font-bold text-slate-700 outline-none w-24 md:w-40"
+              className="bg-transparent text-[10px] font-bold text-slate-700 outline-none w-24 md:w-32"
             />
           </div>
-          <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-sm">
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Fecha:</span>
+          <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm">
+            <span className="text-[9px] font-bold text-slate-400 uppercase">Fecha:</span>
             <input 
               type="date" 
               value={selectedDate} 
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="bg-transparent text-xs font-bold text-slate-700 outline-none"
+              className="bg-transparent text-[10px] font-bold text-slate-700 outline-none"
             />
           </div>
           <button 
             onClick={() => setView(view === 'agenda' ? 'create' : 'agenda')}
-            className="bg-indigo-600 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-100 active:scale-95 transition-all"
+            className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-lg shadow-indigo-100 active:scale-95 transition-all"
           >
             {view === 'agenda' ? 'Nuevo Reparto' : 'Ver Agenda'}
           </button>
@@ -478,57 +478,57 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                       </div>
                     ) : truckDeliveries.map(delivery => (
                       <React.Fragment key={delivery.id}>
-                        <div className="bg-slate-50 p-2 px-6 rounded-2xl border border-slate-100 hover:border-indigo-200 transition-all group flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-6 flex-1">
-                          <div className="w-20 shrink-0">
-                            <p className="text-sm font-black text-slate-800 tracking-tighter">#{delivery.order_number}</p>
-                            <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">
+                        <div className="bg-slate-50 p-1.5 px-4 rounded-xl border border-slate-100 hover:border-indigo-200 transition-all group flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-4 flex-1">
+                          <div className="w-16 shrink-0">
+                            <p className="text-xs font-black text-slate-800 tracking-tighter">#{delivery.order_number}</p>
+                            <p className="text-[8px] font-black text-indigo-600 uppercase tracking-widest">
                               {WAREHOUSES.find(w => w.id === delivery.warehouse_origin)?.label || delivery.warehouse_origin}
                             </p>
                           </div>
 
-                          <div className="h-8 w-px bg-slate-200 shrink-0" />
+                          <div className="h-6 w-px bg-slate-200 shrink-0" />
 
-                          <div className="flex-1 flex items-center gap-6">
-                            <div className="flex items-center gap-3 min-w-[180px]">
-                              <span className="text-sm">📍</span>
+                          <div className="flex-1 flex items-center gap-4">
+                            <div className="flex items-center gap-2 min-w-[140px]">
+                              <span className="text-xs">📍</span>
                               <div>
-                                <p className="text-[10px] font-bold text-slate-700 uppercase">
+                                <p className="text-[9px] font-bold text-slate-700 uppercase">
                                   {delivery.postal_code} - {delivery.locality}
                                 </p>
                                 {delivery.created_by_name && (
-                                  <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">Por: {delivery.created_by_name}</p>
+                                  <p className="text-[6px] font-black text-slate-400 uppercase tracking-widest">Por: {delivery.created_by_name}</p>
                                 )}
                               </div>
                             </div>
-                            <div className="flex items-center gap-3 min-w-[140px]">
-                              <span className="text-sm">📦</span>
-                              <p className="text-[10px] font-bold text-slate-700 uppercase">{delivery.merchandise_type}</p>
+                            <div className="flex items-center gap-2 min-w-[110px]">
+                              <span className="text-xs">📦</span>
+                              <p className="text-[9px] font-bold text-slate-700 uppercase truncate max-w-[120px]">{delivery.merchandise_type}</p>
                             </div>
                             {delivery.comments && (
-                              <div className="hidden xl:block flex-1">
-                                <p className="text-[9px] text-slate-900 font-bold italic">"{delivery.comments}"</p>
+                              <div className="hidden xl:block flex-1 min-w-0">
+                                <p className="text-[8px] text-slate-900 font-bold italic truncate">"{delivery.comments}"</p>
                               </div>
                             )}
                           </div>
                         </div>
 
                         <div className="flex items-center gap-2 shrink-0">
-                          <span className={`text-[8px] font-black px-4 py-2 rounded-xl uppercase shadow-sm ${delivery.delivery_time === 'morning' ? 'bg-amber-100 text-amber-700 border border-amber-200' : 'bg-indigo-100 text-indigo-700 border border-indigo-200'}`}>
+                          <span className={`text-[7px] font-black px-2 py-1.5 rounded-lg uppercase shadow-sm ${delivery.delivery_time === 'morning' ? 'bg-amber-100 text-amber-700 border border-amber-200' : 'bg-indigo-100 text-indigo-700 border border-indigo-200'}`}>
                             {delivery.delivery_time === 'morning' ? 'MAÑANA' : 'TARDE'}
                           </span>
 
-                          <div className="flex items-center gap-1 bg-white p-1 rounded-2xl border border-slate-100 shadow-sm">
+                          <div className="flex items-center gap-0.5 bg-white p-0.5 rounded-xl border border-slate-100 shadow-sm">
                             <button 
                               onClick={() => toggleScheduled(delivery)}
-                              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all ${delivery.is_scheduled ? 'bg-emerald-500 text-white shadow-md shadow-emerald-100' : 'hover:bg-slate-50 text-slate-400'}`}
+                              className={`flex items-center gap-1.5 px-2 py-1 rounded-lg transition-all ${delivery.is_scheduled ? 'bg-emerald-500 text-white shadow-md shadow-emerald-100' : 'hover:bg-slate-50 text-slate-400'}`}
                               title={delivery.is_scheduled ? 'Desmarcar agendado' : 'Marcar como agendado'}
                             >
-                              <span className="text-[10px]">{delivery.is_scheduled ? '✓' : '📅'}</span>
-                              <span className="text-[9px] font-black uppercase tracking-widest">{delivery.is_scheduled ? 'AGENDADO' : 'AGENDAR'}</span>
+                              <span className="text-[9px]">{delivery.is_scheduled ? '✓' : '📅'}</span>
+                              <span className="text-[8px] font-black uppercase tracking-widest">{delivery.is_scheduled ? 'AGENDADO' : 'AGENDAR'}</span>
                             </button>
 
-                            <div className="w-px h-4 bg-slate-100 mx-1" />
+                            <div className="w-px h-3 bg-slate-100 mx-0.5" />
 
                             <button 
                               onClick={() => {
@@ -539,28 +539,26 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                                   fetchLogs(delivery.id);
                                 }
                               }}
-                              className={`p-2 rounded-xl transition-all ${showHistoryId === delivery.id ? 'bg-indigo-600 text-white' : 'hover:bg-slate-50 text-slate-400'}`}
+                              className={`p-1.5 rounded-lg transition-all ${showHistoryId === delivery.id ? 'bg-indigo-600 text-white' : 'hover:bg-slate-50 text-slate-400'}`}
                               title="Ver histórico"
                             >
-                              📜
+                              <span className="text-xs">📜</span>
                             </button>
-
-                            <div className="w-px h-4 bg-slate-100 mx-1" />
 
                             <button 
                               onClick={() => handleEdit(delivery)}
-                              className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 hover:text-indigo-600 transition-all"
+                              className="p-1.5 hover:bg-slate-50 rounded-lg text-slate-400 hover:text-indigo-600 transition-all"
                               title="Editar reparto"
                             >
-                              ✏️
+                              <span className="text-xs">✏️</span>
                             </button>
 
                             <button 
                               onClick={() => handleDeleteDelivery(delivery.id)}
-                              className="p-2 hover:bg-rose-50 rounded-xl text-slate-400 hover:text-rose-600 transition-all"
+                              className="p-1.5 hover:bg-rose-50 rounded-lg text-slate-400 hover:text-rose-600 transition-all"
                               title="Eliminar reparto"
                             >
-                              🗑️
+                              <span className="text-xs">🗑️</span>
                             </button>
                           </div>
                         </div>
