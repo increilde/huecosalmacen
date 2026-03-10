@@ -33,7 +33,7 @@ const WAREHOUSES = [
   { id: '73', label: '73' }
 ];
 
-const ZONES = ['GRANADA', 'COSTA', 'ANTEQUERA', 'ALMERÍA'];
+const ZONES = ['SIN ZONA', 'GRANADA', 'COSTA', 'ANTEQUERA', 'ALMERÍA'];
 
 const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
@@ -47,6 +47,10 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showHistoryId, setShowHistoryId] = useState<string | null>(null);
   const [deliveryLogs, setDeliveryLogs] = useState<DeliveryLog[]>([]);
+  const [showZoneModal, setShowZoneModal] = useState(false);
+  const [pendingZoneTruckId, setPendingZoneTruckId] = useState<string | null>(null);
+  const [pendingDeliveryId, setPendingDeliveryId] = useState<string | null>(null);
+  const [isCreatingAfterZone, setIsCreatingAfterZone] = useState(false);
   
   const [newDelivery, setNewDelivery] = useState<Partial<Delivery>>({
     warehouse_origin: '3',
@@ -101,6 +105,34 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
     }
   };
 
+  const handleAssignZoneAndSchedule = async (zone: string) => {
+    if (!pendingZoneTruckId) return;
+    
+    try {
+      // 1. Asignar zona al camión
+      await handleUpdateTruckZone(pendingZoneTruckId, zone);
+      
+      // 2. Si venimos del formulario de creación
+      if (isCreatingAfterZone) {
+        await handleCreateDelivery();
+        setIsCreatingAfterZone(false);
+      } 
+      // 3. Si venimos del botón "Agendar" de la agenda
+      else if (pendingDeliveryId) {
+        const delivery = deliveries.find(d => d.id === pendingDeliveryId);
+        if (delivery) {
+          await toggleScheduled(delivery, true);
+        }
+      }
+      
+      setShowZoneModal(false);
+      setPendingZoneTruckId(null);
+      setPendingDeliveryId(null);
+    } catch (err) {
+      console.error("Error in handleAssignZoneAndSchedule:", err);
+    }
+  };
+
   const fetchDeliveries = async (date: string) => {
     setLoading(true);
     try {
@@ -152,6 +184,18 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
       setMessage({ type: 'error', text: 'Faltan campos obligatorios (Camión y Pedido)' });
       return;
     }
+
+    // Si el camión no tiene zona y no estamos ya en el proceso post-modal, mostrar modal
+    const truck = trucks.find(t => t.id === newDelivery.truck_id);
+    const hasNoZone = !truck?.zone || truck.zone.trim() === '' || truck.zone === 'SIN ZONA';
+    
+    if (truck && hasNoZone && !isCreatingAfterZone) {
+      setPendingZoneTruckId(newDelivery.truck_id);
+      setIsCreatingAfterZone(true);
+      setShowZoneModal(true);
+      return;
+    }
+
     setLoading(true);
     try {
       const payload = {
@@ -211,23 +255,62 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
     setView('create');
   };
 
-  const toggleScheduled = async (delivery: Delivery) => {
+  const toggleScheduled = async (delivery: Delivery, forceValue?: boolean) => {
     try {
-      const newStatus = !delivery.is_scheduled;
+      const newStatus = forceValue !== undefined ? forceValue : !delivery.is_scheduled;
+      
+      // Si estamos agendando y el camión no tiene zona (o es SIN ZONA), pedirla
+      if (newStatus && !delivery.is_scheduled && forceValue === undefined) {
+        const truck = trucks.find(t => t.id === delivery.truck_id);
+        const hasNoZone = !truck?.zone || truck.zone.trim() === '' || truck.zone === 'SIN ZONA';
+        
+        if (truck && hasNoZone) {
+          setPendingZoneTruckId(delivery.truck_id);
+          setPendingDeliveryId(delivery.id);
+          setShowZoneModal(true);
+          return;
+        }
+      }
+
       const { error } = await supabase
         .from('deliveries')
-        .update({ is_scheduled: newStatus })
+        .update({ is_scheduled: newStatus, at_dock: false })
         .eq('id', delivery.id);
       
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase error toggling scheduled:", error);
+        setMessage({ type: 'error', text: 'Error al actualizar el estado del pedido' });
+        return;
+      }
       
       await addLog(delivery.id, newStatus ? 'AGENDADO' : 'DESAGENDADO');
       
       setDeliveries(prev => prev.map(d => 
-        d.id === delivery.id ? { ...d, is_scheduled: newStatus } : d
+        d.id === delivery.id ? { ...d, is_scheduled: newStatus, at_dock: false } : d
       ));
     } catch (err) {
       console.error("Error toggling scheduled status:", err);
+      setMessage({ type: 'error', text: 'Error de conexión al agendar' });
+    }
+  };
+
+  const toggleAtDock = async (delivery: Delivery) => {
+    try {
+      const newStatus = !delivery.at_dock;
+      const { error } = await supabase
+        .from('deliveries')
+        .update({ at_dock: newStatus })
+        .eq('id', delivery.id);
+      
+      if (error) throw error;
+      
+      await addLog(delivery.id, newStatus ? 'PASADO A MUELLE' : 'QUITADO DE MUELLE');
+      
+      setDeliveries(prev => prev.map(d => 
+        d.id === delivery.id ? { ...d, at_dock: newStatus } : d
+      ));
+    } catch (err) {
+      console.error("Error toggling dock status:", err);
     }
   };
 
@@ -542,6 +625,23 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                         ))}
                       </select>
                     </div>
+
+                    <div className="h-6 w-px bg-white/20" />
+
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">AGENDADOS:</span>
+                        <span className="text-[11px] font-black text-white">
+                          {truckDeliveries.filter(d => d.is_scheduled).length}/{truckDeliveries.length}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[9px] font-black text-blue-400 uppercase tracking-widest">EN MUELLE:</span>
+                        <span className="text-[11px] font-black text-white">
+                          {truckDeliveries.filter(d => d.at_dock).length}/{truckDeliveries.length}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                   <span className="bg-white/10 text-white/80 px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest">
                     {truckDeliveries.length} REPARTOS
@@ -556,31 +656,33 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                     ) : truckDeliveries.map(delivery => (
                       <React.Fragment key={delivery.id}>
                         <div className={`p-2 px-6 rounded-xl border transition-all group flex items-center justify-between gap-3 ${
-                          delivery.is_scheduled 
-                            ? 'bg-emerald-50 border-emerald-100' 
-                            : 'bg-slate-50 border-slate-100 hover:border-indigo-200'
+                          delivery.at_dock
+                            ? 'bg-blue-500 border-blue-600 text-white shadow-lg shadow-blue-100'
+                            : delivery.is_scheduled 
+                              ? 'bg-emerald-200 border-emerald-300' 
+                              : 'bg-slate-50 border-slate-100 hover:border-indigo-200'
                         }`}>
                         <div className="flex items-center gap-8 flex-1">
                           <div className="w-28 shrink-0">
-                            <p className="text-base font-black text-slate-800 tracking-tighter">#{delivery.order_number}</p>
-                            <p className="text-[11px] font-black text-indigo-600 uppercase tracking-widest">
+                            <p className={`text-base font-black tracking-tighter ${delivery.at_dock ? 'text-white' : 'text-slate-800'}`}>{delivery.order_number}</p>
+                            <p className={`text-[11px] font-black uppercase tracking-widest ${delivery.at_dock ? 'text-blue-100' : 'text-indigo-600'}`}>
                               {WAREHOUSES.find(w => w.id === delivery.warehouse_origin)?.label || delivery.warehouse_origin}
                             </p>
                           </div>
 
-                          <div className="h-12 w-px bg-slate-200 shrink-0" />
+                          <div className={`h-12 w-px shrink-0 ${delivery.at_dock ? 'bg-white/20' : 'bg-slate-200'}`} />
 
                           <div className="flex-1 flex flex-col justify-center gap-2 py-1">
                             <div className="flex flex-wrap items-start gap-x-8 gap-y-1">
                               <div className="flex items-center gap-2 min-w-[180px]">
                                 <span className="text-lg">📍</span>
-                                <p className="text-[12px] font-bold text-slate-700 uppercase leading-tight">
+                                <p className={`text-[12px] font-bold uppercase leading-tight ${delivery.at_dock ? 'text-white' : 'text-slate-700'}`}>
                                   {delivery.postal_code} - {delivery.locality}
                                 </p>
                               </div>
                               <div className="flex items-center gap-2 flex-1 min-w-[150px]">
                                 <span className="text-lg">📦</span>
-                                <p className="text-[12px] font-bold text-slate-700 uppercase leading-tight break-words">
+                                <p className={`text-[12px] font-bold uppercase leading-tight break-words ${delivery.at_dock ? 'text-white' : 'text-slate-700'}`}>
                                   {delivery.merchandise_type}
                                 </p>
                               </div>
@@ -588,11 +690,11 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                             
                             <div className="flex flex-col gap-1">
                               {delivery.created_by_name && (
-                                <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Por: {delivery.created_by_name}</p>
+                                <p className={`text-[8px] font-black uppercase tracking-widest ${delivery.at_dock ? 'text-blue-100' : 'text-slate-400'}`}>Por: {delivery.created_by_name}</p>
                               )}
                               {delivery.comments && (
-                                <div className="bg-slate-100/80 px-3 py-1.5 rounded-lg border-l-4 border-indigo-500 w-full mt-0.5">
-                                  <p className="text-[11px] text-slate-900 font-bold italic leading-snug break-words">
+                                <div className={`px-3 py-1.5 rounded-lg border-l-4 w-full mt-0.5 ${delivery.at_dock ? 'bg-white/10 border-white' : 'bg-slate-100/80 border-indigo-500'}`}>
+                                  <p className={`text-[11px] font-bold italic leading-snug break-words ${delivery.at_dock ? 'text-white' : 'text-slate-900'}`}>
                                     {delivery.comments}
                                   </p>
                                 </div>
@@ -606,48 +708,67 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                             {delivery.delivery_time === 'morning' ? 'MAÑANA' : 'TARDE'}
                           </span>
 
-                          <div className="flex items-center gap-0.5 bg-white p-0.5 rounded-xl border border-slate-100 shadow-sm">
-                            <button 
-                              onClick={() => toggleScheduled(delivery)}
-                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${delivery.is_scheduled ? 'bg-emerald-500 text-white shadow-md shadow-emerald-100' : 'hover:bg-slate-50 text-slate-400'}`}
-                              title={delivery.is_scheduled ? 'Desmarcar agendado' : 'Marcar como agendado'}
-                            >
-                              <span className="text-xs">{delivery.is_scheduled ? '✓' : '📅'}</span>
-                              <span className="text-[9px] font-black uppercase tracking-widest">{delivery.is_scheduled ? 'AGENDADO' : 'AGENDAR'}</span>
-                            </button>
+                          <div className="flex flex-col gap-1 items-center">
+                            <div className="flex items-center gap-0.5 bg-white p-0.5 rounded-xl border border-slate-100 shadow-sm">
+                              <button 
+                                onClick={() => {
+                                  if (showHistoryId === delivery.id) {
+                                    setShowHistoryId(null);
+                                  } else {
+                                    setShowHistoryId(delivery.id);
+                                    fetchLogs(delivery.id);
+                                  }
+                                }}
+                                className={`p-1.5 rounded-lg transition-all ${showHistoryId === delivery.id ? 'bg-indigo-600 text-white' : 'hover:bg-slate-50 text-slate-400'}`}
+                                title="Ver histórico"
+                              >
+                                <span className="text-xs">📜</span>
+                              </button>
 
-                            <div className="w-px h-4 bg-slate-100 mx-0.5" />
+                              <button 
+                                onClick={() => handleEdit(delivery)}
+                                className="p-1.5 hover:bg-slate-50 rounded-lg text-slate-400 hover:text-indigo-600 transition-all"
+                                title="Editar reparto"
+                              >
+                                <span className="text-xs">✏️</span>
+                              </button>
 
-                            <button 
-                              onClick={() => {
-                                if (showHistoryId === delivery.id) {
-                                  setShowHistoryId(null);
-                                } else {
-                                  setShowHistoryId(delivery.id);
-                                  fetchLogs(delivery.id);
-                                }
-                              }}
-                              className={`p-1.5 rounded-lg transition-all ${showHistoryId === delivery.id ? 'bg-indigo-600 text-white' : 'hover:bg-slate-50 text-slate-400'}`}
-                              title="Ver histórico"
-                            >
-                              <span className="text-xs">📜</span>
-                            </button>
+                              <button 
+                                onClick={() => handleDeleteDelivery(delivery.id)}
+                                className="p-1.5 hover:bg-rose-50 rounded-lg text-slate-400 hover:text-rose-600 transition-all"
+                                title="Eliminar reparto"
+                              >
+                                <span className="text-xs">🗑️</span>
+                              </button>
+                            </div>
 
-                            <button 
-                              onClick={() => handleEdit(delivery)}
-                              className="p-1.5 hover:bg-slate-50 rounded-lg text-slate-400 hover:text-indigo-600 transition-all"
-                              title="Editar reparto"
-                            >
-                              <span className="text-xs">✏️</span>
-                            </button>
-
-                            <button 
-                              onClick={() => handleDeleteDelivery(delivery.id)}
-                              className="p-1.5 hover:bg-rose-50 rounded-lg text-slate-400 hover:text-rose-600 transition-all"
-                              title="Eliminar reparto"
-                            >
-                              <span className="text-xs">🗑️</span>
-                            </button>
+                            {delivery.at_dock ? (
+                              <div className="bg-white text-blue-500 px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-1.5 border border-blue-100">
+                                <span className="text-xs">⚓</span>
+                                <span className="text-[9px] font-black uppercase tracking-widest">EN MUELLE DE CARGA</span>
+                                <button 
+                                  onClick={() => toggleAtDock(delivery)}
+                                  className="ml-1 text-blue-300 hover:text-blue-500"
+                                  title="Quitar de muelle"
+                                >✕</button>
+                              </div>
+                            ) : delivery.is_scheduled ? (
+                              <button 
+                                onClick={() => toggleAtDock(delivery)}
+                                className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg shadow-md hover:bg-indigo-700 transition-all flex items-center gap-1.5 w-full justify-center"
+                              >
+                                <span className="text-xs">📦</span>
+                                <span className="text-[9px] font-black uppercase tracking-widest">PASAR A MUELLE</span>
+                              </button>
+                            ) : (
+                              <button 
+                                onClick={() => toggleScheduled(delivery)}
+                                className="bg-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-emerald-500 hover:text-white transition-all flex items-center gap-1.5 w-full justify-center"
+                              >
+                                <span className="text-xs">📅</span>
+                                <span className="text-[9px] font-black uppercase tracking-widest">AGENDAR</span>
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -691,6 +812,50 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Modal de Selección de Zona */}
+      {showZoneModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2rem] p-8 max-w-md w-full shadow-2xl animate-scale-in">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
+                📍
+              </div>
+              <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Asignar Zona al Camión</h3>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">
+                Es el primer pedido agendado para este camión. Selecciona su ruta.
+              </p>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-3 mb-8">
+              {ZONES.map(zone => (
+                <button
+                  key={zone}
+                  onClick={() => handleAssignZoneAndSchedule(zone)}
+                  className={`p-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 border-2 ${
+                    zone === 'SIN ZONA'
+                      ? 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200'
+                      : 'bg-slate-50 hover:bg-indigo-600 hover:text-white border-slate-100 hover:border-indigo-600'
+                  }`}
+                >
+                  {zone}
+                </button>
+              ))}
+            </div>
+            
+            <button 
+              onClick={() => {
+                setShowZoneModal(false);
+                setPendingZoneTruckId(null);
+                setPendingDeliveryId(null);
+              }}
+              className="w-full py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-600 transition-all"
+            >
+              CANCELAR
+            </button>
+          </div>
         </div>
       )}
     </div>

@@ -94,6 +94,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  * 
  * -- 9. Tabla de Repartos (Distribución)
  * ALTER TABLE truckers ADD COLUMN IF NOT EXISTS zone TEXT;
+ * ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS at_dock BOOLEAN DEFAULT FALSE;
  * ALTER TABLE deliveries ALTER COLUMN postal_code DROP NOT NULL;
  * 
  * CREATE TABLE IF NOT EXISTS deliveries (
@@ -109,6 +110,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  *     delivery_date DATE NOT NULL,
  *     created_by_name TEXT,
  *     is_scheduled BOOLEAN DEFAULT FALSE,
+ *     at_dock BOOLEAN DEFAULT FALSE,
  *     created_at TIMESTAMPTZ DEFAULT now()
  * );
  *

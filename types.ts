@@ -132,6 +132,7 @@ export interface Delivery {
   comments?: string;
   created_by_name?: string;
   is_scheduled?: boolean;
+  at_dock?: boolean;
   created_at: string;
 }
 
