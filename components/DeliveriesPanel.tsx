@@ -33,7 +33,7 @@ const WAREHOUSES = [
   { id: '73', label: '73' }
 ];
 
-const ZONES = ['SIN ZONA', 'GRANADA', 'COSTA', 'ANTEQUERA', 'ALMERÍA'];
+const ZONES = ['GRANADA', 'COSTA 1', 'COSTA 2', 'ANTEQUERA', 'ALMERÍA'];
 
 const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
@@ -410,8 +410,11 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
             <div className="w-full h-px bg-slate-100 my-1" />
             <div className="flex flex-wrap gap-x-6 gap-y-2">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Camiones por Zona:</span>
-              {ZONES.map(zone => {
-                const count = trucksWithDeliveries.filter(t => (t.zone || 'SIN ZONA') === zone).length;
+              {['SIN ZONA', ...ZONES].map(zone => {
+                const count = trucksWithDeliveries.filter(t => {
+                  const tZone = !t.zone || t.zone.trim() === '' ? 'SIN ZONA' : t.zone;
+                  return tZone === zone;
+                }).length;
                 if (count === 0) return null;
                 return (
                   <div key={zone} className="flex items-center gap-1.5">
@@ -610,7 +613,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
         <div className="flex flex-col gap-6 w-full max-w-[1800px] mx-auto">
           {/* Tabs de Zonas */}
           <div className="flex flex-wrap gap-2 mb-2 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm">
-            {['TODOS', ...ZONES].map(zone => (
+            {['TODOS', 'SIN ZONA', ...ZONES].map(zone => (
               <button
                 key={zone}
                 onClick={() => setActiveZone(zone)}
@@ -643,7 +646,8 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
           ) : trucks.filter(truck => 
               deliveries.some(d => d.truck_id === truck.id) && 
               truck.label.toLowerCase().includes(searchTerm.toLowerCase()) &&
-              (activeZone === 'TODOS' || truck.zone === activeZone)
+              (activeZone === 'TODOS' || 
+               (activeZone === 'SIN ZONA' ? (!truck.zone || truck.zone.trim() === '' || truck.zone === 'SIN ZONA') : truck.zone === activeZone))
             ).map(truck => {
             const truckDeliveries = deliveries
               .filter(d => d.truck_id === truck.id)
@@ -891,15 +895,17 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
             </div>
             
             <div className="grid grid-cols-2 gap-3 mb-8">
+              <button
+                onClick={() => handleAssignZoneAndSchedule('')}
+                className="p-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 border-2 bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200"
+              >
+                SIN ZONA
+              </button>
               {ZONES.map(zone => (
                 <button
                   key={zone}
                   onClick={() => handleAssignZoneAndSchedule(zone)}
-                  className={`p-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 border-2 ${
-                    zone === 'SIN ZONA'
-                      ? 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200'
-                      : 'bg-slate-50 hover:bg-indigo-600 hover:text-white border-slate-100 hover:border-indigo-600'
-                  }`}
+                  className="p-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 border-2 bg-slate-50 hover:bg-indigo-600 hover:text-white border-slate-100 hover:border-indigo-600"
                 >
                   {zone}
                 </button>
