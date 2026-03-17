@@ -97,6 +97,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
     cost: 0,
     status: 'pending' as 'pending' | 'completed'
   });
+  const [selectedFile, setSelectedFile] = useState<any>(null);
 
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [profiles, setProfiles] = useState<any[]>([]);
@@ -469,10 +470,31 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
     
     setLoading(true);
     try {
+      let attachment_url = (editingMaintenanceId && maintenanceRecords.find(m => m.id === editingMaintenanceId)?.attachment_url) || null;
+
+      if (selectedFile) {
+        const fileExt = selectedFile.name.split('.').pop();
+        const fileName = `${Math.random()}.${fileExt}`;
+        const filePath = `maintenance/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('machinery-attachments')
+          .upload(filePath, selectedFile);
+
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('machinery-attachments')
+          .getPublicUrl(filePath);
+        
+        attachment_url = publicUrl;
+      }
+
       const payload = {
         ...maintenanceForm,
         reported_by: user.full_name,
-        completed_at: maintenanceForm.status === 'completed' ? new Date().toISOString() : null
+        completed_at: maintenanceForm.status === 'completed' ? new Date().toISOString() : null,
+        attachment_url
       };
 
       if (editingMaintenanceId) {
@@ -488,6 +510,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
 
       setShowMaintenanceModal(false);
       setEditingMaintenanceId(null);
+      setSelectedFile(null);
       setMaintenanceForm({
         machinery_id: '',
         type: 'averia',
@@ -530,6 +553,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
 
   const openMaintenanceModal = (machineryId: string) => {
     setEditingMaintenanceId(null);
+    setSelectedFile(null);
     setMaintenanceForm({
       machinery_id: machineryId,
       type: 'averia',
@@ -542,6 +566,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
 
   const openEditMaintenance = (record: MachineryMaintenance) => {
     setEditingMaintenanceId(record.id);
+    setSelectedFile(null);
     setMaintenanceForm({
       machinery_id: record.machinery_id,
       type: record.type,
@@ -1818,6 +1843,17 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                                   {record.cost && record.cost > 0 && (
                                     <span className="text-[8px] font-black text-slate-600 uppercase">Coste: {record.cost}€</span>
                                   )}
+                                  {record.attachment_url && (
+                                    <a 
+                                      href={record.attachment_url} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer"
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="text-[8px] font-black text-indigo-600 uppercase hover:underline flex items-center gap-1"
+                                    >
+                                      <span>📄 Ver PDF</span>
+                                    </a>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -2317,6 +2353,16 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                       <option value="completed">COMPLETADO</option>
                     </select>
                   </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2">Documento PDF (Opcional)</label>
+                  <input 
+                    type="file"
+                    accept="application/pdf"
+                    onChange={e => setSelectedFile(e.target.files?.[0] || null)}
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-[10px] outline-none focus:border-indigo-500 file:mr-4 file:py-1 file:px-4 file:rounded-full file:border-0 file:text-[10px] file:font-black file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+                  />
                 </div>
               </div>
 

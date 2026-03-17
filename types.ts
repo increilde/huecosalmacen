@@ -106,6 +106,7 @@ export interface MachineryMaintenance {
   reported_by: string;
   created_at: string;
   completed_at?: string;
+  attachment_url?: string;
 }
 
 export interface CustomerPickup {
