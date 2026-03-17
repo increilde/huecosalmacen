@@ -86,6 +86,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
     pending: 0
   });
 
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
   const [warehouseBreakdown, setWarehouseBreakdown] = useState<any[]>([]);
   const [maintenanceRecords, setMaintenanceRecords] = useState<MachineryMaintenance[]>([]);
   const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
@@ -473,21 +475,31 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
       let attachment_url = (editingMaintenanceId && maintenanceRecords.find(m => m.id === editingMaintenanceId)?.attachment_url) || null;
 
       if (selectedFile) {
+        console.log("Intentando subir archivo:", selectedFile.name);
         const fileExt = selectedFile.name.split('.').pop();
-        const fileName = `${Math.random()}.${fileExt}`;
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
         const filePath = `maintenance/${fileName}`;
 
-        const { error: uploadError } = await supabase.storage
+        const { error: uploadError, data: uploadData } = await supabase.storage
           .from('machinery-attachments')
-          .upload(filePath, selectedFile);
+          .upload(filePath, selectedFile, {
+            cacheControl: '3600',
+            upsert: false
+          });
 
-        if (uploadError) throw uploadError;
+        if (uploadError) {
+          console.error("Error en Storage:", uploadError);
+          throw new Error(`Error al subir archivo: ${uploadError.message}`);
+        }
+
+        console.log("Archivo subido con éxito:", uploadData);
 
         const { data: { publicUrl } } = supabase.storage
           .from('machinery-attachments')
           .getPublicUrl(filePath);
         
         attachment_url = publicUrl;
+        console.log("URL pública generada:", attachment_url);
       }
 
       const payload = {
@@ -519,8 +531,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
         status: 'pending'
       });
       fetchData();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setErrorMessage(err.message || 'Error desconocido');
     } finally {
       setLoading(false);
     }
@@ -554,6 +567,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   const openMaintenanceModal = (machineryId: string) => {
     setEditingMaintenanceId(null);
     setSelectedFile(null);
+    setErrorMessage(null);
     setMaintenanceForm({
       machinery_id: machineryId,
       type: 'averia',
@@ -567,6 +581,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   const openEditMaintenance = (record: MachineryMaintenance) => {
     setEditingMaintenanceId(record.id);
     setSelectedFile(null);
+    setErrorMessage(null);
     setMaintenanceForm({
       machinery_id: record.machinery_id,
       type: record.type,
@@ -1890,32 +1905,40 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                    <button onClick={() => setShowMachineryModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-100 active:scale-95 transition-all">Nueva Maquina</button>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                   {machinery.map(m => (
-                     <div 
-                      key={m.id} 
-                      onClick={() => setSelectedMachineryId(m.id)}
-                      className="p-6 bg-slate-50 rounded-[2.5rem] border border-slate-100 flex items-center justify-between group cursor-pointer hover:bg-white hover:shadow-xl hover:border-indigo-200 transition-all"
-                     >
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 rounded-xl bg-white shadow-sm flex items-center justify-center">
-                            {m.type === 'carretilla' ? '🚜' : '📱'}
+                   {machinery.map(m => {
+                     const hasPendingBreakdown = maintenanceRecords.some(r => r.machinery_id === m.id && r.type === 'averia' && r.status === 'pending');
+                     
+                     return (
+                       <div 
+                        key={m.id} 
+                        onClick={() => setSelectedMachineryId(m.id)}
+                        className={`p-6 rounded-[2.5rem] border flex items-center justify-between group cursor-pointer hover:shadow-xl transition-all ${
+                          hasPendingBreakdown 
+                          ? 'bg-rose-50 border-rose-200 hover:bg-rose-100 hover:border-rose-300' 
+                          : 'bg-slate-50 border-slate-100 hover:bg-white hover:border-indigo-200'
+                        }`}
+                       >
+                          <div className="flex items-center gap-4">
+                            <div className={`w-10 h-10 rounded-xl shadow-sm flex items-center justify-center ${hasPendingBreakdown ? 'bg-rose-100' : 'bg-white'}`}>
+                              {m.type === 'carretilla' ? '🚜' : '📱'}
+                            </div>
+                            <div>
+                              <p className={`font-black uppercase text-sm ${hasPendingBreakdown ? 'text-rose-900' : 'text-slate-800'}`}>{m.identifier}</p>
+                              <p className={`text-[8px] font-bold uppercase tracking-widest mt-1 ${hasPendingBreakdown ? 'text-rose-400' : 'text-slate-400'}`}>{m.type}</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="font-black text-slate-800 uppercase text-sm">{m.identifier}</p>
-                            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-1">{m.type}</p>
+                          <div className="flex items-center gap-2">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all ${hasPendingBreakdown ? 'bg-rose-200 text-rose-600' : 'bg-indigo-50 text-indigo-400'}`}>👁️</div>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); deleteMachinery(m.id); }} 
+                              className="w-8 h-8 rounded-lg bg-rose-50 text-rose-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
+                            >
+                              🗑️
+                            </button>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-400 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">👁️</div>
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); deleteMachinery(m.id); }} 
-                            className="w-8 h-8 rounded-lg bg-rose-50 text-rose-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                     </div>
-                   ))}
+                       </div>
+                     );
+                   })}
                 </div>
               </>
             )}
@@ -2286,6 +2309,14 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                  <h3 className="text-xl font-black text-slate-800 uppercase">{editingMaintenanceId ? 'Editar Intervención' : 'Registro Mantenimiento'}</h3>
                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">{editingMaintenanceId ? 'Actualizar detalles' : 'Averías y revisiones'}</p>
               </div>
+
+              {errorMessage && (
+                <div className="bg-rose-50 border-2 border-rose-100 p-4 rounded-2xl">
+                  <p className="text-[10px] font-black text-rose-600 uppercase leading-relaxed text-center">
+                    ⚠️ {errorMessage}
+                  </p>
+                </div>
+              )}
               
               <div className="space-y-4">
                 <div className="space-y-1">
@@ -2357,12 +2388,40 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
 
                 <div className="space-y-1">
                   <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2">Documento PDF (Opcional)</label>
-                  <input 
-                    type="file"
-                    accept="application/pdf"
-                    onChange={e => setSelectedFile(e.target.files?.[0] || null)}
-                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-[10px] outline-none focus:border-indigo-500 file:mr-4 file:py-1 file:px-4 file:rounded-full file:border-0 file:text-[10px] file:font-black file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-                  />
+                  
+                  {editingMaintenanceId && maintenanceRecords.find(m => m.id === editingMaintenanceId)?.attachment_url && (
+                    <div className="mb-3 p-4 bg-indigo-50 rounded-2xl border-2 border-indigo-100 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xl">📄</span>
+                        <div>
+                          <p className="text-[9px] font-black text-indigo-900 uppercase tracking-tight">PDF Actualmente subido</p>
+                          <a 
+                            href={maintenanceRecords.find(m => m.id === editingMaintenanceId)?.attachment_url} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-[8px] font-bold text-indigo-500 underline uppercase"
+                          >
+                            Ver documento actual
+                          </a>
+                        </div>
+                      </div>
+                      <span className="text-[8px] font-black text-indigo-300 uppercase">Existente</span>
+                    </div>
+                  )}
+
+                  <div className="relative">
+                    <input 
+                      type="file"
+                      accept="application/pdf"
+                      onChange={e => setSelectedFile(e.target.files?.[0] || null)}
+                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-[10px] outline-none focus:border-indigo-500 file:mr-4 file:py-1 file:px-4 file:rounded-full file:border-0 file:text-[10px] file:font-black file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+                    />
+                    {editingMaintenanceId && maintenanceRecords.find(m => m.id === editingMaintenanceId)?.attachment_url && (
+                      <p className="text-[7px] font-bold text-slate-400 uppercase mt-2 ml-2 italic">
+                        * Selecciona un archivo nuevo solo si deseas reemplazar el actual
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
 
