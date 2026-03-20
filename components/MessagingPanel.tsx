@@ -6,9 +6,11 @@ import { Send, Users, User, Plus, Search, Check, CheckCheck, ArrowLeft, MoreVert
 
 interface MessagingPanelProps {
   user: UserProfile;
+  targetConversationId?: string | null;
+  onConversationSelected?: () => void;
 }
 
-const MessagingPanel: React.FC<MessagingPanelProps> = ({ user }) => {
+const MessagingPanel: React.FC<MessagingPanelProps> = ({ user, targetConversationId, onConversationSelected }) => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -25,6 +27,10 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [pastedImage, setPastedImage] = useState<string | null>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showChatMenu, setShowChatMenu] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -87,8 +93,7 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user }) => {
     const { data } = await supabase
       .from('profiles')
       .select('*')
-      .neq('id', user.id)
-      .eq('has_messaging_access', true);
+      .neq('id', user.id);
     setAllUsers(data || []);
   }, [user.id]);
 
@@ -121,6 +126,17 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user }) => {
     await supabase.from('messages').update({ is_read: true }).eq('id', messageId);
   }, []);
 
+  const markAllAsRead = React.useCallback(async (conversationId: string) => {
+    await supabase
+      .from('messages')
+      .update({ is_read: true })
+      .eq('conversation_id', conversationId)
+      .eq('is_read', false)
+      .neq('sender_id', user.id);
+    
+    setUnreadCounts(prev => ({ ...prev, [conversationId]: 0 }));
+  }, [user.id]);
+
   useEffect(() => {
     fetchConversations();
     fetchAllUsers();
@@ -130,25 +146,115 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user }) => {
       .channel('public:messages')
       .on('postgres_changes', { event: 'INSERT', table: 'messages' }, (payload) => {
         const newMessage = payload.new as Message;
+        
+        // If it's for the current active conversation, add it and mark as read
         if (activeConversation && newMessage.conversation_id === activeConversation.id) {
           setMessages(prev => [...prev, newMessage]);
-          markAsRead(newMessage.id);
+          if (newMessage.sender_id !== user.id) {
+            markAsRead(newMessage.id);
+          }
+        } else if (newMessage.sender_id !== user.id) {
+          // Update unread count for this conversation
+          setUnreadCounts(prev => ({
+            ...prev,
+            [newMessage.conversation_id]: (prev[newMessage.conversation_id] || 0) + 1
+          }));
         }
-        fetchConversations(); // Refresh list to show last message
+        
+        // Refresh list to show last message/timestamp
+        fetchConversations();
+      })
+      .on('postgres_changes', { event: 'UPDATE', table: 'messages' }, (payload) => {
+        // If a message was marked as read, update counts
+        if (payload.new.is_read && !payload.old.is_read) {
+          setUnreadCounts(prev => {
+            const newCounts = { ...prev };
+            if (newCounts[payload.new.conversation_id] > 0) {
+              newCounts[payload.new.conversation_id] -= 1;
+            }
+            return newCounts;
+          });
+        }
       })
       .subscribe();
 
     return () => {
       supabase.removeChannel(messageSubscription);
     };
-  }, [activeConversation, fetchAllUsers, fetchConversations, markAsRead]);
+  }, [activeConversation, fetchAllUsers, fetchConversations, markAsRead, user.id]);
+
+  // Handle targetConversationId from notifications
+  useEffect(() => {
+    if (targetConversationId && conversations.length > 0) {
+      const target = conversations.find(c => c.id === targetConversationId);
+      if (target) {
+        setActiveConversation(target);
+        setUnreadCounts(prev => ({ ...prev, [target.id]: 0 }));
+        if (onConversationSelected) onConversationSelected();
+      }
+    }
+  }, [targetConversationId, conversations, onConversationSelected]);
+
+  const deleteOldMessages = async () => {
+    if (user.role !== 'admin') return;
+    
+    setIsDeleting(true);
+    try {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      
+      const { error } = await supabase
+        .from('messages')
+        .delete()
+        .lt('created_at', thirtyDaysAgo.toISOString());
+
+      if (error) throw error;
+      
+      alert('Mensajes antiguos eliminados correctamente.');
+      if (activeConversation) fetchMessages(activeConversation.id);
+      fetchConversations();
+    } catch (err) {
+      console.error("Error deleting old messages:", err);
+      alert('Error al eliminar mensajes antiguos.');
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
+
+  const clearChat = async () => {
+    if (!activeConversation) return;
+    
+    setIsDeleting(true);
+    try {
+      // Delete all messages from this conversation
+      const { error } = await supabase
+        .from('messages')
+        .delete()
+        .eq('conversation_id', activeConversation.id);
+
+      if (error) throw error;
+      
+      setMessages([]);
+      fetchConversations();
+      alert('Chat vaciado correctamente.');
+    } catch (err) {
+      console.error("Error clearing chat:", err);
+      alert('Error al vaciar el chat.');
+    } finally {
+      setIsDeleting(false);
+      setShowClearConfirm(false);
+      setShowChatMenu(false);
+    }
+  };
 
   useEffect(() => {
     if (activeConversation) {
       fetchMessages(activeConversation.id);
       fetchMembers(activeConversation.id);
+      markAllAsRead(activeConversation.id);
     }
-  }, [activeConversation, fetchMessages, fetchMembers]);
+  }, [activeConversation, fetchMessages, fetchMembers, markAllAsRead]);
 
   useEffect(() => {
     scrollToBottom();
@@ -303,11 +409,21 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user }) => {
   const getConversationAvatar = (conv: Conversation) => {
     if (conv.is_group) return null;
     const otherMember = allMembers.find(m => m.conversation_id === conv.id && m.user_id !== user.id);
-    return otherMember?.user_avatar_url;
+    if (!otherMember) return null;
+    
+    // Prioritize data from allUsers (profiles table)
+    const u = allUsers.find(u => u.id === otherMember.user_id);
+    return u?.avatar_url || otherMember.user_avatar_url;
   };
 
   const getUserAvatar = (userId: string) => {
     if (userId === user.id) return user.avatar_url;
+    
+    // Prioritize data from allUsers (profiles table)
+    const u = allUsers.find(u => u.id === userId);
+    if (u?.avatar_url) return u.avatar_url;
+    
+    // Fallback to member data
     const member = allMembers.find(m => m.user_id === userId);
     return member?.user_avatar_url;
   };
@@ -324,12 +440,23 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user }) => {
         <div className="p-6 border-b border-slate-50">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Mensajes</h2>
-            <button 
-              onClick={() => setShowNewChatModal(true)}
-              className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"
-            >
-              <Plus className="w-5 h-5" />
-            </button>
+            <div className="flex gap-2">
+              {user.role === 'admin' && (
+                <button 
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center shadow-sm hover:bg-rose-100 transition-all"
+                  title="Eliminar chats antiguos"
+                >
+                  <Trash2 className="w-5 h-5" />
+                </button>
+              )}
+              <button 
+                onClick={() => setShowNewChatModal(true)}
+                className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"
+              >
+                <Plus className="w-5 h-5" />
+              </button>
+            </div>
           </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -362,7 +489,7 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user }) => {
                 key={conv.id}
                 onClick={() => {
                   setActiveConversation(conv);
-                  setUnreadCounts(prev => ({ ...prev, [conv.id]: 0 }));
+                  markAllAsRead(conv.id);
                 }}
                 className={`w-full flex items-center gap-4 p-4 rounded-[2rem] transition-all ${activeConversation?.id === conv.id ? 'bg-indigo-50 shadow-sm' : 'hover:bg-slate-50'}`}
               >
@@ -430,10 +557,34 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user }) => {
                   <p className="text-[9px] font-bold text-emerald-500 uppercase tracking-widest">En línea</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button className="p-2 hover:bg-slate-50 rounded-xl text-slate-400">
+              <div className="flex items-center gap-2 relative">
+                <button 
+                  onClick={() => setShowChatMenu(!showChatMenu)}
+                  className="p-2 hover:bg-slate-50 rounded-xl text-slate-400"
+                >
                   <MoreVertical className="w-5 h-5" />
                 </button>
+
+                {showChatMenu && (
+                  <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-[50] animate-fade-in">
+                    {!activeConversation.is_group && (
+                      <button 
+                        onClick={() => setShowClearConfirm(true)}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-rose-600 hover:bg-rose-50 transition-all text-xs font-black uppercase tracking-widest"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Vaciar Chat
+                      </button>
+                    )}
+                    <button 
+                      onClick={() => setShowChatMenu(false)}
+                      className="w-full flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-50 transition-all text-xs font-black uppercase tracking-widest"
+                    >
+                      <X className="w-4 h-4" />
+                      Cerrar
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -442,22 +593,23 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user }) => {
               {messages.map((msg, index) => {
                 const isMe = msg.sender_id === user.id;
                 const showSender = !isMe && (index === 0 || messages[index - 1].sender_id !== msg.sender_id);
+                const showAvatar = activeConversation.is_group || !isMe;
                 
                 return (
                   <div key={msg.id} className={`flex gap-3 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                    {!isMe && (
+                    {showAvatar && (
                       <div className="w-8 h-8 rounded-xl bg-slate-200 flex-shrink-0 overflow-hidden self-end mb-1">
                         {getUserAvatar(msg.sender_id) ? (
                           <img src={getUserAvatar(msg.sender_id)} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center bg-slate-800 text-white text-[10px] font-black uppercase">
-                            {msg.sender_name[0]}
+                            {msg.sender_name ? msg.sender_name[0] : '?'}
                           </div>
                         )}
                       </div>
                     )}
                     <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} flex-1`}>
-                      {showSender && (
+                      {showSender && activeConversation.is_group && (
                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 ml-2">
                           {msg.sender_name}
                         </span>
@@ -537,6 +689,66 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user }) => {
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl animate-scale-in">
+            <div className="w-16 h-16 bg-rose-100 rounded-3xl flex items-center justify-center mb-6">
+              <Trash2 className="w-8 h-8 text-rose-600" />
+            </div>
+            <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tight mb-2">Eliminar chats antiguos</h3>
+            <p className="text-slate-500 text-sm font-medium leading-relaxed mb-8">
+              ¿Estás seguro de que deseas eliminar todos los mensajes con más de 30 días de antigüedad? Esta acción liberará espacio en la base de datos y no se puede deshacer.
+            </p>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-600 text-xs font-black uppercase tracking-widest hover:bg-slate-200 transition-all"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={deleteOldMessages}
+                disabled={isDeleting}
+                className="flex-1 py-4 rounded-2xl bg-rose-600 text-white text-xs font-black uppercase tracking-widest hover:bg-rose-700 shadow-lg shadow-rose-200 transition-all disabled:opacity-50"
+              >
+                {isDeleting ? 'Eliminando...' : 'Eliminar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear Chat Confirmation Modal */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl animate-scale-in">
+            <div className="w-16 h-16 bg-rose-100 rounded-3xl flex items-center justify-center mb-6">
+              <Trash2 className="w-8 h-8 text-rose-600" />
+            </div>
+            <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tight mb-2">Vaciar Chat</h3>
+            <p className="text-slate-500 text-sm font-medium leading-relaxed mb-8">
+              ¿Estás seguro de que deseas vaciar este chat? Se eliminarán todos los mensajes y fotos de forma permanente. Esta acción no se puede deshacer.
+            </p>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setShowClearConfirm(false)}
+                className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-600 text-xs font-black uppercase tracking-widest hover:bg-slate-200 transition-all"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={clearChat}
+                disabled={isDeleting}
+                className="flex-1 py-4 rounded-2xl bg-rose-600 text-white text-xs font-black uppercase tracking-widest hover:bg-rose-700 shadow-lg shadow-rose-200 transition-all disabled:opacity-50"
+              >
+                {isDeleting ? 'Vaciando...' : 'Vaciar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* New Chat Modal */}
       {showNewChatModal && (

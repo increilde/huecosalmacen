@@ -22,7 +22,8 @@ const App: React.FC = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [userPermissions, setUserPermissions] = useState<string[]>([]);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
-  const [lastNotification, setLastNotification] = useState<{sender: string, text: string} | null>(null);
+  const [lastNotification, setLastNotification] = useState<{sender: string, text: string, conversationId: string} | null>(null);
+  const [targetConversationId, setTargetConversationId] = useState<string | null>(null);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -60,11 +61,6 @@ const App: React.FC = () => {
         if (userPermissions.includes('dashboard')) setActiveTab('dashboard');
         else if (userPermissions.includes('expedition')) setActiveTab('expedition');
         else setActiveTab(userPermissions[0] as any);
-      }
-
-      // Si entramos en mensajería, reseteamos el contador global
-      if (activeTab === 'messaging') {
-        setUnreadMessagesCount(0);
       }
     }
   }, [user, userPermissions, activeTab]);
@@ -284,6 +280,8 @@ const App: React.FC = () => {
         .on('postgres_changes', { event: 'INSERT', table: 'messages' }, async (payload) => {
           const newMessage = payload.new;
           
+          if (newMessage.sender_id === user.id) return;
+
           // Check if user is in this conversation
           const { data: isMember } = await supabase
             .from('conversation_members')
@@ -292,17 +290,19 @@ const App: React.FC = () => {
             .eq('user_id', user.id)
             .maybeSingle();
 
-          if (isMember && newMessage.sender_id !== user.id) {
+          if (isMember) {
             fetchUnreadCount();
             
-            // Show notification if not in messaging tab
+            // Show notification if not in messaging tab OR if in messaging but not in this specific chat
+            // We'll just show it if not in messaging for now as requested
             if (activeTab !== 'messaging') {
               setLastNotification({
                 sender: newMessage.sender_name,
-                text: newMessage.content || '📷 Imagen'
+                text: newMessage.content || '📷 Imagen',
+                conversationId: newMessage.conversation_id
               });
-              // Clear notification after 5 seconds
-              setTimeout(() => setLastNotification(null), 5000);
+              // Clear notification after 8 seconds
+              setTimeout(() => setLastNotification(null), 8000);
             }
           }
         })
@@ -417,7 +417,13 @@ const App: React.FC = () => {
           {activeTab === 'expedition' && <ExpeditionPanel user={user} />}
           {activeTab === 'supplies' && <SuppliesPanel />}
           {activeTab === 'deliveries' && <DeliveriesPanel user={user} />}
-          {activeTab === 'messaging' && <MessagingPanel user={user} />}
+          {activeTab === 'messaging' && (
+            <MessagingPanel 
+              user={user} 
+              targetConversationId={targetConversationId} 
+              onConversationSelected={() => setTargetConversationId(null)}
+            />
+          )}
         </div>
       </main>
 
@@ -469,7 +475,11 @@ const App: React.FC = () => {
       {lastNotification && (
         <div 
           className="fixed top-20 right-4 left-4 md:left-auto md:w-80 z-[100] bg-slate-900 text-white p-4 rounded-2xl shadow-2xl border border-slate-800 animate-fade-in cursor-pointer"
-          onClick={() => { setActiveTab('messaging'); setLastNotification(null); }}
+          onClick={() => { 
+            setTargetConversationId(lastNotification.conversationId);
+            setActiveTab('messaging'); 
+            setLastNotification(null); 
+          }}
         >
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-xl">💬</div>
