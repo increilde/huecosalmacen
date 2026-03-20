@@ -39,29 +39,12 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Update document title and show browser notification when unread count changes
+  // Update document title when unread count changes
   useEffect(() => {
     const originalTitle = "WHControl - Warehouse Slot Control";
     
     if (unreadMessagesCount > 0) {
       document.title = `(${unreadMessagesCount}) Nuevo Mensaje - WHControl`;
-      
-      // If the page is hidden, we can try to show a browser notification
-      if (document.hidden && lastNotification && "Notification" in window && window.Notification.permission === "granted") {
-        const notification = new window.Notification(`Nuevo mensaje de ${lastNotification.sender}`, {
-          body: lastNotification.text,
-          icon: "/favicon.ico", // Fallback icon
-          tag: "new-message", // Group notifications
-          renotify: true
-        });
-        
-        notification.onclick = () => {
-          window.focus();
-          setActiveTab('messaging');
-          setTargetConversationId(lastNotification.conversationId);
-          notification.close();
-        };
-      }
     } else {
       document.title = originalTitle;
     }
@@ -69,7 +52,19 @@ const App: React.FC = () => {
     return () => {
       document.title = originalTitle;
     };
-  }, [unreadMessagesCount, lastNotification]);
+  }, [unreadMessagesCount]);
+
+  const requestNotificationPermission = async () => {
+    if ("Notification" in window) {
+      const permission = await window.Notification.requestPermission();
+      if (permission === "granted") {
+        new window.Notification("Notificaciones activadas", {
+          body: "Ahora recibirás avisos de nuevos mensajes.",
+          icon: "/favicon.ico"
+        });
+      }
+    }
+  };
 
   const fetchRolePermissions = React.useCallback(async (roleName: string) => {
     try {
@@ -334,11 +329,32 @@ const App: React.FC = () => {
             
             // Show notification if not in messaging tab OR if the document is hidden
             if (activeTab !== 'messaging' || document.hidden) {
+              const senderName = newMessage.sender_name || 'Alguien';
+              const messageText = newMessage.content || '📷 Imagen';
+
               setLastNotification({
-                sender: newMessage.sender_name,
-                text: newMessage.content || '📷 Imagen',
+                sender: senderName,
+                text: messageText,
                 conversationId: newMessage.conversation_id
               });
+
+              // Trigger System Notification immediately if hidden
+              if (document.hidden && "Notification" in window && window.Notification.permission === "granted") {
+                const notification = new window.Notification(`Nuevo mensaje de ${senderName}`, {
+                  body: messageText,
+                  icon: "/favicon.ico",
+                  tag: "new-message",
+                  renotify: true
+                });
+                
+                notification.onclick = () => {
+                  window.focus();
+                  setActiveTab('messaging');
+                  setTargetConversationId(newMessage.conversation_id);
+                  notification.close();
+                };
+              }
+
               // Clear notification after 8 seconds
               setTimeout(() => setLastNotification(null), 8000);
             }
@@ -433,6 +449,7 @@ const App: React.FC = () => {
           permissions={userPermissions}
           onLogout={logout}
           unreadMessagesCount={unreadMessagesCount}
+          onRequestNotifications={requestNotificationPermission}
         />
       </div>
 

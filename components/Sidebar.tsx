@@ -9,9 +9,18 @@ interface SidebarProps {
   permissions: string[];
   onLogout: () => void;
   unreadMessagesCount?: number;
+  onRequestNotifications?: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole, permissions, onLogout, unreadMessagesCount = 0 }) => {
+const Sidebar: React.FC<SidebarProps> = ({ 
+  activeTab, 
+  setActiveTab, 
+  userRole, 
+  permissions, 
+  onLogout, 
+  unreadMessagesCount = 0,
+  onRequestNotifications
+}) => {
   const allItems = [
     { id: 'dashboard', label: 'Dashboard Captura', icon: '📊' },
     { id: 'slots', label: 'Huecos Almacén', icon: '📦' },
@@ -65,7 +74,16 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole, pe
         </nav>
       </div>
 
-      <div className="mt-auto p-6 border-t border-slate-800">
+      <div className="mt-auto p-6 border-t border-slate-800 space-y-4">
+        {onRequestNotifications && (
+          <button 
+            onClick={onRequestNotifications}
+            className="flex items-center gap-3 text-[10px] font-black text-indigo-400 hover:text-indigo-300 transition-colors w-full px-4 uppercase tracking-widest"
+          >
+            <span>🔔</span>
+            <span>Activar Avisos</span>
+          </button>
+        )}
         <button 
           onClick={onLogout}
           className="flex items-center gap-3 text-sm text-slate-400 hover:text-red-400 transition-colors w-full px-4"
