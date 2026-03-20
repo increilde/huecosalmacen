@@ -10,6 +10,7 @@ interface SidebarProps {
   onLogout: () => void;
   unreadMessagesCount?: number;
   onRequestNotifications?: () => void;
+  onTestNotification?: () => void;
   notificationPermission?: 'default' | 'granted' | 'denied';
 }
 
@@ -21,6 +22,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onLogout, 
   unreadMessagesCount = 0,
   onRequestNotifications,
+  onTestNotification,
   notificationPermission = "default"
 }) => {
   const allItems = [
@@ -78,25 +80,37 @@ const Sidebar: React.FC<SidebarProps> = ({
 
       <div className="mt-auto p-6 border-t border-slate-800 space-y-4">
         {onRequestNotifications && (
-          <button 
-            onClick={onRequestNotifications}
-            className={`flex items-center gap-3 text-[10px] font-black transition-colors w-full px-4 uppercase tracking-widest ${
-              notificationPermission === 'granted' 
-                ? 'text-emerald-400 hover:text-emerald-300' 
-                : notificationPermission === 'denied'
-                ? 'text-rose-400 hover:text-rose-300'
-                : 'text-indigo-400 hover:text-indigo-300'
-            }`}
-          >
-            <span>{notificationPermission === 'granted' ? '🟢' : notificationPermission === 'denied' ? '🔴' : '🔔'}</span>
-            <span>
-              {notificationPermission === 'granted' 
-                ? 'Avisos Activos' 
-                : notificationPermission === 'denied' 
-                ? 'Avisos Bloqueados' 
-                : 'Activar Avisos'}
-            </span>
-          </button>
+          <div className="space-y-2">
+            <button 
+              onClick={onRequestNotifications}
+              className={`flex items-center gap-3 text-[10px] font-black transition-colors w-full px-4 py-2 rounded-xl uppercase tracking-widest ${
+                notificationPermission === 'granted' 
+                  ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20' 
+                  : notificationPermission === 'denied'
+                  ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20'
+                  : 'bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20'
+              }`}
+            >
+              <span>{notificationPermission === 'granted' ? '🟢' : notificationPermission === 'denied' ? '🔴' : '🔔'}</span>
+              <span>
+                {notificationPermission === 'granted' 
+                  ? 'Avisos Activos' 
+                  : notificationPermission === 'denied' 
+                  ? 'Avisos Bloqueados' 
+                  : 'Activar Avisos'}
+              </span>
+            </button>
+            
+            {notificationPermission === 'granted' && onTestNotification && (
+              <button 
+                onClick={onTestNotification}
+                className="flex items-center gap-3 text-[9px] font-bold text-slate-400 hover:text-white transition-colors w-full px-4 uppercase tracking-tighter"
+              >
+                <span>🧪</span>
+                <span>Lanzar Prueba</span>
+              </button>
+            )}
+          </div>
         )}
         <button 
           onClick={onLogout}

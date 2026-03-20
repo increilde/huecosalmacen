@@ -102,7 +102,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
           wakeLockRef.current = null;
         });
       } catch (err: any) {
-        console.warn(`❌ Error solicitando Wake Lock: ${err.name}, ${err.message}`);
+        if (err.name !== 'NotAllowedError') {
+          console.warn(`❌ Error solicitando Wake Lock: ${err.name}, ${err.message}`);
+        } else {
+          // Silently ignore permission policy errors as they are common in iframes
+          console.log("ℹ️ Wake Lock no disponible por política de permisos (común en iframes).");
+        }
       }
     }
   };

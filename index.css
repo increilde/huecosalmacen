@@ -7,6 +7,13 @@
 @layer base {
   body {
     @apply bg-slate-50 text-slate-900;
+    touch-action: manipulation;
+  }
+  
+  /* Prevent auto-zoom on mobile inputs (iOS/Android) */
+  input, select, textarea {
+    @apply text-base md:text-inherit;
+    font-size: 16px !important;
   }
 }
 

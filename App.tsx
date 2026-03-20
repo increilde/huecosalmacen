@@ -98,22 +98,41 @@ const App: React.FC = () => {
       setNotificationPermission(permission);
       
       if (permission === "granted") {
-        playNotificationSound();
-        const options = {
-          body: "Las notificaciones están configuradas correctamente.",
-          icon: "/favicon.ico",
-          tag: "test-notification"
-        };
-        
-        if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.ready.then(reg => reg.showNotification("Prueba de WHControl", options));
-        } else {
-          new window.Notification("Prueba de WHControl", options);
-        }
+        sendTestNotification();
       } else if (permission === "denied") {
         // If it's denied but user thinks it's enabled, it's likely an iframe issue
         alert("El navegador sigue reportando las notificaciones como bloqueadas. \n\nSi ya las has activado en el candado 🔒, intenta abrir la aplicación en una PESTAÑA NUEVA usando el botón de la esquina superior derecha para saltar las restricciones del marco de seguridad.");
       }
+    }
+  };
+
+  const sendTestNotification = () => {
+    if ("Notification" in window && window.Notification.permission === "granted") {
+      playNotificationSound();
+      const options = {
+        body: "Esta es una notificación de prueba de WHControl.",
+        icon: "/favicon.ico",
+        tag: "test-notification",
+        requireInteraction: true // Keep it on screen longer
+      };
+      
+      console.log("🚀 Enviando notificación de prueba...");
+      
+      // Try Service Worker notification first (more robust)
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.ready.then(reg => {
+          reg.showNotification("Prueba de WHControl", options);
+          console.log("✅ Notificación enviada vía Service Worker");
+        }).catch(err => {
+          console.warn("⚠️ Error en SW, usando fallback:", err);
+          new window.Notification("Prueba de WHControl", options);
+        });
+      } else {
+        new window.Notification("Prueba de WHControl", options);
+        console.log("✅ Notificación enviada vía API estándar");
+      }
+    } else {
+      alert("No hay permiso para notificaciones. Estado actual: " + (window.Notification?.permission || 'no soportado'));
     }
   };
 
@@ -512,6 +531,7 @@ const App: React.FC = () => {
           onLogout={logout}
           unreadMessagesCount={unreadMessagesCount}
           onRequestNotifications={requestNotificationPermission}
+          onTestNotification={sendTestNotification}
           notificationPermission={notificationPermission}
         />
       </div>
