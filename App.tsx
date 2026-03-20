@@ -32,6 +32,45 @@ const App: React.FC = () => {
   const [allMachinery, setAllMachinery] = useState<Machinery[]>([]);
   const [selectionForm, setSelectionForm] = useState({ forklift: '', pda: '' });
 
+  // Request notification permission on mount
+  useEffect(() => {
+    if ("Notification" in window && window.Notification.permission === "default") {
+      window.Notification.requestPermission();
+    }
+  }, []);
+
+  // Update document title and show browser notification when unread count changes
+  useEffect(() => {
+    const originalTitle = "WHControl - Warehouse Slot Control";
+    
+    if (unreadMessagesCount > 0) {
+      document.title = `(${unreadMessagesCount}) Nuevo Mensaje - WHControl`;
+      
+      // If the page is hidden, we can try to show a browser notification
+      if (document.hidden && lastNotification && "Notification" in window && window.Notification.permission === "granted") {
+        const notification = new window.Notification(`Nuevo mensaje de ${lastNotification.sender}`, {
+          body: lastNotification.text,
+          icon: "/favicon.ico", // Fallback icon
+          tag: "new-message", // Group notifications
+          renotify: true
+        });
+        
+        notification.onclick = () => {
+          window.focus();
+          setActiveTab('messaging');
+          setTargetConversationId(lastNotification.conversationId);
+          notification.close();
+        };
+      }
+    } else {
+      document.title = originalTitle;
+    }
+
+    return () => {
+      document.title = originalTitle;
+    };
+  }, [unreadMessagesCount, lastNotification]);
+
   const fetchRolePermissions = React.useCallback(async (roleName: string) => {
     try {
       const { data } = await supabase.from('roles').select('permissions').eq('name', roleName).single();
@@ -293,9 +332,8 @@ const App: React.FC = () => {
           if (isMember) {
             fetchUnreadCount();
             
-            // Show notification if not in messaging tab OR if in messaging but not in this specific chat
-            // We'll just show it if not in messaging for now as requested
-            if (activeTab !== 'messaging') {
+            // Show notification if not in messaging tab OR if the document is hidden
+            if (activeTab !== 'messaging' || document.hidden) {
               setLastNotification({
                 sender: newMessage.sender_name,
                 text: newMessage.content || '📷 Imagen',

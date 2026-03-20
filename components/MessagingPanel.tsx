@@ -403,7 +403,17 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user, targetConversatio
     
     // For individual, find the other member in allMembers
     const otherMember = allMembers.find(m => m.conversation_id === conv.id && m.user_id !== user.id);
-    return otherMember ? otherMember.user_full_name : 'Chat';
+    if (!otherMember) return 'Chat';
+
+    // Prioritize data from allUsers (profiles table)
+    const u = allUsers.find(u => u.id === otherMember.user_id);
+    return u?.full_name || otherMember.user_full_name;
+  };
+
+  const getUserName = (userId: string, fallbackName: string) => {
+    if (userId === user.id) return user.full_name;
+    const u = allUsers.find(u => u.id === userId);
+    return u?.full_name || fallbackName;
   };
 
   const getConversationAvatar = (conv: Conversation) => {
@@ -603,7 +613,7 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user, targetConversatio
                           <img src={getUserAvatar(msg.sender_id)} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center bg-slate-800 text-white text-[10px] font-black uppercase">
-                            {msg.sender_name ? msg.sender_name[0] : '?'}
+                            {getUserName(msg.sender_id, msg.sender_name) ? getUserName(msg.sender_id, msg.sender_name)[0] : '?'}
                           </div>
                         )}
                       </div>
@@ -611,7 +621,7 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user, targetConversatio
                     <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} flex-1`}>
                       {showSender && activeConversation.is_group && (
                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 ml-2">
-                          {msg.sender_name}
+                          {getUserName(msg.sender_id, msg.sender_name)}
                         </span>
                       )}
                       <div className={`max-w-[85%] md:max-w-[70%] p-4 rounded-[1.5rem] shadow-sm relative group ${isMe ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white text-slate-700 rounded-tl-none border border-slate-100'}`}>
