@@ -1,7 +1,28 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
-import { UserProfile, Delivery, Trucker, DeliveryLog } from '../types';
+import { UserProfile, Delivery, Trucker, DeliveryLog, DailyTruckAssignment, UserRole } from '../types';
+import { 
+  DndContext, 
+  DragOverlay, 
+  closestCenter, 
+  pointerWithin,
+  KeyboardSensor, 
+  PointerSensor, 
+  useSensor, 
+  useSensors,
+  DragEndEvent,
+  DragStartEvent
+} from '@dnd-kit/core';
+import { 
+  arrayMove, 
+  SortableContext, 
+  sortableKeyboardCoordinates, 
+  verticalListSortingStrategy,
+  useSortable
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { Calendar, Truck, MapPin, Plus, History, Search, Filter, ChevronDown, ChevronRight, Save, X, Trash2, GripVertical, Printer } from 'lucide-react';
 
 interface DeliveriesPanelProps {
   user: UserProfile;
@@ -35,13 +56,128 @@ const WAREHOUSES = [
 
 const ZONES = ['GRANADA', 'COSTA 1', 'COSTA 2', 'ANTEQUERA', 'ALMERÍA'];
 
+const getNextWorkingDay = (date: Date = new Date()) => {
+  const d = new Date(date);
+  d.setDate(d.getDate() + 1);
+  while (d.getDay() === 0) { // Skip Sunday
+    d.setDate(d.getDate() + 1);
+  }
+  return d.toISOString().split('T')[0];
+};
+
+const getPrevWorkingDay = (date: string) => {
+  const d = new Date(date);
+  d.setDate(d.getDate() - 1);
+  while (d.getDay() === 0) { // Skip Sunday
+    d.setDate(d.getDate() - 1);
+  }
+  return d.toISOString().split('T')[0];
+};
+
+const getNextWorkingDayFromStr = (date: string) => {
+  const d = new Date(date);
+  d.setDate(d.getDate() + 1);
+  while (d.getDay() === 0) { // Skip Sunday
+    d.setDate(d.getDate() + 1);
+  }
+  return d.toISOString().split('T')[0];
+};
+
+import { useDroppable } from '@dnd-kit/core';
+
+const SortableTruckItem: React.FC<{ truck: Trucker }> = ({ truck }) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id: truck.id });
+
+  const style = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={`bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col items-center gap-1 text-center cursor-grab active:cursor-grabbing hover:border-indigo-300 transition-colors ${isDragging ? 'z-50 ring-2 ring-indigo-500' : ''}`}
+    >
+      <div className="flex items-center justify-center gap-1.5 mb-0.5">
+        <GripVertical className="w-3 h-3 text-slate-300 shrink-0" />
+        <Truck className="w-3 h-3 text-indigo-500 shrink-0" />
+      </div>
+      <span className="text-[10px] font-bold text-slate-700 leading-tight break-words w-full">{truck.label}</span>
+    </div>
+  );
+};
+
+const ZoneColumn: React.FC<{ 
+  zone: string; 
+  assignments: DailyTruckAssignment[]; 
+  trucks: Trucker[];
+  onRemove: (id: string) => void;
+}> = ({ zone, assignments, trucks, onRemove }) => {
+  const { setNodeRef, isOver } = useDroppable({
+    id: zone,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`flex flex-col h-full min-h-[300px] rounded-3xl p-4 transition-all ${isOver ? 'bg-indigo-50 border-2 border-indigo-200 ring-4 ring-indigo-50' : 'bg-slate-50 border-2 border-transparent'}`}
+    >
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{zone}</h3>
+        <span className="bg-white px-2 py-0.5 rounded-full text-[9px] font-black text-slate-400 border border-slate-200">
+          {assignments.length}
+        </span>
+      </div>
+      
+      <div className="flex-1 space-y-2">
+        {assignments.map(assignment => {
+          const truck = trucks.find(t => t.id === assignment.truck_id);
+          return (
+            <div key={assignment.id} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col items-center text-center gap-1 group animate-scale-in relative">
+              <button 
+                onClick={() => onRemove(assignment.id)}
+                className="absolute top-2 right-2 text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100 no-print"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+              <Truck className="w-3 h-3 text-indigo-500 shrink-0" />
+              <span className="text-[10px] font-bold text-slate-700 leading-tight break-words w-full">{truck?.label || 'Desconocido'}</span>
+            </div>
+          );
+        })}
+        {assignments.length === 0 && !isOver && (
+          <div className="flex flex-col items-center justify-center h-full py-8 opacity-40">
+            <MapPin className="w-6 h-6 text-slate-300 mb-2" />
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Arrastra aquí</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [trucks, setTrucks] = useState<Trucker[]>([]);
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(getNextWorkingDay());
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
-  const [view, setView] = useState<'agenda' | 'create'>('agenda');
+  const [view, setView] = useState<'agenda' | 'create' | 'daily_trucks'>('agenda');
+  const [dailyAssignments, setDailyAssignments] = useState<DailyTruckAssignment[]>([]);
+  const [agendaAssignments, setAgendaAssignments] = useState<DailyTruckAssignment[]>([]);
+  const [assignmentDate, setAssignmentDate] = useState(getNextWorkingDay());
+  const [activeTruckId, setActiveTruckId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeZone, setActiveZone] = useState<string>('TODOS');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -51,7 +187,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
   const [pendingZoneTruckId, setPendingZoneTruckId] = useState<string | null>(null);
   const [pendingDeliveryId, setPendingDeliveryId] = useState<string | null>(null);
   const [isCreatingAfterZone, setIsCreatingAfterZone] = useState(false);
-  const [collapsedTrucks, setCollapsedTrucks] = useState<Set<string>>(new Set());
+  const [expandedTrucks, setExpandedTrucks] = useState<Set<string>>(new Set());
   
   const [newDelivery, setNewDelivery] = useState<Partial<Delivery>>({
     warehouse_origin: '3',
@@ -64,7 +200,107 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
   useEffect(() => {
     fetchTrucks();
     fetchDeliveries(selectedDate);
-  }, [selectedDate]);
+    fetchAgendaAssignments(selectedDate);
+    if (view === 'daily_trucks') {
+      fetchDailyAssignments(assignmentDate);
+    }
+  }, [selectedDate, assignmentDate, view]);
+
+  const fetchAgendaAssignments = async (date: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('daily_truck_assignments')
+        .select('*')
+        .eq('assignment_date', date);
+      
+      if (error) throw error;
+      setAgendaAssignments(data || []);
+    } catch (err) {
+      console.error("Error fetching agenda assignments:", err);
+    }
+  };
+
+  const fetchDailyAssignments = async (date: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('daily_truck_assignments')
+        .select('*')
+        .eq('assignment_date', date);
+      
+      if (error) throw error;
+      setDailyAssignments(data || []);
+    } catch (err) {
+      console.error("Error fetching daily assignments:", err);
+    }
+  };
+
+  const handleSaveAssignment = async (truckId: string, zone: string) => {
+    try {
+      const { error } = await supabase
+        .from('daily_truck_assignments')
+        .upsert({ 
+          truck_id: truckId, 
+          zone, 
+          assignment_date: assignmentDate 
+        }, { onConflict: 'truck_id,assignment_date' });
+      
+      if (error) throw error;
+      fetchDailyAssignments(assignmentDate);
+      // También refrescar agendaAssignments si la fecha coincide
+      if (assignmentDate === selectedDate) {
+        fetchAgendaAssignments(selectedDate);
+      }
+    } catch (err) {
+      console.error("Error saving assignment:", err);
+    }
+  };
+
+  const handleRemoveAssignment = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('daily_truck_assignments')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
+      fetchDailyAssignments(assignmentDate);
+      if (assignmentDate === selectedDate) {
+        fetchAgendaAssignments(selectedDate);
+      }
+    } catch (err) {
+      console.error("Error removing assignment:", err);
+    }
+  };
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveTruckId(event.active.id as string);
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveTruckId(null);
+
+    if (!over) return;
+
+    const truckId = active.id as string;
+    const overId = over.id as string;
+
+    // Si se arrastra a una zona
+    if (ZONES.includes(overId)) {
+      await handleSaveAssignment(truckId, overId);
+    }
+  };
 
   const fetchTrucks = async () => {
     try {
@@ -180,8 +416,8 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
     }
   };
 
-  const toggleTruckCollapse = (truckId: string) => {
-    setCollapsedTrucks(prev => {
+  const toggleTruckExpand = (truckId: string) => {
+    setExpandedTrucks(prev => {
       const next = new Set(prev);
       if (next.has(truckId)) next.delete(truckId);
       else next.add(truckId);
@@ -375,18 +611,19 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
     }
   };
 
-  const trucksWithDeliveries = trucks.filter(truck => 
-    deliveries.some(d => d.truck_id === truck.id)
+  const activeTrucksForDay = trucks.filter(truck => 
+    deliveries.some(d => d.truck_id === truck.id) ||
+    agendaAssignments.some(a => a.truck_id === truck.id)
   );
 
   return (
     <div className="p-2 md:p-4 w-full animate-fade-in">
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-6 max-w-[1800px] mx-auto">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-6 max-w-[1800px] mx-auto no-print">
         <div>
           <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Agenda de Repartos</h2>
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Distribución y Logística</p>
           
-          <div className="mt-4 flex flex-wrap gap-x-8 gap-y-4 bg-white/50 p-4 rounded-2xl border border-slate-100 shadow-sm">
+          <div className="mt-4 flex flex-wrap gap-x-8 gap-y-4 bg-white/50 p-4 rounded-2xl border border-slate-100 shadow-sm no-print">
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Visualizando Agenda para el día:</span>
               <span className="text-[12px] font-black text-slate-700">{new Date(selectedDate).toLocaleDateString('es-ES')}</span>
@@ -394,7 +631,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
             <div className="h-4 w-px bg-slate-200 hidden md:block" />
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Camiones Totales:</span>
-              <span className="text-[12px] font-black text-slate-700">{trucksWithDeliveries.length}</span>
+              <span className="text-[12px] font-black text-slate-700">{activeTrucksForDay.length}</span>
             </div>
             <div className="h-4 w-px bg-slate-200 hidden md:block" />
             <div className="flex items-center gap-2">
@@ -411,8 +648,9 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
             <div className="flex flex-wrap gap-x-6 gap-y-2">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Camiones por Zona:</span>
               {['SIN ZONA', ...ZONES].map(zone => {
-                const count = trucksWithDeliveries.filter(t => {
-                  const tZone = !t.zone || t.zone.trim() === '' ? 'SIN ZONA' : t.zone;
+                const count = activeTrucksForDay.filter(t => {
+                  const dailyAssignment = agendaAssignments.find(a => a.truck_id === t.id);
+                  const tZone = dailyAssignment ? dailyAssignment.zone : (t.zone || 'SIN ZONA');
                   return tZone === zone;
                 }).length;
                 if (count === 0) return null;
@@ -427,7 +665,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
           </div>
         </div>
         
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 no-print">
           <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm">
             <span className="text-[9px] font-bold text-slate-400 uppercase">Buscar:</span>
             <input 
@@ -438,15 +676,45 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
               className="bg-transparent text-[10px] font-bold text-slate-700 outline-none w-24 md:w-32"
             />
           </div>
-          <div className="flex items-center gap-3 bg-white px-5 py-3 rounded-2xl border-2 border-slate-200 shadow-md hover:border-indigo-300 transition-all">
+          <div className="flex items-center gap-3 bg-white px-5 py-3 rounded-2xl border-2 border-slate-200 shadow-md hover:border-indigo-300 transition-all no-print">
             <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Fecha Agenda:</span>
-            <input 
-              type="date" 
-              value={selectedDate} 
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="bg-transparent text-sm font-black text-slate-800 outline-none cursor-pointer"
-            />
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setSelectedDate(getPrevWorkingDay(selectedDate))}
+                className="p-1 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 hover:text-indigo-600"
+              >
+                <ChevronRight className="w-4 h-4 rotate-180" />
+              </button>
+              <input 
+                type="date" 
+                value={selectedDate} 
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="bg-transparent text-sm font-black text-slate-800 outline-none cursor-pointer"
+              />
+              <button 
+                onClick={() => setSelectedDate(getNextWorkingDayFromStr(selectedDate))}
+                className="p-1 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 hover:text-indigo-600"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
+          {(user.role === UserRole.ADMIN || user.role === UserRole.SUPERVISOR_DISTRI) && (
+            <button 
+              onClick={() => setView(view === 'daily_trucks' ? 'agenda' : 'daily_trucks')}
+              className={`px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl transition-all active:scale-95 flex items-center gap-2 ${view === 'daily_trucks' ? 'bg-emerald-600 text-white shadow-emerald-100' : 'bg-white text-emerald-600 border-2 border-emerald-100 shadow-slate-100 hover:border-emerald-300'}`}
+            >
+              <Truck className="w-4 h-4" />
+              {view === 'daily_trucks' ? 'Ver Agenda' : 'Camiones del Día'}
+            </button>
+          )}
+          <button 
+            onClick={() => window.print()}
+            className="bg-slate-800 text-white px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-slate-100 active:scale-95 transition-all hover:bg-slate-900 flex items-center gap-2"
+          >
+            <Printer className="w-4 h-4" />
+            Imprimir Día
+          </button>
           <button 
             onClick={() => setView(view === 'agenda' ? 'create' : 'agenda')}
             className="bg-indigo-600 text-white px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-indigo-100 active:scale-95 transition-all hover:bg-indigo-700"
@@ -462,7 +730,86 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
         </div>
       )}
 
-      {view === 'create' ? (
+      {view === 'daily_trucks' ? (
+        <div className="bg-white rounded-[3rem] p-8 shadow-xl border border-slate-100 animate-fade-in">
+          <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+            <div>
+              <h2 className="text-2xl font-black text-slate-800 tracking-tight">Previsión de Camiones</h2>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Asigna camioneros a zonas para el día seleccionado</p>
+            </div>
+            <div className="flex items-center gap-3 bg-slate-50 px-5 py-3 rounded-2xl border-2 border-slate-100 shadow-sm">
+              <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Fecha Previsión:</span>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => setAssignmentDate(getPrevWorkingDay(assignmentDate))}
+                  className="p-1 hover:bg-white rounded-lg transition-colors text-slate-400 hover:text-indigo-600"
+                >
+                  <ChevronRight className="w-4 h-4 rotate-180" />
+                </button>
+                <input 
+                  type="date" 
+                  value={assignmentDate} 
+                  onChange={(e) => setAssignmentDate(e.target.value)}
+                  className="bg-transparent text-sm font-black text-slate-800 outline-none cursor-pointer"
+                />
+                <button 
+                  onClick={() => setAssignmentDate(getNextWorkingDayFromStr(assignmentDate))}
+                  className="p-1 hover:bg-white rounded-lg transition-colors text-slate-400 hover:text-indigo-600"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <DndContext 
+            sensors={sensors}
+            collisionDetection={pointerWithin}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+          >
+            <div className="grid grid-cols-1 lg:grid-cols-7 gap-6">
+              {/* Columna de Camiones Disponibles */}
+              <div className="lg:col-span-2 bg-slate-50 rounded-3xl p-4 border-2 border-dashed border-slate-200">
+                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 text-center">Camiones</h3>
+                <div className="space-y-2">
+                  {trucks
+                    .filter(t => !dailyAssignments.some(a => a.truck_id === t.id))
+                    .filter(t => t.label.toLowerCase().includes(searchTerm.toLowerCase()))
+                    .map(truck => (
+                      <SortableTruckItem key={truck.id} truck={truck} />
+                    ))}
+                  {trucks.filter(t => !dailyAssignments.some(a => a.truck_id === t.id)).length === 0 && (
+                    <p className="text-[10px] text-slate-400 text-center italic py-4">Todos asignados</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Columnas de Zonas */}
+              <div className="lg:col-span-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+                {ZONES.map(zone => (
+                  <ZoneColumn 
+                    key={zone} 
+                    zone={zone} 
+                    assignments={dailyAssignments.filter(a => a.zone === zone)}
+                    trucks={trucks}
+                    onRemove={handleRemoveAssignment}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <DragOverlay>
+              {activeTruckId ? (
+                <div className="bg-indigo-600 text-white p-3 rounded-xl shadow-2xl flex items-center gap-2 cursor-grabbing scale-105 rotate-2">
+                  <Truck className="w-4 h-4" />
+                  <span className="text-xs font-bold">{trucks.find(t => t.id === activeTruckId)?.label}</span>
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
+        </div>
+      ) : view === 'create' ? (
         <div className="bg-white rounded-[3rem] p-8 shadow-xl border border-slate-100 animate-fade-in max-w-4xl mx-auto">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
             <div className="space-y-6">
@@ -611,44 +958,70 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
         </div>
       ) : (
         <div className="flex flex-col gap-6 w-full max-w-[1800px] mx-auto">
+          {/* Print-only Header */}
+          <div className="hidden print:block mb-8 border-b-2 border-slate-900 pb-4">
+            <h1 className="text-3xl font-black uppercase tracking-tighter">Agenda de Repartos</h1>
+            <div className="flex justify-between items-end mt-2">
+              <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Distribución y Logística</p>
+              <p className="text-xl font-black text-slate-900">{new Date(selectedDate).toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).toUpperCase()}</p>
+            </div>
+          </div>
+
           {/* Tabs de Zonas */}
-          <div className="flex flex-wrap gap-2 mb-2 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm">
-            {['TODOS', 'SIN ZONA', ...ZONES].map(zone => (
-              <button
-                key={zone}
-                onClick={() => setActiveZone(zone)}
-                className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                  activeZone === zone 
-                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' 
-                    : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
-                }`}
-              >
-                {zone}
-              </button>
-            ))}
+          <div className="flex flex-col gap-4 mb-2 tabs-container">
+            <div className="flex flex-wrap gap-2 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm">
+              {['TODOS', 'SIN ZONA', ...ZONES].map(zone => (
+                <button
+                  key={zone}
+                  onClick={() => setActiveZone(zone)}
+                  className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                    activeZone === zone 
+                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' 
+                      : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
+                  }`}
+                >
+                  {zone}
+                </button>
+              ))}
+            </div>
           </div>
 
           {loading ? (
             <div className="py-20 text-center animate-pulse">
               <p className="text-[11px] font-black text-slate-300 uppercase tracking-widest">Cargando agenda de repartos...</p>
             </div>
-          ) : trucks.filter(truck => 
-              deliveries.some(d => d.truck_id === truck.id) && 
-              truck.label.toLowerCase().includes(searchTerm.toLowerCase()) &&
-              (activeZone === 'TODOS' || truck.zone === activeZone)
-            ).length === 0 ? (
+          ) : trucks.filter(truck => {
+              const hasDeliveries = deliveries.some(d => d.truck_id === truck.id);
+              const matchesSearch = truck.label.toLowerCase().includes(searchTerm.toLowerCase());
+              const dailyAssignment = agendaAssignments.find(a => a.truck_id === truck.id);
+              const effectiveZone = dailyAssignment ? dailyAssignment.zone : (truck.zone || 'SIN ZONA');
+              const matchesZone = activeZone === 'TODOS' || 
+                                (activeZone === 'SIN ZONA' 
+                                  ? (effectiveZone === 'SIN ZONA' || effectiveZone === '') 
+                                  : effectiveZone === activeZone);
+              return (hasDeliveries || !!dailyAssignment) && matchesSearch && matchesZone;
+            }).length === 0 ? (
             <div className="bg-white rounded-[3rem] p-20 text-center border border-slate-100 w-full">
               <p className="text-4xl mb-4">🚛</p>
               <p className="text-[11px] font-black text-slate-300 uppercase tracking-widest">
-                {searchTerm ? 'No se encontraron camiones con ese nombre' : 'No hay repartos asignados para esta zona/fecha'}
+                {searchTerm ? 'No se encontraron camiones con ese nombre' : 'No hay repartos ni camiones asignados para esta zona/fecha'}
               </p>
             </div>
-          ) : trucks.filter(truck => 
-              deliveries.some(d => d.truck_id === truck.id) && 
-              truck.label.toLowerCase().includes(searchTerm.toLowerCase()) &&
-              (activeZone === 'TODOS' || 
-               (activeZone === 'SIN ZONA' ? (!truck.zone || truck.zone.trim() === '' || truck.zone === 'SIN ZONA') : truck.zone === activeZone))
-            ).map(truck => {
+          ) : trucks.filter(truck => {
+              const hasDeliveries = deliveries.some(d => d.truck_id === truck.id);
+              const matchesSearch = truck.label.toLowerCase().includes(searchTerm.toLowerCase());
+              
+              // Determinar la zona efectiva para este día
+              const dailyAssignment = agendaAssignments.find(a => a.truck_id === truck.id);
+              const effectiveZone = dailyAssignment ? dailyAssignment.zone : (truck.zone || 'SIN ZONA');
+              
+              const matchesZone = activeZone === 'TODOS' || 
+                                (activeZone === 'SIN ZONA' 
+                                  ? (effectiveZone === 'SIN ZONA' || effectiveZone === '') 
+                                  : effectiveZone === activeZone);
+              
+              return (hasDeliveries || !!dailyAssignment) && matchesSearch && matchesZone;
+            }).map(truck => {
             const truckDeliveries = deliveries
               .filter(d => d.truck_id === truck.id)
               .sort((a, b) => {
@@ -656,13 +1029,18 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                 if (a.delivery_time === 'afternoon' && b.delivery_time === 'morning') return 1;
                 return 0;
               });
+            
+            // Obtener zona para mostrar en el header
+            const dailyAssignment = agendaAssignments.find(a => a.truck_id === truck.id);
+            const displayZone = dailyAssignment ? dailyAssignment.zone : (truck.zone || 'SIN ZONA');
+
             return (
-              <div key={truck.id} className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden flex flex-col w-full">
-                <div className="bg-slate-900 px-6 py-3 flex justify-between items-center cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => toggleTruckCollapse(truck.id)}>
+              <div key={truck.id} className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden flex flex-col w-full truck-agenda-item">
+                <div className="bg-slate-900 px-6 py-3 flex justify-between items-center cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => toggleTruckExpand(truck.id)}>
                   <div className="flex items-center gap-6">
                     <div className="flex items-center gap-3">
-                      <span className={`text-xl text-white/70 transition-transform duration-300 ${collapsedTrucks.has(truck.id) ? '-rotate-90' : 'rotate-0'}`}>
-                        {collapsedTrucks.has(truck.id) ? '▶' : '▼'}
+                      <span className={`text-xl text-white/70 transition-transform duration-300 ${expandedTrucks.has(truck.id) ? 'rotate-0' : '-rotate-90'}`}>
+                        {expandedTrucks.has(truck.id) ? '▼' : '▶'}
                       </span>
                       <span className="text-xl">🚚</span>
                       <h4 className="text-white text-sm font-black uppercase tracking-widest">{truck.label}</h4>
@@ -672,16 +1050,14 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                     
                     <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                       <span className="text-[9px] font-black text-white/40 uppercase tracking-widest">ZONA:</span>
-                      <select
-                        value={truck.zone || ''}
-                        onChange={(e) => handleUpdateTruckZone(truck.id, e.target.value)}
-                        className="bg-white/10 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg border border-white/10 outline-none focus:border-indigo-500 transition-all cursor-pointer"
-                      >
-                        <option value="" className="text-slate-900">SIN ZONA</option>
-                        {ZONES.map(z => (
-                          <option key={z} value={z} className="text-slate-900">{z}</option>
-                        ))}
-                      </select>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg border ${dailyAssignment ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-white/10 text-white/60 border-white/10'}`}>
+                          {displayZone}
+                        </span>
+                        {dailyAssignment && (
+                          <span className="text-[8px] font-black text-indigo-300 uppercase tracking-tighter">Asignado hoy</span>
+                        )}
+                      </div>
                     </div>
 
                     <div className="h-6 w-px bg-white/20" />
@@ -702,13 +1078,29 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setNewDelivery({
+                          truck_id: truck.id,
+                          warehouse_origin: '3',
+                          delivery_time: 'morning',
+                          merchandise_type: ''
+                        });
+                        setView('create');
+                      }}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-indigo-200 transition-all active:scale-95"
+                    >
+                      <Plus className="w-3 h-3" />
+                      Añadir Reparto
+                    </button>
                     <span className="bg-white/10 text-white/80 px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest">
                       {truckDeliveries.length} REPARTOS
                     </span>
                   </div>
                 </div>
                 
-                <div className={`grid transition-all duration-500 ease-in-out ${collapsedTrucks.has(truck.id) ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'}`}>
+                <div className={`grid transition-all duration-500 ease-in-out ${expandedTrucks.has(truck.id) ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
                   <div className="overflow-hidden">
                     <div className="p-3 flex-1 space-y-2">
                       {truckDeliveries.length === 0 ? (
@@ -808,7 +1200,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                               {delivery.at_dock ? (
                                 <div className="bg-white text-blue-500 px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-1.5 border border-blue-100">
                                   <span className="text-xs">⚓</span>
-                                  <span className="text-[9px] font-black uppercase tracking-widest">EN MUELLE DE CARGA</span>
+                                  <span className="text-[9px] font-black uppercase tracking-widest">EN MUELLE</span>
                                   <button 
                                     onClick={(e) => { e.stopPropagation(); toggleAtDock(delivery); }}
                                     className="ml-1 text-blue-300 hover:text-blue-500"

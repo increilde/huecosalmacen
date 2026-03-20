@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserProfile, ExpeditionLog, DailyNote, Trucker } from '../types';
+import { Truck, Printer, Save, Trash2, ChevronRight } from 'lucide-react';
 
 interface ExpeditionPanelProps {
   user: UserProfile;
@@ -22,7 +23,25 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
   const getNextDeliveryDay = () => {
     const d = new Date();
     d.setDate(d.getDate() + 1); // Empezamos por mañana
-    if (d.getDay() === 0) { // Si es domingo, pasamos al lunes
+    while (d.getDay() === 0) { // Si es domingo, pasamos al lunes
+      d.setDate(d.getDate() + 1);
+    }
+    return d.toLocaleDateString('en-CA');
+  };
+
+  const getPrevWorkingDay = (date: string) => {
+    const d = new Date(date);
+    d.setDate(d.getDate() - 1);
+    while (d.getDay() === 0) { // Skip Sunday
+      d.setDate(d.getDate() - 1);
+    }
+    return d.toLocaleDateString('en-CA');
+  };
+
+  const getNextWorkingDayFromStr = (date: string) => {
+    const d = new Date(date);
+    d.setDate(d.getDate() + 1);
+    while (d.getDay() === 0) { // Skip Sunday
       d.setDate(d.getDate() + 1);
     }
     return d.toLocaleDateString('en-CA');
@@ -34,10 +53,12 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
   const [truckId, setTruckId] = useState('');
   const [truckers, setTruckers] = useState<Trucker[]>([]);
+  const [activeTruckIds, setActiveTruckIds] = useState<Set<string>>(new Set());
 
   const fetchLogsAndNotes = React.useCallback(async () => {
     setLoading(true);
     try {
+      // Fetch logs
       const { data: logsData } = await supabase
         .from('expedition_logs')
         .select('*')
@@ -47,6 +68,7 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
 
       setLogs(logsData || []);
 
+      // Fetch daily note
       const { data: noteData } = await supabase
         .from('daily_notes')
         .select('content')
@@ -54,6 +76,18 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
         .maybeSingle();
 
       setDailyNote(noteData?.content || '');
+
+      // Fetch active trucks for the day (agenda)
+      const [deliveriesRes, assignmentsRes] = await Promise.all([
+        supabase.from('deliveries').select('truck_id').eq('delivery_date', historyDate),
+        supabase.from('daily_truck_assignments').select('truck_id').eq('assignment_date', historyDate)
+      ]);
+
+      const activeIds = new Set<string>();
+      deliveriesRes.data?.forEach(d => activeIds.add(d.truck_id));
+      assignmentsRes.data?.forEach(a => activeIds.add(a.truck_id));
+      setActiveTruckIds(activeIds);
+
     } catch (err) {
       console.error("Error al obtener datos de expedición:", err);
     } finally {
@@ -277,13 +311,27 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
           </p>
           <div className="flex items-center gap-2 mt-2">
              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">CAMBIAR FECHA:</span>
-             <input 
-              id="expedition-date-selector"
-              type="date" 
-              value={historyDate} 
-              onChange={e => { if (e.target.value) setHistoryDate(e.target.value); }}
-              className={`px-3 py-1.5 rounded-xl font-black text-[10px] outline-none border-2 transition-all cursor-pointer ${historyDate === getTodayStr() ? 'bg-indigo-50 border-indigo-100 text-indigo-600' : historyDate > getTodayStr() ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-slate-900 border-slate-800 text-white'}`}
-             />
+             <div className="flex items-center gap-2">
+               <button 
+                 onClick={() => setHistoryDate(getPrevWorkingDay(historyDate))}
+                 className="p-1 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 hover:text-indigo-600"
+               >
+                 <ChevronRight className="w-4 h-4 rotate-180" />
+               </button>
+               <input 
+                id="expedition-date-selector"
+                type="date" 
+                value={historyDate} 
+                onChange={e => { if (e.target.value) setHistoryDate(e.target.value); }}
+                className={`px-3 py-1.5 rounded-xl font-black text-[10px] outline-none border-2 transition-all cursor-pointer ${historyDate === getTodayStr() ? 'bg-indigo-50 border-indigo-100 text-indigo-600' : historyDate > getTodayStr() ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-slate-900 border-slate-800 text-white'}`}
+               />
+               <button 
+                 onClick={() => setHistoryDate(getNextWorkingDayFromStr(historyDate))}
+                 className="p-1 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 hover:text-indigo-600"
+               >
+                 <ChevronRight className="w-4 h-4" />
+               </button>
+             </div>
              {historyDate < getTodayStr() && <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded-lg text-[7px] font-black uppercase tracking-widest">MODO CONSULTA</span>}
           </div>
         </div>
@@ -416,7 +464,9 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
                       </button>
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {truckers.map(t => (
+                      {truckers
+                        .filter(t => activeTruckIds.has(t.id))
+                        .map(t => (
                         <button
                           key={t.id}
                           type="button"
@@ -430,6 +480,11 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
                           <span className="text-[9px] font-black uppercase leading-tight">{t.label}</span>
                         </button>
                       ))}
+                      {truckers.filter(t => activeTruckIds.has(t.id)).length === 0 && (
+                        <div className="col-span-full py-4 text-center">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase italic">No hay camiones con agenda para este día</p>
+                        </div>
+                      )}
                     </div>
                   </div>
 

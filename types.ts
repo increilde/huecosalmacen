@@ -4,7 +4,8 @@ export enum UserRole {
   OPERATOR = 'operator',
   VIEWER = 'viewer',
   EXPEDITION = 'expedition',
-  DISTRIBUTION = 'distribución'
+  DISTRIBUTION = 'distribución',
+  SUPERVISOR_DISTRI = 'supervisor_distri'
 }
 
 export interface UserProfile {
@@ -143,5 +144,13 @@ export interface DeliveryLog {
   user_name: string;
   action: string;
   details?: string;
+  created_at: string;
+}
+
+export interface DailyTruckAssignment {
+  id: string;
+  truck_id: string;
+  zone: string;
+  assignment_date: string;
   created_at: string;
 }

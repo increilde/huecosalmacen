@@ -50,7 +50,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (user && userPermissions.length > 0) {
       const hasAccess = userPermissions.includes(activeTab) || 
-                       (activeTab === 'deliveries' && (user.role === 'admin' || user.role === 'distribución'));
+                       (activeTab === 'deliveries' && (user.role === UserRole.ADMIN || user.role === UserRole.DISTRIBUTION || user.role === UserRole.SUPERVISOR_DISTRI));
       
       if (!hasAccess) {
         if (userPermissions.includes('dashboard')) setActiveTab('dashboard');

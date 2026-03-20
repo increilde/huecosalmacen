@@ -38,3 +38,52 @@ input::placeholder {
   font-weight: 400;
   opacity: 0.5;
 }
+
+@media print {
+  @page {
+    margin: 1cm;
+    size: A4;
+  }
+
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  /* Force all truck agendas to be expanded */
+  .grid-rows-\[0fr\] {
+    grid-template-rows: 1fr !important;
+  }
+  
+  .opacity-0 {
+    opacity: 1 !important;
+  }
+
+  /* Hide non-essential UI elements */
+  button, 
+  input, 
+  .no-print,
+  nav,
+  aside,
+  .tabs-container,
+  .search-container {
+    display: none !important;
+  }
+
+  /* Ensure cards look good on paper */
+  .bg-white {
+    background: white !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: none !important;
+  }
+
+  .rounded-\[3rem\], .rounded-2xl, .rounded-xl {
+    border-radius: 8px !important;
+  }
+
+  /* Prevent breaking inside a truck agenda */
+  .truck-agenda-item {
+    break-inside: avoid;
+    margin-bottom: 20px !important;
+  }
+}
