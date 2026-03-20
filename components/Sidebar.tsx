@@ -4,13 +4,14 @@ import { UserRole } from '../types';
 
 interface SidebarProps {
   activeTab: string;
-  setActiveTab: (tab: 'dashboard' | 'slots' | 'admin' | 'expedition' | 'supplies' | 'deliveries') => void;
+  setActiveTab: (tab: 'dashboard' | 'slots' | 'admin' | 'expedition' | 'supplies' | 'deliveries' | 'messaging') => void;
   userRole: string;
   permissions: string[];
   onLogout: () => void;
+  unreadMessagesCount?: number;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole, permissions, onLogout }) => {
+const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole, permissions, onLogout, unreadMessagesCount = 0 }) => {
   const allItems = [
     { id: 'dashboard', label: 'Dashboard Captura', icon: '📊' },
     { id: 'slots', label: 'Huecos Almacén', icon: '📦' },
@@ -53,7 +54,12 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole, pe
               }`}
             >
               <span className="text-base">{item.icon}</span>
-              <span className="text-[11px] font-bold uppercase tracking-tight">{item.label}</span>
+              <span className="text-[11px] font-bold uppercase tracking-tight flex-1">{item.label}</span>
+              {item.id === 'messaging' && unreadMessagesCount > 0 && (
+                <span className="bg-rose-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full shadow-lg shadow-rose-900/20 animate-pulse">
+                  {unreadMessagesCount}
+                </span>
+              )}
             </button>
           ))}
         </nav>

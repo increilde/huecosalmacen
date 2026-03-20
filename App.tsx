@@ -21,6 +21,8 @@ const App: React.FC = () => {
   
   const [user, setUser] = useState<UserProfile | null>(null);
   const [userPermissions, setUserPermissions] = useState<string[]>([]);
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
+  const [lastNotification, setLastNotification] = useState<{sender: string, text: string} | null>(null);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -58,6 +60,11 @@ const App: React.FC = () => {
         if (userPermissions.includes('dashboard')) setActiveTab('dashboard');
         else if (userPermissions.includes('expedition')) setActiveTab('expedition');
         else setActiveTab(userPermissions[0] as any);
+      }
+
+      // Si entramos en mensajería, reseteamos el contador global
+      if (activeTab === 'messaging') {
+        setUnreadMessagesCount(0);
       }
     }
   }, [user, userPermissions, activeTab]);
@@ -200,6 +207,7 @@ const App: React.FC = () => {
           // Si la columna no existe en el DB por falta de SQL, data.prompt_machinery será undefined
           prompt_machinery: !!data.prompt_machinery,
           has_messaging_access: !!data.has_messaging_access,
+          avatar_url: data.avatar_url,
           created_at: data.created_at
         };
         setUser(profile);
@@ -228,9 +236,89 @@ const App: React.FC = () => {
     setUser(null);
     setUserPermissions([]);
     setSessionMachinery(null);
+    setUnreadMessagesCount(0);
     localStorage.removeItem('wh_user');
     localStorage.removeItem('wh_session_machinery');
   };
+
+  // Fetch unread messages count
+  const fetchUnreadCount = React.useCallback(async () => {
+    if (!user) return;
+    try {
+      // 1. Get user's conversations
+      const { data: memberData } = await supabase
+        .from('conversation_members')
+        .select('conversation_id')
+        .eq('user_id', user.id);
+      
+      if (!memberData || memberData.length === 0) {
+        setUnreadMessagesCount(0);
+        return;
+      }
+
+      const conversationIds = memberData.map(m => m.conversation_id);
+
+      // 2. Count unread messages in those conversations not sent by user
+      const { count, error } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .in('conversation_id', conversationIds)
+        .eq('is_read', false)
+        .neq('sender_id', user.id);
+
+      if (!error) {
+        setUnreadMessagesCount(count || 0);
+      }
+    } catch (err) {
+      console.error("Error fetching unread count:", err);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (user) {
+      fetchUnreadCount();
+
+      // Subscribe to new messages for notifications
+      const channel = supabase
+        .channel('global-messages')
+        .on('postgres_changes', { event: 'INSERT', table: 'messages' }, async (payload) => {
+          const newMessage = payload.new;
+          
+          // Check if user is in this conversation
+          const { data: isMember } = await supabase
+            .from('conversation_members')
+            .select('id')
+            .eq('conversation_id', newMessage.conversation_id)
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+          if (isMember && newMessage.sender_id !== user.id) {
+            fetchUnreadCount();
+            
+            // Show notification if not in messaging tab
+            if (activeTab !== 'messaging') {
+              setLastNotification({
+                sender: newMessage.sender_name,
+                text: newMessage.content || '📷 Imagen'
+              });
+              // Clear notification after 5 seconds
+              setTimeout(() => setLastNotification(null), 5000);
+            }
+          }
+        })
+        .on('postgres_changes', { event: 'UPDATE', table: 'messages' }, (payload) => {
+          // If a message was marked as read, update count
+          if (payload.new.is_read !== payload.old.is_read) {
+            fetchUnreadCount();
+          }
+        })
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
+  }, [user, fetchUnreadCount, activeTab]);
 
   // Verificar si estamos en modo "Mapa en Vivo" (Ventana Nueva)
   const isLiveMapView = typeof window !== 'undefined' && new window.URLSearchParams(window.location.search).get('view') === 'live-map';
@@ -306,6 +394,7 @@ const App: React.FC = () => {
           userRole={user.role} 
           permissions={userPermissions}
           onLogout={logout}
+          unreadMessagesCount={unreadMessagesCount}
         />
       </div>
 
@@ -359,8 +448,13 @@ const App: React.FC = () => {
           </button>
         )}
         {(userPermissions.includes('messaging') || user.has_messaging_access || user.role === 'admin') && (
-          <button onClick={() => setActiveTab('messaging')} className={`flex flex-col items-center gap-1 ${activeTab === 'messaging' ? 'text-indigo-400' : 'text-slate-500'}`}>
+          <button onClick={() => setActiveTab('messaging')} className={`flex flex-col items-center gap-1 relative ${activeTab === 'messaging' ? 'text-indigo-400' : 'text-slate-500'}`}>
             <span className="text-xl">💬</span>
+            {unreadMessagesCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center border-2 border-slate-900 animate-pulse">
+                {unreadMessagesCount > 9 ? '+9' : unreadMessagesCount}
+              </span>
+            )}
           </button>
         )}
         {userPermissions.includes('admin') && (
@@ -370,6 +464,25 @@ const App: React.FC = () => {
         )}
         <button onClick={logout} className="text-rose-400 text-xl">🚪</button>
       </nav>
+
+      {/* Global Notification Toast */}
+      {lastNotification && (
+        <div 
+          className="fixed top-20 right-4 left-4 md:left-auto md:w-80 z-[100] bg-slate-900 text-white p-4 rounded-2xl shadow-2xl border border-slate-800 animate-fade-in cursor-pointer"
+          onClick={() => { setActiveTab('messaging'); setLastNotification(null); }}
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-xl">💬</div>
+            <div className="flex-1 overflow-hidden">
+              <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-0.5">Nuevo mensaje</p>
+              <p className="text-xs font-bold truncate">
+                <span className="text-indigo-300">{lastNotification.sender}:</span> {lastNotification.text}
+              </p>
+            </div>
+            <button onClick={(e) => { e.stopPropagation(); setLastNotification(null); }} className="text-slate-500 hover:text-white">✕</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

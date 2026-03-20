@@ -14,6 +14,7 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [members, setMembers] = useState<ConversationMember[]>([]);
   const [allMembers, setAllMembers] = useState<ConversationMember[]>([]);
+  const [unreadCounts, setUnreadCounts] = useState<{[key: string]: number}>({});
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
@@ -61,6 +62,20 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user }) => {
 
       setAllMembers(allMembersData || []);
       setConversations(convData || []);
+
+      // Fetch unread counts for each conversation
+      const { data: unreadData } = await supabase
+        .from('messages')
+        .select('conversation_id')
+        .in('conversation_id', conversationIds)
+        .eq('is_read', false)
+        .neq('sender_id', user.id);
+      
+      const counts: {[key: string]: number} = {};
+      unreadData?.forEach(msg => {
+        counts[msg.conversation_id] = (counts[msg.conversation_id] || 0) + 1;
+      });
+      setUnreadCounts(counts);
     } catch (err) {
       console.error("Error fetching conversations:", err);
     } finally {
@@ -231,8 +246,8 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user }) => {
 
       // Add members
       await supabase.from('conversation_members').insert([
-        { conversation_id: newConv.id, user_id: user.id, user_full_name: user.full_name, user_email: user.email },
-        { conversation_id: newConv.id, user_id: targetUser.id, user_full_name: targetUser.full_name, user_email: targetUser.email }
+        { conversation_id: newConv.id, user_id: user.id, user_full_name: user.full_name, user_email: user.email, user_avatar_url: user.avatar_url },
+        { conversation_id: newConv.id, user_id: targetUser.id, user_full_name: targetUser.full_name, user_email: targetUser.email, user_avatar_url: targetUser.avatar_url }
       ]);
 
       fetchConversations();
@@ -257,10 +272,10 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user }) => {
 
       // Add members
       const membersToInsert = [
-        { conversation_id: newConv.id, user_id: user.id, user_full_name: user.full_name, user_email: user.email },
+        { conversation_id: newConv.id, user_id: user.id, user_full_name: user.full_name, user_email: user.email, user_avatar_url: user.avatar_url },
         ...selectedUsers.map(uid => {
           const u = allUsers.find(u => u.id === uid);
-          return { conversation_id: newConv.id, user_id: uid, user_full_name: u?.full_name || '', user_email: u?.email || '' };
+          return { conversation_id: newConv.id, user_id: uid, user_full_name: u?.full_name || '', user_email: u?.email || '', user_avatar_url: u?.avatar_url };
         })
       ];
 
@@ -283,6 +298,18 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user }) => {
     // For individual, find the other member in allMembers
     const otherMember = allMembers.find(m => m.conversation_id === conv.id && m.user_id !== user.id);
     return otherMember ? otherMember.user_full_name : 'Chat';
+  };
+
+  const getConversationAvatar = (conv: Conversation) => {
+    if (conv.is_group) return null;
+    const otherMember = allMembers.find(m => m.conversation_id === conv.id && m.user_id !== user.id);
+    return otherMember?.user_avatar_url;
+  };
+
+  const getUserAvatar = (userId: string) => {
+    if (userId === user.id) return user.avatar_url;
+    const member = allMembers.find(m => m.user_id === userId);
+    return member?.user_avatar_url;
   };
 
   const filteredUsers = allUsers.filter(u => 
@@ -333,20 +360,36 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user }) => {
             conversations.map(conv => (
               <button
                 key={conv.id}
-                onClick={() => setActiveConversation(conv)}
+                onClick={() => {
+                  setActiveConversation(conv);
+                  setUnreadCounts(prev => ({ ...prev, [conv.id]: 0 }));
+                }}
                 className={`w-full flex items-center gap-4 p-4 rounded-[2rem] transition-all ${activeConversation?.id === conv.id ? 'bg-indigo-50 shadow-sm' : 'hover:bg-slate-50'}`}
               >
-                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-white font-black text-lg ${conv.is_group ? 'bg-amber-500' : 'bg-slate-800'}`}>
-                  {conv.is_group ? <Users className="w-6 h-6" /> : <User className="w-6 h-6" />}
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-white font-black text-lg overflow-hidden ${conv.is_group ? 'bg-amber-500' : 'bg-slate-800'}`}>
+                  {conv.is_group ? (
+                    <Users className="w-6 h-6" />
+                  ) : getConversationAvatar(conv) ? (
+                    <img src={getConversationAvatar(conv)} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  ) : (
+                    <User className="w-6 h-6" />
+                  )}
                 </div>
                 <div className="flex-1 text-left overflow-hidden">
                   <div className="flex justify-between items-center mb-0.5">
                     <h4 className="font-black text-slate-800 text-sm truncate uppercase tracking-tight">
                       {getConversationName(conv)}
                     </h4>
-                    <span className="text-[8px] font-bold text-slate-400">
-                      {new Date(conv.last_message_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className="text-[8px] font-bold text-slate-400">
+                        {new Date(conv.last_message_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      {unreadCounts[conv.id] > 0 && (
+                        <span className="bg-rose-500 text-white text-[9px] font-black w-5 h-5 rounded-full flex items-center justify-center shadow-lg shadow-rose-900/20 animate-pulse">
+                          {unreadCounts[conv.id]}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <p className="text-[10px] font-medium text-slate-500 truncate">
                     Toca para ver mensajes
@@ -371,8 +414,14 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user }) => {
                 >
                   <ArrowLeft className="w-5 h-5 text-slate-600" />
                 </button>
-                <div className={`w-10 h-10 md:w-12 md:h-12 rounded-2xl flex items-center justify-center text-white font-black ${activeConversation.is_group ? 'bg-amber-500' : 'bg-slate-800'}`}>
-                  {activeConversation.is_group ? <Users className="w-5 h-5 md:w-6 md:h-6" /> : <User className="w-5 h-5 md:w-6 md:h-6" />}
+                <div className={`w-10 h-10 md:w-12 md:h-12 rounded-2xl flex items-center justify-center text-white font-black overflow-hidden ${activeConversation.is_group ? 'bg-amber-500' : 'bg-slate-800'}`}>
+                  {activeConversation.is_group ? (
+                    <Users className="w-5 h-5 md:w-6 md:h-6" />
+                  ) : getConversationAvatar(activeConversation) ? (
+                    <img src={getConversationAvatar(activeConversation)} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  ) : (
+                    <User className="w-5 h-5 md:w-6 md:h-6" />
+                  )}
                 </div>
                 <div>
                   <h3 className="font-black text-slate-800 text-sm md:text-base uppercase tracking-tight">
@@ -395,31 +444,44 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user }) => {
                 const showSender = !isMe && (index === 0 || messages[index - 1].sender_id !== msg.sender_id);
                 
                 return (
-                  <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                    {showSender && (
-                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 ml-2">
-                        {msg.sender_name}
-                      </span>
-                    )}
-                    <div className={`max-w-[80%] md:max-w-[70%] p-4 rounded-[1.5rem] shadow-sm relative group ${isMe ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white text-slate-700 rounded-tl-none border border-slate-100'}`}>
-                      {msg.image_url && (
-                        <div className="mb-2 cursor-pointer overflow-hidden rounded-xl" onClick={() => setSelectedImage(msg.image_url || null)}>
-                          <img 
-                            src={msg.image_url} 
-                            alt="Adjunto" 
-                            className="max-w-full h-auto object-cover hover:scale-105 transition-transform"
-                            referrerPolicy="no-referrer"
-                          />
-                        </div>
-                      )}
-                      {msg.content && <p className="text-xs font-medium leading-relaxed">{msg.content}</p>}
-                      <div className={`flex items-center gap-1 mt-1 justify-end ${isMe ? 'text-indigo-200' : 'text-slate-400'}`}>
-                        <span className="text-[8px] font-bold">
-                          {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                        {isMe && (
-                          msg.is_read ? <CheckCheck className="w-3 h-3" /> : <Check className="w-3 h-3" />
+                  <div key={msg.id} className={`flex gap-3 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                    {!isMe && (
+                      <div className="w-8 h-8 rounded-xl bg-slate-200 flex-shrink-0 overflow-hidden self-end mb-1">
+                        {getUserAvatar(msg.sender_id) ? (
+                          <img src={getUserAvatar(msg.sender_id)} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-slate-800 text-white text-[10px] font-black uppercase">
+                            {msg.sender_name[0]}
+                          </div>
                         )}
+                      </div>
+                    )}
+                    <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} flex-1`}>
+                      {showSender && (
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 ml-2">
+                          {msg.sender_name}
+                        </span>
+                      )}
+                      <div className={`max-w-[85%] md:max-w-[70%] p-4 rounded-[1.5rem] shadow-sm relative group ${isMe ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white text-slate-700 rounded-tl-none border border-slate-100'}`}>
+                        {msg.image_url && (
+                          <div className="mb-2 cursor-pointer overflow-hidden rounded-xl" onClick={() => setSelectedImage(msg.image_url || null)}>
+                            <img 
+                              src={msg.image_url} 
+                              alt="Adjunto" 
+                              className="max-w-full h-auto object-cover hover:scale-105 transition-transform"
+                              referrerPolicy="no-referrer"
+                            />
+                          </div>
+                        )}
+                        {msg.content && <p className="text-xs font-medium leading-relaxed">{msg.content}</p>}
+                        <div className={`flex items-center gap-1 mt-1 justify-end ${isMe ? 'text-indigo-200' : 'text-slate-400'}`}>
+                          <span className="text-[8px] font-bold">
+                            {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          {isMe && (
+                            msg.is_read ? <CheckCheck className="w-3 h-3" /> : <Check className="w-3 h-3" />
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -541,8 +603,12 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user }) => {
                   }}
                   className={`w-full flex items-center gap-4 p-4 rounded-2xl transition-all ${selectedUsers.includes(u.id) ? 'bg-indigo-50 border-2 border-indigo-200' : 'bg-slate-50 border-2 border-transparent hover:bg-slate-100'}`}
                 >
-                  <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-white font-black text-sm uppercase">
-                    {u.full_name[0]}
+                  <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-white font-black text-sm uppercase overflow-hidden">
+                    {u.avatar_url ? (
+                      <img src={u.avatar_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    ) : (
+                      u.full_name[0]
+                    )}
                   </div>
                   <div className="flex-1 text-left">
                     <h4 className="font-black text-slate-800 text-xs uppercase">{u.full_name}</h4>

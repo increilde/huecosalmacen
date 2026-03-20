@@ -15,6 +15,7 @@ export interface UserProfile {
   role: string; // Nombre del rol
   prompt_machinery: boolean; // Si debe pedir maquinaria al entrar
   has_messaging_access?: boolean; // Si tiene acceso al sistema de mensajería
+  avatar_url?: string; // URL de la foto de perfil
   created_at: string;
 }
 
@@ -32,6 +33,7 @@ export interface ConversationMember {
   user_id: string;
   user_full_name: string;
   user_email: string;
+  user_avatar_url?: string;
   joined_at: string;
 }
 
