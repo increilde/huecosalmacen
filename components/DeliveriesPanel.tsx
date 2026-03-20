@@ -676,7 +676,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
               className="bg-transparent text-[10px] font-bold text-slate-700 outline-none w-24 md:w-32"
             />
           </div>
-          <div className="flex items-center gap-3 bg-white px-5 py-3 rounded-2xl border-2 border-slate-200 shadow-md hover:border-indigo-300 transition-all no-print">
+          <div className="flex items-center gap-3 bg-white px-5 py-2 rounded-2xl border-2 border-slate-200 shadow-md hover:border-indigo-300 transition-all no-print">
             <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Fecha Agenda:</span>
             <div className="flex items-center gap-2">
               <button 
@@ -685,12 +685,17 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
               >
                 <ChevronRight className="w-4 h-4 rotate-180" />
               </button>
-              <input 
-                type="date" 
-                value={selectedDate} 
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="bg-transparent text-sm font-black text-slate-800 outline-none cursor-pointer"
-              />
+              <div className="flex flex-col items-center min-w-[120px]">
+                <span className="text-[12px] font-black text-indigo-600 uppercase tracking-widest leading-none mb-1">
+                  {new Date(selectedDate + 'T00:00:00').toLocaleDateString('es-ES', { weekday: 'long' })}
+                </span>
+                <input 
+                  type="date" 
+                  value={selectedDate} 
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="bg-transparent text-base font-black text-slate-800 outline-none cursor-pointer leading-none text-center"
+                />
+              </div>
               <button 
                 onClick={() => setSelectedDate(getNextWorkingDayFromStr(selectedDate))}
                 className="p-1 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 hover:text-indigo-600"
@@ -737,7 +742,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
               <h2 className="text-2xl font-black text-slate-800 tracking-tight">Previsión de Camiones</h2>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Asigna camioneros a zonas para el día seleccionado</p>
             </div>
-            <div className="flex items-center gap-3 bg-slate-50 px-5 py-3 rounded-2xl border-2 border-slate-100 shadow-sm">
+            <div className="flex items-center gap-3 bg-slate-50 px-5 py-2 rounded-2xl border-2 border-slate-100 shadow-sm">
               <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Fecha Previsión:</span>
               <div className="flex items-center gap-2">
                 <button 
@@ -746,12 +751,17 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                 >
                   <ChevronRight className="w-4 h-4 rotate-180" />
                 </button>
-                <input 
-                  type="date" 
-                  value={assignmentDate} 
-                  onChange={(e) => setAssignmentDate(e.target.value)}
-                  className="bg-transparent text-sm font-black text-slate-800 outline-none cursor-pointer"
-                />
+                <div className="flex flex-col items-center min-w-[120px]">
+                  <span className="text-[12px] font-black text-indigo-600 uppercase tracking-widest leading-none mb-1">
+                    {new Date(assignmentDate + 'T00:00:00').toLocaleDateString('es-ES', { weekday: 'long' })}
+                  </span>
+                  <input 
+                    type="date" 
+                    value={assignmentDate} 
+                    onChange={(e) => setAssignmentDate(e.target.value)}
+                    className="bg-transparent text-base font-black text-slate-800 outline-none cursor-pointer leading-none text-center"
+                  />
+                </div>
                 <button 
                   onClick={() => setAssignmentDate(getNextWorkingDayFromStr(assignmentDate))}
                   className="p-1 hover:bg-white rounded-lg transition-colors text-slate-400 hover:text-indigo-600"

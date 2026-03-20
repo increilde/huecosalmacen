@@ -19,6 +19,7 @@ const UserManagement: React.FC = () => {
     full_name: '',
     role: '',
     prompt_machinery: false,
+    has_messaging_access: false,
     avatar_url: ''
   });
 
@@ -31,6 +32,8 @@ const UserManagement: React.FC = () => {
     { id: 'dashboard', label: 'Dashboard Captura', icon: '📊' },
     { id: 'slots', label: 'Mapa Almacén', icon: '📦' },
     { id: 'expedition', label: 'Muelles / Expedición', icon: '🚛' },
+    { id: 'deliveries', label: 'Repartos', icon: '📅' },
+    { id: 'messaging', label: 'Mensajería', icon: '💬' },
     { id: 'supplies', label: 'Suministros', icon: '🛠️' },
     { id: 'admin', label: 'Administración', icon: '⚙️' },
     { id: 'users', label: 'Gestión Operarios', icon: '👥' },
@@ -105,6 +108,7 @@ const UserManagement: React.FC = () => {
         full_name: userForm.full_name.trim(),
         role: userForm.role,
         prompt_machinery: userForm.prompt_machinery,
+        has_messaging_access: userForm.has_messaging_access,
         avatar_url: userForm.avatar_url
       };
 
@@ -133,7 +137,7 @@ const UserManagement: React.FC = () => {
       
       setShowUserModal(false);
       setEditingUserId(null);
-      setUserForm({ username: '', password_plain: '', full_name: '', role: roles[0]?.name || '', prompt_machinery: false });
+      setUserForm({ username: '', password_plain: '', full_name: '', role: roles[0]?.name || '', prompt_machinery: false, has_messaging_access: false });
       fetchData();
     } catch (err: any) {
       alert("Error: " + err.message);
@@ -149,6 +153,7 @@ const UserManagement: React.FC = () => {
       full_name: user.full_name,
       role: user.role,
       prompt_machinery: !!user.prompt_machinery,
+      has_messaging_access: !!user.has_messaging_access,
       avatar_url: user.avatar_url || ''
     });
     setEditingUserId(user.id);
@@ -266,6 +271,7 @@ const UserManagement: React.FC = () => {
                     <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">@{u.email}</span>
                     <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase ${getRoleBadgeColor(u.role)}`}>{roleLabels[u.role] || u.role.toUpperCase()}</span>
                     {u.prompt_machinery && <span className="text-[7px] font-black bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">🛠️ JORNADA</span>}
+                    {u.has_messaging_access && <span className="text-[7px] font-black bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">💬 CHAT</span>}
                   </div>
                 </div>
               </div>
@@ -351,6 +357,20 @@ const UserManagement: React.FC = () => {
                   className={`w-10 h-5 rounded-full relative transition-all ${userForm.prompt_machinery ? 'bg-indigo-600' : 'bg-slate-300'}`}
                 >
                   <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${userForm.prompt_machinery ? 'left-6 shadow-sm' : 'left-1 shadow-none'}`}></div>
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between bg-slate-50 p-4 rounded-2xl border border-slate-100 mt-2">
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-black text-slate-800 uppercase leading-none">Acceso Mensajería</span>
+                  <span className="text-[7px] font-bold text-slate-400 uppercase mt-1">Permitir chat interno</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setUserForm({ ...userForm, has_messaging_access: !userForm.has_messaging_access })}
+                  className={`w-10 h-5 rounded-full relative transition-all ${userForm.has_messaging_access ? 'bg-indigo-600' : 'bg-slate-300'}`}
+                >
+                  <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${userForm.has_messaging_access ? 'left-6 shadow-sm' : 'left-1 shadow-none'}`}></div>
                 </button>
               </div>
             </div>

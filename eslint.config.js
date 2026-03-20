@@ -35,6 +35,7 @@ export default [
         console: 'readonly',
         navigator: 'readonly',
         __dirname: 'readonly',
+        FileReader: 'readonly',
       },
     },
     plugins: {

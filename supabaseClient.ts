@@ -123,4 +123,40 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  *     details TEXT,
  *     created_at TIMESTAMPTZ DEFAULT now()
  * );
+ * 
+ * -- 11. Mensajería Interna
+ * ALTER TABLE profiles ADD COLUMN IF NOT EXISTS has_messaging_access BOOLEAN DEFAULT FALSE;
+ * 
+ * CREATE TABLE IF NOT EXISTS conversations (
+ *     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+ *     name TEXT, -- Solo para grupos
+ *     is_group BOOLEAN DEFAULT FALSE,
+ *     last_message_at TIMESTAMPTZ DEFAULT now(),
+ *     created_at TIMESTAMPTZ DEFAULT now()
+ * );
+ * 
+ * CREATE TABLE IF NOT EXISTS conversation_members (
+ *     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+ *     conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE,
+ *     user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+ *     user_full_name TEXT,
+ *     user_email TEXT,
+ *     joined_at TIMESTAMPTZ DEFAULT now(),
+ *     UNIQUE(conversation_id, user_id)
+ * );
+ * 
+ * CREATE TABLE IF NOT EXISTS messages (
+ *     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+ *     conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE,
+ *     sender_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+ *     sender_name TEXT,
+ *     content TEXT, -- Ahora puede ser nulo si hay imagen
+ *     image_url TEXT, -- URL de la imagen adjunta (base64 o storage)
+ *     is_read BOOLEAN DEFAULT FALSE,
+ *     created_at TIMESTAMPTZ DEFAULT now()
+ * );
+ * 
+ * -- Habilitar Realtime para Mensajería
+ * ALTER PUBLICATION supabase_realtime ADD TABLE messages;
+ * ALTER PUBLICATION supabase_realtime ADD TABLE conversations;
  */

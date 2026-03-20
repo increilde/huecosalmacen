@@ -8,11 +8,12 @@ import AdminPanel from './components/AdminPanel';
 import ExpeditionPanel from './components/ExpeditionPanel';
 import SuppliesPanel from './components/SuppliesPanel';
 import DeliveriesPanel from './components/DeliveriesPanel';
+import MessagingPanel from './components/MessagingPanel';
 import LiveMapView from './components/LiveMapView';
 import { supabase } from './supabaseClient';
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'slots' | 'admin' | 'expedition' | 'supplies' | 'deliveries'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'slots' | 'admin' | 'expedition' | 'supplies' | 'deliveries' | 'messaging'>('dashboard');
   const [dbStatus, setDbStatus] = useState<{connected: boolean | null, error: string | null}>({
     connected: null,
     error: null
@@ -50,7 +51,8 @@ const App: React.FC = () => {
   useEffect(() => {
     if (user && userPermissions.length > 0) {
       const hasAccess = userPermissions.includes(activeTab) || 
-                       (activeTab === 'deliveries' && (user.role === UserRole.ADMIN || user.role === UserRole.DISTRIBUTION || user.role === UserRole.SUPERVISOR_DISTRI));
+                       (activeTab === 'deliveries' && (user.role === UserRole.ADMIN || user.role === UserRole.DISTRIBUTION || user.role === UserRole.SUPERVISOR_DISTRI)) ||
+                       (activeTab === 'messaging' && (user.has_messaging_access || user.role === UserRole.ADMIN));
       
       if (!hasAccess) {
         if (userPermissions.includes('dashboard')) setActiveTab('dashboard');
@@ -197,6 +199,7 @@ const App: React.FC = () => {
           role: data.role,
           // Si la columna no existe en el DB por falta de SQL, data.prompt_machinery será undefined
           prompt_machinery: !!data.prompt_machinery,
+          has_messaging_access: !!data.has_messaging_access,
           created_at: data.created_at
         };
         setUser(profile);
@@ -325,6 +328,7 @@ const App: React.FC = () => {
           {activeTab === 'expedition' && <ExpeditionPanel user={user} />}
           {activeTab === 'supplies' && <SuppliesPanel />}
           {activeTab === 'deliveries' && <DeliveriesPanel user={user} />}
+          {activeTab === 'messaging' && <MessagingPanel user={user} />}
         </div>
       </main>
 
@@ -352,6 +356,11 @@ const App: React.FC = () => {
         {(userPermissions.includes('deliveries') || user.role === 'admin' || user.role === 'distribución') && (
           <button onClick={() => setActiveTab('deliveries')} className={`flex flex-col items-center gap-1 ${activeTab === 'deliveries' ? 'text-indigo-400' : 'text-slate-500'}`}>
             <span className="text-xl">📅</span>
+          </button>
+        )}
+        {(userPermissions.includes('messaging') || user.has_messaging_access || user.role === 'admin') && (
+          <button onClick={() => setActiveTab('messaging')} className={`flex flex-col items-center gap-1 ${activeTab === 'messaging' ? 'text-indigo-400' : 'text-slate-500'}`}>
+            <span className="text-xl">💬</span>
           </button>
         )}
         {userPermissions.includes('admin') && (

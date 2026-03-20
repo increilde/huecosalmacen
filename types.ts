@@ -14,7 +14,44 @@ export interface UserProfile {
   full_name: string;
   role: string; // Nombre del rol
   prompt_machinery: boolean; // Si debe pedir maquinaria al entrar
+  has_messaging_access?: boolean; // Si tiene acceso al sistema de mensajería
   created_at: string;
+}
+
+export interface Conversation {
+  id: string;
+  name?: string; // Solo para grupos
+  is_group: boolean;
+  created_at: string;
+  last_message_at: string;
+}
+
+export interface ConversationMember {
+  id: string;
+  conversation_id: string;
+  user_id: string;
+  user_full_name: string;
+  user_email: string;
+  joined_at: string;
+}
+
+export interface Message {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  sender_name: string;
+  content: string;
+  image_url?: string; // URL de la imagen adjunta
+  created_at: string;
+  is_read: boolean;
+}
+
+export interface MessageStatus {
+  id: string;
+  message_id: string;
+  user_id: string;
+  is_read: boolean;
+  read_at?: string;
 }
 
 export interface Role {

@@ -16,6 +16,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, userRole, pe
     { id: 'slots', label: 'Huecos Almacén', icon: '📦' },
     { id: 'expedition', label: 'Control Muelles', icon: '🚛' },
     { id: 'deliveries', label: 'Repartos', icon: '📅' },
+    { id: 'messaging', label: 'Mensajería', icon: '💬' },
     { id: 'supplies', label: 'Suministros', icon: '🛠️' },
     { id: 'admin', label: 'Administración', icon: '⚙️' },
   ];
