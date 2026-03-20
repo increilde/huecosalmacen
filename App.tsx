@@ -23,6 +23,7 @@ const App: React.FC = () => {
   const [userPermissions, setUserPermissions] = useState<string[]>([]);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   const [lastNotification, setLastNotification] = useState<{sender: string, text: string, conversationId: string} | null>(null);
+  const [notificationPermission, setNotificationPermission] = useState<'default' | 'granted' | 'denied'>("default");
   const [targetConversationId, setTargetConversationId] = useState<string | null>(null);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [loginError, setLoginError] = useState('');
@@ -34,10 +35,22 @@ const App: React.FC = () => {
 
   // Request notification permission on mount and setup audio
   useEffect(() => {
+    const checkPermission = () => {
+      if ("Notification" in window) {
+        setNotificationPermission(window.Notification.permission);
+      }
+    };
+
+    checkPermission();
+    
+    // Re-check when user returns to the tab
+    window.addEventListener('focus', checkPermission);
+
     const requestPermission = async () => {
       if ("Notification" in window) {
         if (window.Notification.permission === "default") {
-          await window.Notification.requestPermission();
+          const permission = await window.Notification.requestPermission();
+          setNotificationPermission(permission);
         }
       }
     };
@@ -47,6 +60,8 @@ const App: React.FC = () => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW registration failed', err));
     }
+
+    return () => window.removeEventListener('focus', checkPermission);
   }, []);
 
   const playNotificationSound = () => {
@@ -76,12 +91,28 @@ const App: React.FC = () => {
 
   const requestNotificationPermission = async () => {
     if ("Notification" in window) {
+      // Force a re-check of the current state first
+      setNotificationPermission(window.Notification.permission);
+      
       const permission = await window.Notification.requestPermission();
+      setNotificationPermission(permission);
+      
       if (permission === "granted") {
-        new window.Notification("Notificaciones activadas", {
-          body: "Ahora recibirás avisos de nuevos mensajes.",
-          icon: "/favicon.ico"
-        });
+        playNotificationSound();
+        const options = {
+          body: "Las notificaciones están configuradas correctamente.",
+          icon: "/favicon.ico",
+          tag: "test-notification"
+        };
+        
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.ready.then(reg => reg.showNotification("Prueba de WHControl", options));
+        } else {
+          new window.Notification("Prueba de WHControl", options);
+        }
+      } else if (permission === "denied") {
+        // If it's denied but user thinks it's enabled, it's likely an iframe issue
+        alert("El navegador sigue reportando las notificaciones como bloqueadas. \n\nSi ya las has activado en el candado 🔒, intenta abrir la aplicación en una PESTAÑA NUEVA usando el botón de la esquina superior derecha para saltar las restricciones del marco de seguridad.");
       }
     }
   };
@@ -481,6 +512,7 @@ const App: React.FC = () => {
           onLogout={logout}
           unreadMessagesCount={unreadMessagesCount}
           onRequestNotifications={requestNotificationPermission}
+          notificationPermission={notificationPermission}
         />
       </div>
 

@@ -10,6 +10,7 @@ interface SidebarProps {
   onLogout: () => void;
   unreadMessagesCount?: number;
   onRequestNotifications?: () => void;
+  notificationPermission?: 'default' | 'granted' | 'denied';
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -19,7 +20,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   permissions, 
   onLogout, 
   unreadMessagesCount = 0,
-  onRequestNotifications
+  onRequestNotifications,
+  notificationPermission = "default"
 }) => {
   const allItems = [
     { id: 'dashboard', label: 'Dashboard Captura', icon: '📊' },
@@ -78,10 +80,22 @@ const Sidebar: React.FC<SidebarProps> = ({
         {onRequestNotifications && (
           <button 
             onClick={onRequestNotifications}
-            className="flex items-center gap-3 text-[10px] font-black text-indigo-400 hover:text-indigo-300 transition-colors w-full px-4 uppercase tracking-widest"
+            className={`flex items-center gap-3 text-[10px] font-black transition-colors w-full px-4 uppercase tracking-widest ${
+              notificationPermission === 'granted' 
+                ? 'text-emerald-400 hover:text-emerald-300' 
+                : notificationPermission === 'denied'
+                ? 'text-rose-400 hover:text-rose-300'
+                : 'text-indigo-400 hover:text-indigo-300'
+            }`}
           >
-            <span>🔔</span>
-            <span>Activar Avisos</span>
+            <span>{notificationPermission === 'granted' ? '🟢' : notificationPermission === 'denied' ? '🔴' : '🔔'}</span>
+            <span>
+              {notificationPermission === 'granted' 
+                ? 'Avisos Activos' 
+                : notificationPermission === 'denied' 
+                ? 'Avisos Bloqueados' 
+                : 'Activar Avisos'}
+            </span>
           </button>
         )}
         <button 
