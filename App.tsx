@@ -32,12 +32,32 @@ const App: React.FC = () => {
   const [allMachinery, setAllMachinery] = useState<Machinery[]>([]);
   const [selectionForm, setSelectionForm] = useState({ forklift: '', pda: '' });
 
-  // Request notification permission on mount
+  // Request notification permission on mount and setup audio
   useEffect(() => {
-    if ("Notification" in window && window.Notification.permission === "default") {
-      window.Notification.requestPermission();
+    const requestPermission = async () => {
+      if ("Notification" in window) {
+        if (window.Notification.permission === "default") {
+          await window.Notification.requestPermission();
+        }
+      }
+    };
+    requestPermission();
+
+    // Register a simple service worker for better notification support
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW registration failed', err));
     }
   }, []);
+
+  const playNotificationSound = () => {
+    try {
+      const audio = new window.Audio('https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3');
+      audio.volume = 0.5;
+      audio.play();
+    } catch (e) {
+      console.error("Error playing sound:", e);
+    }
+  };
 
   // Update document title when unread count changes
   useEffect(() => {
@@ -339,20 +359,31 @@ const App: React.FC = () => {
               });
 
               // Trigger System Notification immediately if hidden
-              if (document.hidden && "Notification" in window && window.Notification.permission === "granted") {
-                const notification = new window.Notification(`Nuevo mensaje de ${senderName}`, {
-                  body: messageText,
-                  icon: "/favicon.ico",
-                  tag: "new-message",
-                  renotify: true
-                });
-                
-                notification.onclick = () => {
-                  window.focus();
-                  setActiveTab('messaging');
-                  setTargetConversationId(newMessage.conversation_id);
-                  notification.close();
-                };
+              if (document.hidden) {
+                playNotificationSound();
+
+                if ("Notification" in window && window.Notification.permission === "granted") {
+                  const options = {
+                    body: messageText,
+                    icon: "/favicon.ico",
+                    tag: "new-message",
+                    renotify: true,
+                    silent: false // We play our own sound but let system know
+                  };
+
+                  // Try Service Worker notification first (more robust)
+                  if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.ready.then(registration => {
+                      registration.showNotification(`Nuevo mensaje de ${senderName}`, options);
+                    }).catch(() => {
+                      // Fallback to standard Notification
+                      new window.Notification(`Nuevo mensaje de ${senderName}`, options);
+                    });
+                  } else {
+                    // Standard Notification fallback
+                    new window.Notification(`Nuevo mensaje de ${senderName}`, options);
+                  }
+                }
               }
 
               // Clear notification after 8 seconds
