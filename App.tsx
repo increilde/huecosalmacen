@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserRole, UserProfile, Machinery, Role } from './types';
 import Sidebar from './components/Sidebar';
+import ProfileModal from './components/ProfileModal';
 import Dashboard from './components/Dashboard';
 import SlotGrid from './components/SlotGrid';
 import AdminPanel from './components/AdminPanel';
@@ -24,6 +25,7 @@ const App: React.FC = () => {
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   const [lastNotification, setLastNotification] = useState<{sender: string, text: string, conversationId: string} | null>(null);
   const [notificationPermission, setNotificationPermission] = useState<'default' | 'granted' | 'denied'>("default");
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [targetConversationId, setTargetConversationId] = useState<string | null>(null);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [loginError, setLoginError] = useState('');
@@ -157,14 +159,15 @@ const App: React.FC = () => {
   // Efecto para validar permisos de la pestaña activa
   useEffect(() => {
     if (user && userPermissions.length > 0) {
-      const hasAccess = userPermissions.includes(activeTab) || 
-                       (activeTab === 'deliveries' && (user.role === UserRole.ADMIN || user.role === UserRole.DISTRIBUTION || user.role === UserRole.SUPERVISOR_DISTRI)) ||
-                       (activeTab === 'messaging' && (user.has_messaging_access || user.role === UserRole.ADMIN));
+      const role = user.role.toLowerCase();
+      const hasAccess = userPermissions.some(p => p.toLowerCase() === activeTab.toLowerCase()) || 
+                       (activeTab === 'deliveries' && (role === 'admin' || role === 'distribución' || role === 'supervisor_distri')) ||
+                       (activeTab === 'messaging' && (user.has_messaging_access || role === 'admin' || userPermissions.some(p => p.toLowerCase() === 'messaging')));
       
       if (!hasAccess) {
-        if (userPermissions.includes('dashboard')) setActiveTab('dashboard');
-        else if (userPermissions.includes('expedition')) setActiveTab('expedition');
-        else setActiveTab(userPermissions[0] as any);
+        if (userPermissions.some(p => p.toLowerCase() === 'dashboard')) setActiveTab('dashboard');
+        else if (userPermissions.some(p => p.toLowerCase() === 'expedition')) setActiveTab('expedition');
+        else if (userPermissions.length > 0) setActiveTab(userPermissions[0] as any);
       }
     }
   }, [user, userPermissions, activeTab]);
@@ -194,6 +197,19 @@ const App: React.FC = () => {
         const parsed = JSON.parse(savedUser);
         setUser(parsed);
         fetchRolePermissions(parsed.role);
+        
+        // Refresh profile from DB to get latest permissions and data
+        supabase.from('profiles')
+          .select('*')
+          .eq('id', parsed.id)
+          .maybeSingle()
+          .then(({ data }) => {
+            if (data) {
+              setUser(data);
+              localStorage.setItem('wh_user', JSON.stringify(data));
+              fetchRolePermissions(data.role);
+            }
+          });
       } catch (e) {
         localStorage.removeItem('wh_user');
       }
@@ -528,6 +544,7 @@ const App: React.FC = () => {
           setActiveTab={setActiveTab} 
           userRole={user.role} 
           permissions={userPermissions}
+          hasMessagingAccess={user.has_messaging_access || user.role === 'admin'}
           onLogout={logout}
           unreadMessagesCount={unreadMessagesCount}
           onRequestNotifications={requestNotificationPermission}
@@ -542,11 +559,31 @@ const App: React.FC = () => {
             <div className="bg-indigo-600 w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-xs shadow-lg">WH</div>
             <h1 className="text-lg font-black text-slate-800 uppercase tracking-tight">WH Control <span className="text-indigo-600">by Ilde</span></h1>
           </div>
-          <div className="text-right">
-            <p className="text-[10px] font-black text-slate-400 uppercase leading-none mb-1">{user.role.toUpperCase()}</p>
-            <p className="text-[11px] font-black text-slate-800 uppercase leading-none">{user.full_name}</p>
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <p className="text-[10px] font-black text-slate-400 uppercase leading-none mb-1">{user.role.toUpperCase()}</p>
+              <p className="text-[11px] font-black text-slate-800 uppercase leading-none">{user.full_name}</p>
+            </div>
+            <button 
+              onClick={() => setIsProfileModalOpen(true)}
+              className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 hover:text-indigo-600 transition-all border border-slate-200 shadow-sm overflow-hidden"
+              title="Editar Perfil"
+            >
+              {user.avatar_url ? (
+                <img src={user.avatar_url} alt="Avatar" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+              )}
+            </button>
           </div>
         </header>
+
+        <ProfileModal 
+          user={user} 
+          isOpen={isProfileModalOpen} 
+          onClose={() => setIsProfileModalOpen(false)} 
+          onUpdate={(updatedUser) => setUser(updatedUser)}
+        />
 
         <div className="animate-fade-in max-w-5xl mx-auto">
           {activeTab === 'dashboard' && <Dashboard user={user} />}
@@ -591,7 +628,7 @@ const App: React.FC = () => {
             <span className="text-xl">📅</span>
           </button>
         )}
-        {(userPermissions.includes('messaging') || user.has_messaging_access || user.role === 'admin') && (
+        {(userPermissions.some(p => p.toLowerCase() === 'messaging') || user.has_messaging_access || user.role.toLowerCase() === 'admin') && (
           <button onClick={() => setActiveTab('messaging')} className={`flex flex-col items-center gap-1 relative ${activeTab === 'messaging' ? 'text-indigo-400' : 'text-slate-500'}`}>
             <span className="text-xl">💬</span>
             {unreadMessagesCount > 0 && (

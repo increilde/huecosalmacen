@@ -58,7 +58,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   const [showMachineryModal, setShowMachineryModal] = useState(false);
   const [showTaskModal, setShowTaskModal] = useState(false);
   
-  const [truckerForm, setTruckerForm] = useState({ label: '' });
+  const [truckerForm, setTruckerForm] = useState({ label: '', zone: 'SIN ZONA' });
   const [machineryForm, setMachineryForm] = useState({ type: 'carretilla' as 'carretilla' | 'pda', identifier: '' });
   
   // Estados para Tareas (Creación / Edición)
@@ -180,7 +180,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
         }
       } else if (activeSubTab === 'truckers') {
         const { data } = await supabase.from('truckers').select('*').order('full_name');
-        setTruckers(data?.map((t: any) => ({ id: t.id, label: t.full_name, created_at: t.created_at })) || []);
+        setTruckers(data?.map((t: any) => ({ id: t.id, label: t.full_name, zone: t.zone, created_at: t.created_at })) || []);
       } else if (activeSubTab === 'machinery') {
         const { data } = await supabase.from('machinery').select('*').order('type', { ascending: true }).order('identifier', { ascending: true });
         setMachinery(data || []);
@@ -441,8 +441,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   const handleCreateTrucker = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!truckerForm.label) return;
-    const { error } = await supabase.from('truckers').insert([{ full_name: truckerForm.label.toUpperCase().trim() }]);
-    if (!error) { setTruckerForm({ label: '' }); setShowTruckerModal(false); fetchData(); }
+    const { error } = await supabase.from('truckers').insert([{ 
+      full_name: truckerForm.label.toUpperCase().trim(),
+      zone: truckerForm.zone
+    }]);
+    if (!error) { setTruckerForm({ label: '', zone: 'SIN ZONA' }); setShowTruckerModal(false); fetchData(); }
   };
 
   const deleteTrucker = async (id: string) => {
@@ -1954,9 +1957,27 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                {truckers.map(t => (
                  <div key={t.id} className="p-6 bg-slate-50 rounded-[2.5rem] border border-slate-100 flex items-center justify-between group">
-                    <div>
+                    <div className="flex-1">
                       <p className="font-black text-slate-800 uppercase text-sm">{t.label}</p>
-                      <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-1">Registrado</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Zona:</span>
+                        <select 
+                          value={t.zone || 'SIN ZONA'}
+                          onChange={async (e) => {
+                            const newZone = e.target.value;
+                            const { error } = await supabase.from('truckers').update({ zone: newZone }).eq('id', t.id);
+                            if (!error) fetchData();
+                          }}
+                          className="text-[9px] font-black text-indigo-600 bg-transparent border-none outline-none cursor-pointer uppercase"
+                        >
+                          <option value="SIN ZONA">SIN ZONA</option>
+                          <option value="GRANADA">GRANADA</option>
+                          <option value="COSTA 1">COSTA 1</option>
+                          <option value="COSTA 2">COSTA 2</option>
+                          <option value="ANTEQUERA">ANTEQUERA</option>
+                          <option value="ALMERÍA">ALMERÍA</option>
+                        </select>
+                      </div>
                     </div>
                     <button onClick={() => deleteTrucker(t.id)} className="w-10 h-10 rounded-xl bg-rose-100 text-rose-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">🗑️</button>
                  </div>
@@ -2252,8 +2273,23 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                 placeholder="NOMBRE / Nº CAMIÓN" 
                 className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 font-black text-xs text-center outline-none focus:border-indigo-500 uppercase" 
                 value={truckerForm.label} 
-                onChange={e => setTruckerForm({ label: e.target.value })} 
+                onChange={e => setTruckerForm({ ...truckerForm, label: e.target.value })} 
               />
+              <div className="space-y-1">
+                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2">Zona Predeterminada</label>
+                <select 
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 font-black text-xs outline-none focus:border-indigo-500 uppercase"
+                  value={truckerForm.zone}
+                  onChange={e => setTruckerForm({ ...truckerForm, zone: e.target.value })}
+                >
+                  <option value="SIN ZONA">SIN ZONA</option>
+                  <option value="GRANADA">GRANADA</option>
+                  <option value="COSTA 1">COSTA 1</option>
+                  <option value="COSTA 2">COSTA 2</option>
+                  <option value="ANTEQUERA">ANTEQUERA</option>
+                  <option value="ALMERÍA">ALMERÍA</option>
+                </select>
+              </div>
               <div className="space-y-3">
                  <button type="submit" className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-xl uppercase tracking-widest text-[10px]">Guardar Transportista</button>
                  <button type="button" onClick={() => setShowTruckerModal(false)} className="w-full py-4 text-slate-400 font-black text-[9px] uppercase tracking-[0.2em]">Cancelar</button>

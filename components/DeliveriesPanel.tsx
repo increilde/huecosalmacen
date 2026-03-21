@@ -22,13 +22,14 @@ import {
   useSortable
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Calendar, Truck, MapPin, Plus, History, Search, Filter, ChevronDown, ChevronRight, Save, X, Trash2, GripVertical, Printer } from 'lucide-react';
+import { Calendar, Truck, MapPin, Plus, History, Search, Filter, ChevronDown, ChevronRight, Save, X, Trash2, GripVertical, Printer, Navigation } from 'lucide-react';
+import RouteMap from './RouteMap';
 
 interface DeliveriesPanelProps {
   user: UserProfile;
 }
 
-const POSTAL_CODES: Record<string, string> = {
+const POSTAL_CODES: Record<string, string | string[]> = {
   '28001': 'Madrid', '08001': 'Barcelona', '41001': 'Sevilla', '46001': 'Valencia',
   '29001': 'Málaga', '30001': 'Murcia', '07001': 'Palma de Mallorca', '35001': 'Las Palmas',
   '48001': 'Bilbao', '03001': 'Alicante', '50001': 'Zaragoza', '47001': 'Valladolid',
@@ -36,7 +37,9 @@ const POSTAL_CODES: Record<string, string> = {
   '31001': 'Pamplona', '20001': 'San Sebastián', '01001': 'Vitoria', '26001': 'Logroño',
   '18001': 'Granada', '18210': 'Peligros', '18230': 'Atarfe', '18200': 'Maracena',
   '18100': 'Armilla', '18140': 'La Zubia', '18151': 'Ogíjares', '18194': 'Churriana de la Vega',
-  '18015': 'Granada (Norte)', '18600': 'Motril', '18613': 'Motril (Puerto)', '18690': 'Almuñécar',
+  '18110': ['GABIA GRANDE', 'GABIA CHICA', 'HÍJAR'],
+  '18015': ['Granada', 'Albolote'], // Ejemplo de CP con múltiples localidades
+  '18600': 'Motril', '18613': 'Motril (Puerto)', '18690': 'Almuñécar',
   '18700': 'Vélez de Benaudalla', '18800': 'Baza', '18500': 'Guadix', '04001': 'Almería',
   '23001': 'Jaén', '14001': 'Córdoba', '11001': 'Cádiz', '21001': 'Huelva',
   '29002': 'Málaga (Centro)', '29620': 'Torremolinos', '29640': 'Fuengirola', '29600': 'Marbella',
@@ -184,6 +187,8 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
   const [showHistoryId, setShowHistoryId] = useState<string | null>(null);
   const [deliveryLogs, setDeliveryLogs] = useState<DeliveryLog[]>([]);
   const [showZoneModal, setShowZoneModal] = useState(false);
+  const [showRouteMap, setShowRouteMap] = useState(false);
+  const [routeTruckId, setRouteTruckId] = useState<string | null>(null);
   const [pendingZoneTruckId, setPendingZoneTruckId] = useState<string | null>(null);
   const [pendingDeliveryId, setPendingDeliveryId] = useState<string | null>(null);
   const [isCreatingAfterZone, setIsCreatingAfterZone] = useState(false);
@@ -195,6 +200,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
     merchandise_type: ''
   });
   const [postalCodeLocality, setPostalCodeLocality] = useState('');
+  const [postalCodePlaces, setPostalCodePlaces] = useState<string[]>([]);
   const [isSearchingLocality, setIsSearchingLocality] = useState(false);
 
   useEffect(() => {
@@ -346,7 +352,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
     if (!pendingZoneTruckId) return;
     
     try {
-      // 1. Asignar zona al camión
+      // 1. Asignar zona al camión (esto actualiza el valor por defecto)
       await handleUpdateTruckZone(pendingZoneTruckId, zone);
       
       // 2. Si venimos del formulario de creación
@@ -360,6 +366,19 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
         if (delivery) {
           await toggleScheduled(delivery, true);
         }
+      }
+      // 4. Caso general: venimos de hacer clic en la zona en el header
+      // Actualizamos también la asignación diaria para el día seleccionado
+      else {
+        await supabase
+          .from('daily_truck_assignments')
+          .upsert({ 
+            truck_id: pendingZoneTruckId, 
+            zone, 
+            assignment_date: selectedDate 
+          }, { onConflict: 'truck_id,assignment_date' });
+        
+        fetchAgendaAssignments(selectedDate);
       }
       
       setShowZoneModal(false);
@@ -425,6 +444,46 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
     });
   };
 
+  const handleCalculateRoute = (truckId: string) => {
+    setRouteTruckId(truckId);
+    setShowRouteMap(true);
+  };
+
+  const handleMaintainRoute = async (orderedDeliveries: Delivery[]) => {
+    if (orderedDeliveries.length === 0) return;
+    
+    setLoading(true);
+    try {
+      // Actualizar cada reparto con su nueva secuencia de forma individual
+      // Usamos Promise.all para que las actualizaciones se ejecuten en paralelo
+      const updatePromises = orderedDeliveries.map((d, i) => 
+        supabase
+          .from('deliveries')
+          .update({ sequence: i + 1 })
+          .eq('id', d.id)
+      );
+
+      const results = await Promise.all(updatePromises);
+      
+      // Verificar si alguna actualización falló
+      const firstError = results.find(r => r.error)?.error;
+      if (firstError) throw firstError;
+
+      setMessage({ type: 'success', text: 'Orden de ruta guardado correctamente' });
+      fetchDeliveries(selectedDate);
+      setTimeout(() => setMessage(null), 3000);
+    } catch (err: any) {
+      console.error("Error updating sequence:", err);
+      const errorMsg = err.message || 'Error desconocido';
+      setMessage({ 
+        type: 'error', 
+        text: `Error al guardar el orden: ${errorMsg}. Asegúrate de que la columna 'sequence' existe en la tabla 'deliveries'.` 
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCreateDelivery = async () => {
     if (!newDelivery.truck_id || !newDelivery.order_number) {
       setMessage({ type: 'error', text: 'Faltan campos obligatorios (Camión y Pedido)' });
@@ -471,9 +530,11 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
       setNewDelivery({
         warehouse_origin: '3',
         delivery_time: 'morning',
-        merchandise_type: ''
+        merchandise_type: '',
+        address: ''
       });
       setPostalCodeLocality('');
+      setPostalCodePlaces([]);
       setEditingId(null);
       fetchDeliveries(selectedDate);
       setView('agenda');
@@ -492,11 +553,24 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
       warehouse_origin: delivery.warehouse_origin,
       delivery_time: delivery.delivery_time,
       postal_code: delivery.postal_code,
+      address: delivery.address,
       merchandise_type: delivery.merchandise_type,
       comments: delivery.comments,
       is_scheduled: delivery.is_scheduled
     });
     setPostalCodeLocality(delivery.locality || '');
+    
+    // Si tiene CP, intentar cargar las opciones de localidad para el desplegable
+    if (delivery.postal_code && delivery.postal_code.length === 5) {
+      const localValue = POSTAL_CODES[delivery.postal_code];
+      if (localValue) {
+        const places = Array.isArray(localValue) ? localValue : [localValue];
+        setPostalCodePlaces(places);
+      }
+    } else {
+      setPostalCodePlaces([]);
+    }
+
     setEditingId(delivery.id);
     setView('create');
   };
@@ -584,6 +658,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
 
   const handlePostalCodeChange = async (code: string) => {
     setNewDelivery(prev => ({ ...prev, postal_code: code }));
+    setPostalCodePlaces([]);
     
     if (code.length === 5) {
       setIsSearchingLocality(true);
@@ -593,21 +668,52 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
         if (response.ok) {
           const data = await response.json();
           if (data.places && data.places.length > 0) {
-            const place = data.places[0];
-            setPostalCodeLocality(place['place name']);
+            const places = data.places.map((p: any) => p['place name'].toUpperCase());
+            // Eliminar duplicados si los hay
+            const uniquePlaces = Array.from(new Set(places)) as string[];
+            setPostalCodePlaces(uniquePlaces);
+            
+            if (uniquePlaces.length === 1) {
+              setPostalCodeLocality(uniquePlaces[0]);
+            } else {
+              setPostalCodeLocality(''); // Dejar que el usuario elija del desplegable
+            }
           }
         } else {
           // Fallback a la lista local si la API falla o no encuentra el CP
-          setPostalCodeLocality(POSTAL_CODES[code] || '');
+          const localValue = POSTAL_CODES[code];
+          if (localValue) {
+            const places = Array.isArray(localValue) ? localValue : [localValue];
+            setPostalCodePlaces(places);
+            if (places.length === 1) {
+              setPostalCodeLocality(places[0]);
+            } else {
+              setPostalCodeLocality('');
+            }
+          } else {
+            setPostalCodeLocality('');
+          }
         }
       } catch (err) {
         console.error("Error buscando localidad:", err);
-        setPostalCodeLocality(POSTAL_CODES[code] || '');
+        const localValue = POSTAL_CODES[code];
+        if (localValue) {
+          const places = Array.isArray(localValue) ? localValue : [localValue];
+          setPostalCodePlaces(places);
+          if (places.length === 1) {
+            setPostalCodeLocality(places[0]);
+          } else {
+            setPostalCodeLocality('');
+          }
+        } else {
+          setPostalCodeLocality('');
+        }
       } finally {
         setIsSearchingLocality(false);
       }
     } else {
       setPostalCodeLocality('');
+      setPostalCodePlaces([]);
     }
   };
 
@@ -824,7 +930,24 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
             <div className="space-y-6">
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Camión / Transportista</label>
+                <div className="flex justify-between items-center mb-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 block">Camión / Transportista</label>
+                  {newDelivery.truck_id && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Zona:</span>
+                      <button 
+                        onClick={() => {
+                          setPendingZoneTruckId(newDelivery.truck_id!);
+                          setIsCreatingAfterZone(false);
+                          setShowZoneModal(true);
+                        }}
+                        className="text-[10px] font-black text-indigo-600 uppercase tracking-widest hover:underline"
+                      >
+                        {trucks.find(t => t.id === newDelivery.truck_id)?.zone || 'SIN ZONA'}
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <select 
                   value={newDelivery.truck_id || ''}
                   onChange={e => setNewDelivery(prev => ({ ...prev, truck_id: e.target.value }))}
@@ -853,20 +976,51 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
               <div>
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Población / Localidad</label>
                 <div className="relative">
-                  <input 
-                    type="text" 
-                    value={postalCodeLocality}
-                    onChange={e => setPostalCodeLocality(e.target.value)}
-                    placeholder="Ej: Madrid"
-                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 text-sm font-bold outline-none focus:border-indigo-500 transition-all"
-                    tabIndex={2.5}
-                  />
+                  {postalCodePlaces.length > 1 ? (
+                    <select
+                      value={postalCodeLocality}
+                      onChange={e => setPostalCodeLocality(e.target.value)}
+                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 text-sm font-bold outline-none focus:border-indigo-500 transition-all appearance-none"
+                      tabIndex={2.5}
+                    >
+                      <option value="">-- SELECCIONA LOCALIDAD --</option>
+                      {postalCodePlaces.map(place => (
+                        <option key={place} value={place}>{place}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input 
+                      type="text" 
+                      value={postalCodeLocality}
+                      onChange={e => setPostalCodeLocality(e.target.value)}
+                      placeholder="Ej: Madrid"
+                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 text-sm font-bold outline-none focus:border-indigo-500 transition-all"
+                      tabIndex={2.5}
+                    />
+                  )}
                   {isSearchingLocality && (
                     <div className="absolute right-4 top-1/2 -translate-y-1/2">
                       <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
                     </div>
                   )}
+                  {postalCodePlaces.length > 1 && (
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                      <ChevronDown className="w-4 h-4 text-slate-400" />
+                    </div>
+                  )}
                 </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Dirección (Opcional)</label>
+                <input 
+                  type="text" 
+                  value={newDelivery.address || ''}
+                  onChange={e => setNewDelivery(prev => ({ ...prev, address: e.target.value }))}
+                  placeholder="Ej: Calle Mayor, 1"
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 text-sm font-bold outline-none focus:border-indigo-500 transition-all"
+                  tabIndex={2.7}
+                />
               </div>
 
               <div>
@@ -959,6 +1113,8 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                 delivery_time: 'morning',
                 merchandise_type: ''
               });
+              setPostalCodeLocality('');
+              setPostalCodePlaces([]);
               setView('agenda');
             }}
             className="w-full mt-4 py-4 bg-slate-100 text-slate-600 font-black rounded-[2rem] uppercase tracking-widest text-xs active:scale-95 transition-all hover:bg-slate-200"
@@ -1035,9 +1191,21 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
             const truckDeliveries = deliveries
               .filter(d => d.truck_id === truck.id)
               .sort((a, b) => {
+                // Primero por franja horaria
                 if (a.delivery_time === 'morning' && b.delivery_time === 'afternoon') return -1;
                 if (a.delivery_time === 'afternoon' && b.delivery_time === 'morning') return 1;
-                return 0;
+                
+                // Luego por secuencia si existe
+                if (a.sequence !== undefined && b.sequence !== undefined && a.sequence !== null && b.sequence !== null) {
+                  return a.sequence - b.sequence;
+                }
+                
+                // Si solo uno tiene secuencia, ese va primero
+                if (a.sequence !== undefined && a.sequence !== null) return -1;
+                if (b.sequence !== undefined && b.sequence !== null) return 1;
+                
+                // Por defecto por fecha de creación
+                return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
               });
             
             // Obtener zona para mostrar en el header
@@ -1061,9 +1229,28 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                     <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                       <span className="text-[9px] font-black text-white/40 uppercase tracking-widest">ZONA:</span>
                       <div className="flex items-center gap-2">
-                        <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg border ${dailyAssignment ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-white/10 text-white/60 border-white/10'}`}>
+                        <button 
+                          onClick={() => {
+                            setPendingZoneTruckId(truck.id);
+                            setShowZoneModal(true);
+                          }}
+                          className={`text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg border transition-all hover:scale-105 active:scale-95 ${dailyAssignment ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-white/10 text-white/60 border-white/10 hover:bg-white/20'}`}
+                          title="Cambiar zona"
+                        >
                           {displayZone}
-                        </span>
+                        </button>
+                        {truckDeliveries.length > 0 && (
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCalculateRoute(truck.id);
+                            }}
+                            className="bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg border border-emerald-500 transition-all hover:bg-emerald-500 hover:scale-105 active:scale-95 flex items-center gap-2"
+                          >
+                            <span>🗺️</span>
+                            RUTA IA
+                          </button>
+                        )}
                         {dailyAssignment && (
                           <span className="text-[8px] font-black text-indigo-300 uppercase tracking-tighter">Asignado hoy</span>
                         )}
@@ -1072,14 +1259,14 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
 
                     <div className="h-6 w-px bg-white/20" />
 
-                    <div className="flex items-center gap-4">
-                      <div className="flex items-center gap-2">
+                    <div className="flex flex-col gap-0.5 min-w-[100px]">
+                      <div className="flex items-center justify-between gap-2">
                         <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">AGENDADOS:</span>
                         <span className="text-[11px] font-black text-white">
                           {truckDeliveries.filter(d => d.is_scheduled).length}/{truckDeliveries.length}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center justify-between gap-2">
                         <span className="text-[9px] font-black text-blue-400 uppercase tracking-widest">EN MUELLE:</span>
                         <span className="text-[11px] font-black text-white">
                           {truckDeliveries.filter(d => d.at_dock).length}/{truckDeliveries.length}
@@ -1101,8 +1288,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                       }}
                       className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-indigo-200 transition-all active:scale-95"
                     >
-                      <Plus className="w-3 h-3" />
-                      Añadir Reparto
+                      REPARTO
                     </button>
                     <span className="bg-white/10 text-white/80 px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest">
                       {truckDeliveries.length} REPARTOS
@@ -1140,9 +1326,16 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                               <div className="flex flex-wrap items-start gap-x-8 gap-y-1">
                                 <div className="flex items-center gap-2 min-w-[180px]">
                                   <span className="text-lg">📍</span>
-                                  <p className={`text-[12px] font-bold uppercase leading-tight ${delivery.at_dock ? 'text-white' : 'text-slate-700'}`}>
-                                    {delivery.postal_code} - {delivery.locality}
-                                  </p>
+                                  <div className="flex flex-col">
+                                    <p className={`text-[12px] font-bold uppercase leading-tight ${delivery.at_dock ? 'text-white' : 'text-slate-700'}`}>
+                                      {delivery.postal_code} - {delivery.locality}
+                                    </p>
+                                    {delivery.address && (
+                                      <p className={`text-[10px] font-medium uppercase leading-tight mt-0.5 ${delivery.at_dock ? 'text-blue-100' : 'text-slate-500'}`}>
+                                        {delivery.address}
+                                      </p>
+                                    )}
+                                  </div>
                                 </div>
                                 <div className="flex items-center gap-2 flex-1 min-w-[150px]">
                                   <span className="text-lg">📦</span>
@@ -1326,6 +1519,18 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
             </button>
           </div>
         </div>
+      )}
+      {showRouteMap && routeTruckId && (
+        <RouteMap 
+          truckId={routeTruckId}
+          truckLabel={trucks.find(t => t.id === routeTruckId)?.label || ''}
+          deliveries={deliveries.filter(d => d.truck_id === routeTruckId)}
+          onMaintainRoute={handleMaintainRoute}
+          onClose={() => {
+            setShowRouteMap(false);
+            setRouteTruckId(null);
+          }}
+        />
       )}
     </div>
   );

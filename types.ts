@@ -170,10 +170,12 @@ export interface Delivery {
   postal_code: string;
   locality: string;
   merchandise_type: string;
+  address?: string;
   comments?: string;
   created_by_name?: string;
   is_scheduled?: boolean;
   at_dock?: boolean;
+  sequence?: number;
   created_at: string;
 }
 

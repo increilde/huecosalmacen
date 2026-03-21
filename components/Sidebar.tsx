@@ -7,6 +7,7 @@ interface SidebarProps {
   setActiveTab: (tab: 'dashboard' | 'slots' | 'admin' | 'expedition' | 'supplies' | 'deliveries' | 'messaging') => void;
   userRole: string;
   permissions: string[];
+  hasMessagingAccess?: boolean;
   onLogout: () => void;
   unreadMessagesCount?: number;
   onRequestNotifications?: () => void;
@@ -19,6 +20,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   setActiveTab, 
   userRole, 
   permissions, 
+  hasMessagingAccess = false,
   onLogout, 
   unreadMessagesCount = 0,
   onRequestNotifications,
@@ -37,9 +39,11 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   // Filtrar items según permisos (si no hay permisos definidos, se muestra vacío o admin ve todo por seguridad)
   const menuItems = allItems.filter(item => {
-    if (userRole === 'admin') return true;
-    if (userRole === 'distribución' && item.id === 'deliveries') return true;
-    return permissions.includes(item.id);
+    const role = userRole.toLowerCase();
+    if (role === 'admin') return true;
+    if (role === 'distribución' && item.id === 'deliveries') return true;
+    if (item.id === 'messaging' && hasMessagingAccess) return true;
+    return permissions.some(p => p.toLowerCase() === item.id.toLowerCase());
   });
 
   return (

@@ -12,6 +12,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  * -- 1. Columnas base
  * ALTER TABLE roles ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '[]';
  * ALTER TABLE profiles ADD COLUMN IF NOT EXISTS prompt_machinery BOOLEAN DEFAULT FALSE;
+ * ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS sequence INTEGER DEFAULT 0;
  * 
  * -- 2. Restricciones seguras (Solo se crean si no existen)
  * DO $$
@@ -95,6 +96,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  * -- 9. Tabla de Repartos (Distribución)
  * ALTER TABLE truckers ADD COLUMN IF NOT EXISTS zone TEXT;
  * ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS at_dock BOOLEAN DEFAULT FALSE;
+ * ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS address TEXT;
  * ALTER TABLE deliveries ALTER COLUMN postal_code DROP NOT NULL;
  * 
  * CREATE TABLE IF NOT EXISTS deliveries (
@@ -105,12 +107,14 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  *     delivery_time TEXT CHECK (delivery_time IN ('morning', 'afternoon')),
  *     postal_code TEXT,
  *     locality TEXT,
+ *     address TEXT,
  *     merchandise_type TEXT,
  *     comments TEXT,
  *     delivery_date DATE NOT NULL,
  *     created_by_name TEXT,
  *     is_scheduled BOOLEAN DEFAULT FALSE,
  *     at_dock BOOLEAN DEFAULT FALSE,
+ *     sequence INTEGER DEFAULT 0,
  *     created_at TIMESTAMPTZ DEFAULT now()
  * );
  *
