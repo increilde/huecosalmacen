@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
-import { WarehouseSlot, UserProfile, Trucker, UserRole, Machinery, Task, Role, MachineryMaintenance } from '../types';
+import { WarehouseSlot, UserProfile, Trucker, Installer, UserRole, Machinery, Task, Role, MachineryMaintenance } from '../types';
 import UserManagement from './UserManagement';
 
 interface MovementLog {
@@ -27,7 +27,7 @@ interface TaskLog {
   profiles?: { full_name: string };
 }
 
-type AdminTab = 'movements' | 'operators' | 'truckers' | 'sectors' | 'reports' | 'machinery' | 'tasks' | 'map' | 'map_config';
+type AdminTab = 'movements' | 'operators' | 'sectors' | 'reports' | 'machinery' | 'tasks' | 'map' | 'map_config';
 type ReportScope = 'range' | 'week' | 'today';
 
 interface AdminPanelProps {
@@ -35,7 +35,7 @@ interface AdminPanelProps {
 }
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
-  const [activeSubTab, setActiveSubTab] = useState<AdminTab>('reports');
+  const [activeSubTab, setActiveSubTab] = useState<AdminTab>(user.role === 'supervisor_distri' ? 'movements' : 'reports');
   const [selectedMachineryId, setSelectedMachineryId] = useState<string | null>(null);
   const [tasksView, setTasksView] = useState<'report' | 'config'>('report');
   const [loading, setLoading] = useState(true);
@@ -51,14 +51,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
 
   const [allLogs, setAllLogs] = useState<MovementLog[]>([]);
   const [truckers, setTruckers] = useState<Trucker[]>([]);
+  const [installers, setInstallers] = useState<Installer[]>([]);
   const [machinery, setMachinery] = useState<Machinery[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [showTruckerModal, setShowTruckerModal] = useState(false);
+  const [showInstallerModal, setShowInstallerModal] = useState(false);
   const [showMachineryModal, setShowMachineryModal] = useState(false);
   const [showTaskModal, setShowTaskModal] = useState(false);
   
-  const [truckerForm, setTruckerForm] = useState({ label: '', zone: 'SIN ZONA' });
+  const [truckerForm, setTruckerForm] = useState({ label: '' });
+  const [installerForm, setInstallerForm] = useState({ label: '' });
   const [machineryForm, setMachineryForm] = useState({ type: 'carretilla' as 'carretilla' | 'pda', identifier: '' });
   
   // Estados para Tareas (Creación / Edición)
@@ -178,10 +181,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
             setWarehouseBreakdown(breakdown);
           }
         }
-      } else if (activeSubTab === 'truckers') {
-        const { data } = await supabase.from('truckers').select('*').order('full_name');
-        setTruckers(data?.map((t: any) => ({ id: t.id, label: t.full_name, zone: t.zone, created_at: t.created_at })) || []);
-      } else if (activeSubTab === 'machinery') {
+        
         const { data } = await supabase.from('machinery').select('*').order('type', { ascending: true }).order('identifier', { ascending: true });
         setMachinery(data || []);
         const { data: maintData } = await supabase.from('machinery_maintenance').select('*').order('created_at', { ascending: false });
@@ -442,15 +442,30 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
     e.preventDefault();
     if (!truckerForm.label) return;
     const { error } = await supabase.from('truckers').insert([{ 
-      full_name: truckerForm.label.toUpperCase().trim(),
-      zone: truckerForm.zone
+      full_name: truckerForm.label.toUpperCase().trim()
     }]);
-    if (!error) { setTruckerForm({ label: '', zone: 'SIN ZONA' }); setShowTruckerModal(false); fetchData(); }
+    if (!error) { setTruckerForm({ label: '' }); setShowTruckerModal(false); fetchData(); }
   };
 
   const deleteTrucker = async (id: string) => {
     if (confirm("¿Eliminar camión?")) {
       await supabase.from('truckers').delete().eq('id', id);
+      fetchData();
+    }
+  };
+
+  const handleCreateInstaller = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!installerForm.label) return;
+    const { error } = await supabase.from('installers').insert([{ 
+      full_name: installerForm.label.toUpperCase().trim()
+    }]);
+    if (!error) { setInstallerForm({ label: '' }); setShowInstallerModal(false); fetchData(); }
+  };
+
+  const deleteInstaller = async (id: string) => {
+    if (confirm("¿Eliminar instalador?")) {
+      await supabase.from('installers').delete().eq('id', id);
       fetchData();
     }
   };
@@ -841,8 +856,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
             { id: 'sectors', label: 'SECTORES', icon: '📊' },
             { id: 'machinery', label: 'MAQUINARIA', icon: '🛠️' },
             { id: 'tasks', label: 'TAREAS', icon: '📌' },
-            { id: 'truckers', label: 'CAMIONES', icon: '🚛' },
-          ].map((tab) => (
+          ].filter(tab => {
+            if (user.role === 'admin') return true;
+            if (user.role === 'supervisor_distri') {
+              return tab.id === 'movements' || tab.id === 'reports';
+            }
+            return false;
+          }).map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveSubTab(tab.id as AdminTab)}
@@ -1959,27 +1979,27 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                  <div key={t.id} className="p-6 bg-slate-50 rounded-[2.5rem] border border-slate-100 flex items-center justify-between group">
                     <div className="flex-1">
                       <p className="font-black text-slate-800 uppercase text-sm">{t.label}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Zona:</span>
-                        <select 
-                          value={t.zone || 'SIN ZONA'}
-                          onChange={async (e) => {
-                            const newZone = e.target.value;
-                            const { error } = await supabase.from('truckers').update({ zone: newZone }).eq('id', t.id);
-                            if (!error) fetchData();
-                          }}
-                          className="text-[9px] font-black text-indigo-600 bg-transparent border-none outline-none cursor-pointer uppercase"
-                        >
-                          <option value="SIN ZONA">SIN ZONA</option>
-                          <option value="GRANADA">GRANADA</option>
-                          <option value="COSTA 1">COSTA 1</option>
-                          <option value="COSTA 2">COSTA 2</option>
-                          <option value="ANTEQUERA">ANTEQUERA</option>
-                          <option value="ALMERÍA">ALMERÍA</option>
-                        </select>
-                      </div>
                     </div>
                     <button onClick={() => deleteTrucker(t.id)} className="w-10 h-10 rounded-xl bg-rose-100 text-rose-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">🗑️</button>
+                 </div>
+               ))}
+            </div>
+          </div>
+        )}
+
+        {activeSubTab === 'installers' && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center mb-6">
+               <h3 className="text-lg font-black text-slate-800 uppercase tracking-tighter">Instaladores Habituales</h3>
+               <button onClick={() => setShowInstallerModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-100">Nuevo Instalador</button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+               {installers.map(t => (
+                 <div key={t.id} className="p-6 bg-slate-50 rounded-[2.5rem] border border-slate-100 flex items-center justify-between group">
+                    <div className="flex-1">
+                      <p className="font-black text-slate-800 uppercase text-sm">{t.label}</p>
+                    </div>
+                    <button onClick={() => deleteInstaller(t.id)} className="w-10 h-10 rounded-xl bg-rose-100 text-rose-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">🗑️</button>
                  </div>
                ))}
             </div>
@@ -2275,24 +2295,31 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                 value={truckerForm.label} 
                 onChange={e => setTruckerForm({ ...truckerForm, label: e.target.value })} 
               />
-              <div className="space-y-1">
-                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2">Zona Predeterminada</label>
-                <select 
-                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 font-black text-xs outline-none focus:border-indigo-500 uppercase"
-                  value={truckerForm.zone}
-                  onChange={e => setTruckerForm({ ...truckerForm, zone: e.target.value })}
-                >
-                  <option value="SIN ZONA">SIN ZONA</option>
-                  <option value="GRANADA">GRANADA</option>
-                  <option value="COSTA 1">COSTA 1</option>
-                  <option value="COSTA 2">COSTA 2</option>
-                  <option value="ANTEQUERA">ANTEQUERA</option>
-                  <option value="ALMERÍA">ALMERÍA</option>
-                </select>
-              </div>
               <div className="space-y-3">
                  <button type="submit" className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-xl uppercase tracking-widest text-[10px]">Guardar Transportista</button>
                  <button type="button" onClick={() => setShowTruckerModal(false)} className="w-full py-4 text-slate-400 font-black text-[9px] uppercase tracking-[0.2em]">Cancelar</button>
+              </div>
+           </form>
+        </div>
+      )}
+
+      {showInstallerModal && (
+        <div className="fixed inset-0 z-[300] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4">
+           <form onSubmit={handleCreateInstaller} className="bg-white w-full max-sm rounded-[3rem] p-10 shadow-2xl space-y-6 animate-fade-in border border-white">
+              <div className="text-center">
+                 <h3 className="text-xl font-black text-slate-800 uppercase">Nuevo Instalador</h3>
+                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">Registrar para habituales</p>
+              </div>
+              <input 
+                autoFocus 
+                placeholder="NOMBRE COMPLETO" 
+                className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 font-black text-xs text-center outline-none focus:border-indigo-500 uppercase" 
+                value={installerForm.label} 
+                onChange={e => setInstallerForm({ ...installerForm, label: e.target.value })} 
+              />
+              <div className="space-y-3">
+                 <button type="submit" className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-xl uppercase tracking-widest text-[10px]">Guardar Instalador</button>
+                 <button type="button" onClick={() => setShowInstallerModal(false)} className="w-full py-4 text-slate-400 font-black text-[9px] uppercase tracking-[0.2em]">Cancelar</button>
               </div>
            </form>
         </div>

@@ -9,12 +9,15 @@ import AdminPanel from './components/AdminPanel';
 import ExpeditionPanel from './components/ExpeditionPanel';
 import SuppliesPanel from './components/SuppliesPanel';
 import DeliveriesPanel from './components/DeliveriesPanel';
+import InstallationsPanel from './components/InstallationsPanel';
 import MessagingPanel from './components/MessagingPanel';
+import RTCPanel from './components/RTCPanel';
+import InventoryPanel from './components/InventoryPanel';
 import LiveMapView from './components/LiveMapView';
 import { supabase } from './supabaseClient';
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'slots' | 'admin' | 'expedition' | 'supplies' | 'deliveries' | 'messaging'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'slots' | 'admin' | 'expedition' | 'supplies' | 'deliveries' | 'installations' | 'messaging' | 'rtc' | 'inventory'>('dashboard');
   const [dbStatus, setDbStatus] = useState<{connected: boolean | null, error: string | null}>({
     connected: null,
     error: null
@@ -144,9 +147,14 @@ const App: React.FC = () => {
       if (data && data.permissions) {
         let perms = Array.isArray(data.permissions) ? data.permissions : JSON.parse(data.permissions || '[]');
         
-        // Asegurar que el nuevo tab de repartos esté disponible para admin y distribución
-        if (roleName === 'admin' || roleName === 'distribución') {
+        const role = roleName.toLowerCase();
+        const isDistri = role === 'admin' || role === 'distribución' || role === 'distribucion' || role === 'supervisor_distri';
+
+        // Asegurar que el nuevo tab de repartos esté disponible para admin, distribución y supervisor_distri
+        if (isDistri) {
           if (!perms.includes('deliveries')) perms.push('deliveries');
+          if (!perms.includes('installations')) perms.push('installations');
+          if (!perms.includes('rtc')) perms.push('rtc');
         }
 
         setUserPermissions(perms);
@@ -160,8 +168,14 @@ const App: React.FC = () => {
   useEffect(() => {
     if (user && userPermissions.length > 0) {
       const role = user.role.toLowerCase();
+      const isDistri = role === 'admin' || role === 'distribución' || role === 'distribucion' || role === 'supervisor_distri';
+
       const hasAccess = userPermissions.some(p => p.toLowerCase() === activeTab.toLowerCase()) || 
-                       (activeTab === 'deliveries' && (role === 'admin' || role === 'distribución' || role === 'supervisor_distri')) ||
+                       (activeTab === 'deliveries' && isDistri) ||
+                       (activeTab === 'installations' && isDistri) ||
+                       (activeTab === 'rtc' && isDistri) ||
+                       (activeTab === 'inventory' && role === 'admin') ||
+                       (activeTab === 'admin' && role === 'supervisor_distri') ||
                        (activeTab === 'messaging' && (user.has_messaging_access || role === 'admin' || userPermissions.some(p => p.toLowerCase() === 'messaging')));
       
       if (!hasAccess) {
@@ -259,7 +273,7 @@ const App: React.FC = () => {
           async (position) => {
             const { latitude, longitude, accuracy } = position.coords;
             // Solo enviar a Supabase si hay maquinaria asignada O si es admin (para pruebas)
-            if (sessionMachinery || user.role === 'admin') {
+            if (sessionMachinery || user.role.toLowerCase() === 'admin') {
               try {
                 await supabase.from('operator_locations').insert([{
                   operator_email: user.email,
@@ -544,7 +558,7 @@ const App: React.FC = () => {
           setActiveTab={setActiveTab} 
           userRole={user.role} 
           permissions={userPermissions}
-          hasMessagingAccess={user.has_messaging_access || user.role === 'admin'}
+          hasMessagingAccess={user.has_messaging_access || user.role.toLowerCase() === 'admin'}
           onLogout={logout}
           unreadMessagesCount={unreadMessagesCount}
           onRequestNotifications={requestNotificationPermission}
@@ -592,6 +606,9 @@ const App: React.FC = () => {
           {activeTab === 'expedition' && <ExpeditionPanel user={user} />}
           {activeTab === 'supplies' && <SuppliesPanel />}
           {activeTab === 'deliveries' && <DeliveriesPanel user={user} />}
+          {activeTab === 'installations' && <InstallationsPanel user={user} />}
+          {activeTab === 'rtc' && <RTCPanel user={user} />}
+          {activeTab === 'inventory' && <InventoryPanel user={user} />}
           {activeTab === 'messaging' && (
             <MessagingPanel 
               user={user} 
@@ -623,9 +640,24 @@ const App: React.FC = () => {
             <span className="text-xl">🛠️</span>
           </button>
         )}
-        {(userPermissions.includes('deliveries') || user.role === 'admin' || user.role === 'distribución') && (
+        {(userPermissions.includes('deliveries') || user.role.toLowerCase() === 'admin' || user.role.toLowerCase() === 'distribución' || user.role.toLowerCase() === 'distribucion') && (
           <button onClick={() => setActiveTab('deliveries')} className={`flex flex-col items-center gap-1 ${activeTab === 'deliveries' ? 'text-indigo-400' : 'text-slate-500'}`}>
             <span className="text-xl">📅</span>
+          </button>
+        )}
+        {(userPermissions.includes('installations') || user.role.toLowerCase() === 'admin' || user.role.toLowerCase() === 'distribución' || user.role.toLowerCase() === 'distribucion') && (
+          <button onClick={() => setActiveTab('installations')} className={`flex flex-col items-center gap-1 ${activeTab === 'installations' ? 'text-indigo-400' : 'text-slate-500'}`}>
+            <span className="text-xl">🛠️</span>
+          </button>
+        )}
+        {(userPermissions.includes('rtc') || user.role.toLowerCase() === 'admin' || user.role.toLowerCase() === 'distribución' || user.role.toLowerCase() === 'distribucion') && (
+          <button onClick={() => setActiveTab('rtc')} className={`flex flex-col items-center gap-1 ${activeTab === 'rtc' ? 'text-indigo-400' : 'text-slate-500'}`}>
+            <span className="text-xl">🚛</span>
+          </button>
+        )}
+        {(userPermissions.includes('inventory') || user.role.toLowerCase() === 'admin') && (
+          <button onClick={() => setActiveTab('inventory')} className={`flex flex-col items-center gap-1 ${activeTab === 'inventory' ? 'text-indigo-400' : 'text-slate-500'}`}>
+            <span className="text-xl">📋</span>
           </button>
         )}
         {(userPermissions.some(p => p.toLowerCase() === 'messaging') || user.has_messaging_access || user.role.toLowerCase() === 'admin') && (

@@ -84,7 +84,14 @@ export interface Machinery {
 export interface Trucker {
   id: string;
   label: string;
-  zone?: string; // Granada, Costa, Antequera, Almería
+  zone?: string;
+  created_at: string;
+}
+
+export interface Installer {
+  id: string;
+  label: string;
+  zone?: string;
   created_at: string;
 }
 
@@ -193,5 +200,61 @@ export interface DailyTruckAssignment {
   truck_id: string;
   zone: string;
   assignment_date: string;
+  created_at: string;
+}
+
+export interface Installation {
+  id: string;
+  installation_date: string;
+  installer_id: string;
+  order_number: string;
+  warehouse_origin: string;
+  installation_time: 'morning' | 'afternoon';
+  postal_code: string;
+  locality: string;
+  merchandise_type: string;
+  address?: string;
+  comments?: string;
+  created_by_name?: string;
+  is_scheduled?: boolean;
+  at_dock?: boolean;
+  sequence?: number;
+  created_at: string;
+}
+
+export interface InstallationLog {
+  id: string;
+  installation_id: string;
+  user_name: string;
+  action: string;
+  details?: string;
+  created_at: string;
+}
+
+export interface DailyInstallerAssignment {
+  id: string;
+  installer_id: string;
+  zone: string;
+  assignment_date: string;
+  created_at: string;
+}
+
+export interface InventoryReading {
+  id: string;
+  slot_code: string;
+  operator_email: string;
+  operator_name: string;
+  status: 'pending' | 'completed';
+  capacity_percent?: number;
+  created_at: string;
+  completed_at?: string;
+  completed_by_name?: string;
+}
+
+export interface InventoryItem {
+  id: string;
+  reading_id: string;
+  item_code: string;
+  quantity: number;
   created_at: string;
 }

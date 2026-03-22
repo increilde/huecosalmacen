@@ -128,7 +128,62 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  *     created_at TIMESTAMPTZ DEFAULT now()
  * );
  * 
- * -- 11. Mensajería Interna
+ * -- 11. Asignaciones Diarias de Camiones
+ * CREATE TABLE IF NOT EXISTS daily_truck_assignments (
+ *     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+ *     truck_id UUID REFERENCES truckers(id) ON DELETE CASCADE,
+ *     zone TEXT NOT NULL,
+ *     assignment_date DATE NOT NULL,
+ *     created_at TIMESTAMPTZ DEFAULT now(),
+ *     UNIQUE(truck_id, assignment_date)
+ * );
+ * 
+ * -- 12. Instaladores e Instalaciones (Clon de Repartos)
+ * CREATE TABLE IF NOT EXISTS installers (
+ *     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+ *     full_name TEXT NOT NULL,
+ *     zone TEXT,
+ *     created_at TIMESTAMPTZ DEFAULT now()
+ * );
+ * 
+ * CREATE TABLE IF NOT EXISTS installations (
+ *     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+ *     installer_id UUID REFERENCES installers(id) ON DELETE CASCADE,
+ *     order_number TEXT NOT NULL,
+ *     warehouse_origin TEXT NOT NULL,
+ *     installation_time TEXT CHECK (installation_time IN ('morning', 'afternoon')),
+ *     postal_code TEXT,
+ *     locality TEXT,
+ *     address TEXT,
+ *     merchandise_type TEXT,
+ *     comments TEXT,
+ *     installation_date DATE NOT NULL,
+ *     created_by_name TEXT,
+ *     is_scheduled BOOLEAN DEFAULT FALSE,
+ *     at_dock BOOLEAN DEFAULT FALSE,
+ *     sequence INTEGER DEFAULT 0,
+ *     created_at TIMESTAMPTZ DEFAULT now()
+ * );
+ * 
+ * CREATE TABLE IF NOT EXISTS installation_logs (
+ *     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+ *     installation_id UUID REFERENCES installations(id) ON DELETE CASCADE,
+ *     user_name TEXT NOT NULL,
+ *     action TEXT NOT NULL,
+ *     details TEXT,
+ *     created_at TIMESTAMPTZ DEFAULT now()
+ * );
+ * 
+ * CREATE TABLE IF NOT EXISTS daily_installer_assignments (
+ *     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+ *     installer_id UUID REFERENCES installers(id) ON DELETE CASCADE,
+ *     zone TEXT NOT NULL,
+ *     assignment_date DATE NOT NULL,
+ *     created_at TIMESTAMPTZ DEFAULT now(),
+ *     UNIQUE(installer_id, assignment_date)
+ * );
+ * 
+ * -- 13. Mensajería Interna
  * ALTER TABLE profiles ADD COLUMN IF NOT EXISTS has_messaging_access BOOLEAN DEFAULT FALSE;
  * 
  * CREATE TABLE IF NOT EXISTS conversations (

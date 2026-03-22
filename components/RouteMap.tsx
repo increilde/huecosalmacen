@@ -2,8 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Delivery } from '../types';
+import { Delivery, Installation } from '../types';
 import { X, Navigation, Clock, MapPin } from 'lucide-react';
+
+type RoutableItem = Delivery | Installation;
 
 // Fix for default marker icon in Leaflet
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -21,9 +23,9 @@ L.Marker.prototype.options.icon = DefaultIcon;
 interface RouteMapProps {
   truckId: string;
   truckLabel: string;
-  deliveries: Delivery[];
+  deliveries: RoutableItem[];
   onClose: () => void;
-  onMaintainRoute?: (orderedDeliveries: Delivery[]) => void;
+  onMaintainRoute?: (orderedDeliveries: any[]) => void;
 }
 
 const ORIGIN = {
@@ -92,8 +94,8 @@ const LOCALITY_COORDS: Record<string, { lat: number; lng: number }> = {
   'DOS HERMANAS': { lat: 37.2833, lng: -5.9167 }
 };
 
-const getCoordinates = (delivery: Delivery) => {
-  let locality = (delivery.locality || '').toUpperCase().trim();
+const getCoordinates = (item: RoutableItem) => {
+  let locality = (item.locality || '').toUpperCase().trim();
   
   if (locality === 'GABIA LA CHICA') locality = 'GABIA CHICA';
   if (locality === 'GABIA LA GRANDE') locality = 'GABIA GRANDE';
@@ -108,7 +110,7 @@ const getCoordinates = (delivery: Delivery) => {
 
   const baseCoords = LOCALITY_COORDS[locality] || { lat: 37.1773, lng: -3.5986 };
 
-  const seedStr = delivery.address || delivery.order_number || delivery.id || '';
+  const seedStr = item.address || item.order_number || item.id || '';
   const seed = seedStr.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
   
   const random = (s: number) => {
@@ -116,7 +118,7 @@ const getCoordinates = (delivery: Delivery) => {
     return x - Math.floor(x);
   };
   
-  const spread = delivery.address ? 0.01 : 0.005;
+  const spread = item.address ? 0.01 : 0.005;
   const lat = baseCoords.lat + (random(seed) - 0.5) * spread;
   const lng = baseCoords.lng + (random(seed + 1) - 0.5) * spread;
   
@@ -124,7 +126,7 @@ const getCoordinates = (delivery: Delivery) => {
 };
 
 const RouteMap: React.FC<RouteMapProps> = ({ truckId, truckLabel, deliveries, onClose, onMaintainRoute }) => {
-  const [route, setRoute] = useState<{ lat: number; lng: number; delivery?: Delivery; isOrigin?: boolean; label?: string }[]>([]);
+  const [route, setRoute] = useState<{ lat: number; lng: number; item?: RoutableItem; isOrigin?: boolean; label?: string }[]>([]);
   const [roadGeometry, setRoadGeometry] = useState<[number, number][]>([]);
   const [totalDistance, setTotalDistance] = useState<number>(0);
   const [totalDuration, setTotalDuration] = useState<number>(0);
@@ -141,16 +143,20 @@ const RouteMap: React.FC<RouteMapProps> = ({ truckId, truckLabel, deliveries, on
     return `${minutes}m`;
   };
 
+  const getItemTime = (item: RoutableItem) => {
+    return (item as Delivery).delivery_time || (item as Installation).installation_time;
+  };
+
   useEffect(() => {
     const calculateOptimalRoute = async () => {
       setIsLoadingRoute(true);
-      const morning = deliveries.filter(d => d.delivery_time === 'morning');
-      const afternoon = deliveries.filter(d => d.delivery_time === 'afternoon');
+      const morning = deliveries.filter(d => getItemTime(d) === 'morning');
+      const afternoon = deliveries.filter(d => getItemTime(d) === 'afternoon');
       
       const optimizedPoints: any[] = [{ ...ORIGIN, isOrigin: true }];
       let currentPos = ORIGIN;
       
-      const findNearest = (items: Delivery[], from: { lat: number; lng: number }) => {
+      const findNearest = (items: RoutableItem[], from: { lat: number; lng: number }) => {
         let nearestIndex = -1;
         let minDistance = Infinity;
         
@@ -169,18 +175,18 @@ const RouteMap: React.FC<RouteMapProps> = ({ truckId, truckLabel, deliveries, on
       const remainingMorning = [...morning];
       while (remainingMorning.length > 0) {
         const index = findNearest(remainingMorning, currentPos);
-        const delivery = remainingMorning.splice(index, 1)[0];
-        const coords = getCoordinates(delivery);
-        optimizedPoints.push({ ...coords, delivery });
+        const item = remainingMorning.splice(index, 1)[0];
+        const coords = getCoordinates(item);
+        optimizedPoints.push({ ...coords, item });
         currentPos = coords;
       }
       
       const remainingAfternoon = [...afternoon];
       while (remainingAfternoon.length > 0) {
         const index = findNearest(remainingAfternoon, currentPos);
-        const delivery = remainingAfternoon.splice(index, 1)[0];
-        const coords = getCoordinates(delivery);
-        optimizedPoints.push({ ...coords, delivery });
+        const item = remainingAfternoon.splice(index, 1)[0];
+        const coords = getCoordinates(item);
+        optimizedPoints.push({ ...coords, item });
         currentPos = coords;
       }
       
@@ -226,12 +232,12 @@ const RouteMap: React.FC<RouteMapProps> = ({ truckId, truckLabel, deliveries, on
     
     setIsUpdatingOrder(true);
     try {
-      // Filtrar el origen y fin, quedarnos solo con los repartos en el orden calculado
-      const orderedDeliveries = route
-        .filter(p => !p.isOrigin && p.delivery)
-        .map(p => p.delivery!);
+      // Filtrar el origen y fin, quedarnos solo con los items en el orden calculado
+      const orderedItems = route
+        .filter(p => !p.isOrigin && p.item)
+        .map(p => p.item!);
       
-      await onMaintainRoute(orderedDeliveries);
+      await onMaintainRoute(orderedItems);
       onClose();
     } catch (err) {
       console.error("Error updating route order:", err);
@@ -304,30 +310,30 @@ const RouteMap: React.FC<RouteMapProps> = ({ truckId, truckLabel, deliveries, on
                 key={idx} 
                 onMouseEnter={() => setHoveredPointIdx(idx)}
                 onMouseLeave={() => setHoveredPointIdx(null)}
-                className={`p-4 rounded-2xl border transition-all cursor-pointer ${hoveredPointIdx === idx ? 'ring-2 ring-emerald-500 scale-[1.02]' : ''} ${point.isOrigin ? 'bg-white/5 border-white/10' : point.delivery?.delivery_time === 'morning' ? 'bg-amber-500/10 border-amber-500/20' : 'bg-indigo-500/10 border-indigo-500/20'}`}
+                className={`p-4 rounded-2xl border transition-all cursor-pointer ${hoveredPointIdx === idx ? 'ring-2 ring-emerald-500 scale-[1.02]' : ''} ${point.isOrigin ? 'bg-white/5 border-white/10' : getItemTime(point.item!) === 'morning' ? 'bg-amber-500/10 border-amber-500/20' : 'bg-indigo-500/10 border-indigo-500/20'}`}
               >
                 <div className="flex items-start gap-3">
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 mt-0.5 ${point.isOrigin ? 'bg-white/20 text-white' : point.delivery?.delivery_time === 'morning' ? 'bg-amber-500 text-white' : 'bg-indigo-500 text-white'}`}>
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 mt-0.5 ${point.isOrigin ? 'bg-white/20 text-white' : getItemTime(point.item!) === 'morning' ? 'bg-amber-500 text-white' : 'bg-indigo-500 text-white'}`}>
                     {idx}
                   </div>
                   <div className="flex-1">
                     <p className="text-xs font-black text-white uppercase tracking-tight">
-                      {point.isOrigin ? point.label : `PEDIDO: ${point.delivery?.order_number}`}
+                      {point.isOrigin ? point.label : `PEDIDO: ${point.item?.order_number}`}
                     </p>
                     {!point.isOrigin && (
                       <>
                         <p className="text-[10px] font-bold text-white/60 uppercase mt-1">
-                          {point.delivery?.postal_code} - {point.delivery?.locality}
+                          {point.item?.postal_code} - {point.item?.locality}
                         </p>
-                        {point.delivery?.address && (
+                        {point.item?.address && (
                           <p className="text-[9px] font-medium text-white/40 uppercase mt-0.5 italic">
-                            {point.delivery?.address}
+                            {point.item?.address}
                           </p>
                         )}
                         <div className="flex items-center gap-1.5 mt-2">
                           <Clock className="w-3 h-3 text-white/30" />
-                          <span className={`text-[9px] font-black uppercase tracking-widest ${point.delivery?.delivery_time === 'morning' ? 'text-amber-400' : 'text-indigo-400'}`}>
-                            {point.delivery?.delivery_time === 'morning' ? '8:00 - 12:00' : '13:00 - 18:00'}
+                          <span className={`text-[9px] font-black uppercase tracking-widest ${getItemTime(point.item!) === 'morning' ? 'text-amber-400' : 'text-indigo-400'}`}>
+                            {getItemTime(point.item!) === 'morning' ? '8:00 - 12:00' : '13:00 - 18:00'}
                           </span>
                         </div>
                       </>
@@ -356,21 +362,21 @@ const RouteMap: React.FC<RouteMapProps> = ({ truckId, truckLabel, deliveries, on
                 }}
                 icon={L.divIcon({
                   className: 'custom-div-icon',
-                  html: `<div style="background-color: ${point.isOrigin ? '#ffffff' : point.delivery?.delivery_time === 'morning' ? '#f59e0b' : '#6366f1'}; width: ${hoveredPointIdx === idx ? '36px' : '24px'}; height: ${hoveredPointIdx === idx ? '36px' : '24px'}; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; color: ${point.isOrigin ? '#000' : '#fff'}; font-weight: 900; font-size: ${hoveredPointIdx === idx ? '14px' : '10px'}; box-shadow: 0 4px 6px rgba(0,0,0,0.3); transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);">${idx}</div>`,
+                  html: `<div style="background-color: ${point.isOrigin ? '#ffffff' : getItemTime(point.item!) === 'morning' ? '#f59e0b' : '#6366f1'}; width: ${hoveredPointIdx === idx ? '36px' : '24px'}; height: ${hoveredPointIdx === idx ? '36px' : '24px'}; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; color: ${point.isOrigin ? '#000' : '#fff'}; font-weight: 900; font-size: ${hoveredPointIdx === idx ? '14px' : '10px'}; box-shadow: 0 4px 6px rgba(0,0,0,0.3); transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);">${idx}</div>`,
                   iconSize: [hoveredPointIdx === idx ? 36 : 24, hoveredPointIdx === idx ? 36 : 24],
                   iconAnchor: [hoveredPointIdx === idx ? 18 : 12, hoveredPointIdx === idx ? 18 : 12]
                 })}
               >
                 <Popup autoPan={false}>
                   <div className="p-2 min-w-[150px]">
-                    <p className="font-black text-xs uppercase text-slate-800">{point.isOrigin ? point.label : `Pedido: ${point.delivery?.order_number}`}</p>
+                    <p className="font-black text-xs uppercase text-slate-800">{point.isOrigin ? point.label : `Pedido: ${point.item?.order_number}`}</p>
                     {!point.isOrigin && (
                       <div className="mt-2 space-y-1">
                         <p className="text-[10px] text-slate-500 font-bold uppercase flex items-center gap-1">
-                          <span>📍</span> {point.delivery?.locality}
+                          <span>📍</span> {point.item?.locality}
                         </p>
                         <p className="text-[10px] text-indigo-600 font-black uppercase flex items-center gap-1">
-                          <span>📦</span> {point.delivery?.merchandise_type || 'Sin tipo'}
+                          <span>📦</span> {point.item?.merchandise_type || 'Sin tipo'}
                         </p>
                       </div>
                     )}

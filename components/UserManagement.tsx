@@ -33,8 +33,11 @@ const UserManagement: React.FC = () => {
     { id: 'slots', label: 'Mapa Almacén', icon: '📦' },
     { id: 'expedition', label: 'Muelles / Expedición', icon: '🚛' },
     { id: 'deliveries', label: 'Repartos', icon: '📅' },
+    { id: 'installations', label: 'Instalaciones', icon: '🛠️' },
     { id: 'messaging', label: 'Mensajería', icon: '💬' },
     { id: 'supplies', label: 'Suministros', icon: '🛠️' },
+    { id: 'inventory', label: 'Inventario', icon: '📋' },
+    { id: 'rtc', label: 'RTC', icon: '🚛' },
     { id: 'admin', label: 'Administración', icon: '⚙️' },
     { id: 'users', label: 'Gestión Operarios', icon: '👥' },
   ];

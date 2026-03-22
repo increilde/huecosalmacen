@@ -88,6 +88,18 @@ const SlotGrid: React.FC<SlotGridProps> = ({ userRole }) => {
     } catch (err: any) { alert(err.message); } finally { setUpdating(false); }
   };
 
+  const deleteSlot = async () => {
+    if (!selectedSlot) return;
+    if (!window.confirm(`¿ESTÁS SEGURO DE ELIMINAR EL HUECO ${selectedSlot.code}?`)) return;
+    
+    setUpdating(true);
+    try {
+      const { error } = await supabase.from('warehouse_slots').delete().eq('id', selectedSlot.id);
+      if (error) throw error;
+      setSelectedSlot(null);
+    } catch (err: any) { alert(err.message); } finally { setUpdating(false); }
+  };
+
   const filteredSlots = slots.filter(s => {
     const matchesSearch = s.code.includes(searchQuery.toUpperCase().trim());
     if (!matchesSearch) return false;
@@ -177,7 +189,17 @@ const SlotGrid: React.FC<SlotGridProps> = ({ userRole }) => {
                 <button key={size} onClick={() => updateSlotSize(size)} className={`py-4 rounded-xl font-medium transition-all border text-[11px] uppercase tracking-widest ${selectedSlot.size === size ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>{size}</button>
               ))}
             </div>
-            <button onClick={() => setSelectedSlot(null)} className="w-full py-4 text-slate-400 font-semibold text-[10px] uppercase tracking-widest hover:text-slate-800">Cerrar</button>
+            
+            <div className="pt-4 border-t border-slate-50 space-y-2">
+              <button 
+                onClick={deleteSlot}
+                disabled={updating}
+                className="w-full py-4 bg-rose-50 text-rose-600 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-600 hover:text-white transition-all disabled:opacity-50"
+              >
+                Eliminar Hueco
+              </button>
+              <button onClick={() => setSelectedSlot(null)} className="w-full py-4 text-slate-400 font-semibold text-[10px] uppercase tracking-widest hover:text-slate-800">Cerrar</button>
+            </div>
           </div>
         </div>
       )}

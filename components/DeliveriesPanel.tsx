@@ -830,7 +830,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
             onClick={() => setView(view === 'agenda' ? 'create' : 'agenda')}
             className="bg-indigo-600 text-white px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-indigo-100 active:scale-95 transition-all hover:bg-indigo-700"
           >
-            {view === 'agenda' ? 'Nuevo Reparto' : 'Ver Agenda'}
+            {view === 'agenda' ? 'Nuevo' : 'Ver Agenda'}
           </button>
         </div>
       </div>
@@ -1102,7 +1102,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
             disabled={loading}
             className="w-full bg-slate-900 text-white font-black py-5 rounded-[2rem] shadow-xl uppercase tracking-widest text-xs active:scale-95 transition-all disabled:opacity-50"
           >
-            {loading ? 'PROCESANDO...' : editingId ? 'GUARDAR CAMBIOS' : 'CONFIRMAR Y CREAR REPARTO'}
+            {loading ? 'PROCESANDO...' : editingId ? 'GUARDAR CAMBIOS' : 'CONFIRMAR Y CREAR'}
           </button>
           
           <button 
@@ -1252,7 +1252,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                           </button>
                         )}
                         {dailyAssignment && (
-                          <span className="text-[8px] font-black text-indigo-300 uppercase tracking-tighter">Asignado hoy</span>
+                          <div className="hidden">Asignado hoy</div>
                         )}
                       </div>
                     </div>
@@ -1288,7 +1288,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                       }}
                       className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-indigo-200 transition-all active:scale-95"
                     >
-                      REPARTO
+                      NUEVO
                     </button>
                     <span className="bg-white/10 text-white/80 px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest">
                       {truckDeliveries.length} REPARTOS

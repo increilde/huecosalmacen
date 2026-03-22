@@ -20,6 +20,7 @@ interface MovementLog {
 // Eliminadas funciones auxiliares de Gemini TTS para usar Web Speech API (Gratis)
 
 const Dashboard: React.FC<DashboardProps> = ({ user }) => {
+  const isDistri = user.role.toLowerCase() === 'distribución' || user.role.toLowerCase() === 'distribucion';
   const [cartId, setCartId] = useState('');
   const [slotCode, setSlotCode] = useState('');
   const [loading, setLoading] = useState(false);
@@ -250,7 +251,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         // Si hay algo pendiente al desbloquear, anunciarlo tras un breve delay
         setTimeout(() => {
           const waitingCount = activePickups.filter(p => p.status === 'waiting').length;
-          if (waitingCount > 0 && user.role !== 'distribución') {
+          if (waitingCount > 0 && !isDistri) {
             speak(`Hay ${waitingCount} retira cliente pendientes.`);
           }
         }, 800);
@@ -258,7 +259,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     } catch (e) {
       console.warn("⚠️ Error en el intento de desbloqueo:", e);
     }
-  }, [playAlertBeep, audioUnlocked, activePickups, user.role, speak]);
+  }, [playAlertBeep, audioUnlocked, activePickups, speak, isDistri]);
 
   const announcePickupEvent = React.useCallback((text: string) => {
     speak(text);
@@ -488,7 +489,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         // y que los datos de Supabase se hayan refrescado si hubo desconexión
         setTimeout(() => {
           const waitingCount = activePickups.filter(p => p.status === 'waiting').length;
-          if (waitingCount > 0 && user.role !== 'distribución') {
+          if (waitingCount > 0 && !isDistri) {
             speak(`Hay ${waitingCount} retira cliente pendientes.`);
           }
         }, 2000);
@@ -497,7 +498,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [activePickups, user.role, speak]);
+  }, [activePickups, user.role, speak, isDistri]);
 
   // ==========================================
   // GESTIÓN DE RETIRA CLIENTE (REFACTORIZADO)
@@ -581,7 +582,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
             if (pickup.operator_email === user.email) setMyActivePickup(null);
 
             // Anunciar a distribución que se ha terminado
-            if (user.role === 'distribución') {
+            if (isDistri) {
               announcePickupEvent(`Pedido ${pickup.order_number} finalizado.`);
             }
           } else {
@@ -615,7 +616,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       supabase.removeChannel(channel);
       clearInterval(pollingInterval);
     };
-  }, [user.email, user.role, user.full_name, announcePickupEvent]);
+  }, [user.email, user.role, user.full_name, announcePickupEvent, isDistri]);
 
   // 2. Monitoreo de nuevos pedidos para anuncios de voz
   useEffect(() => {
@@ -625,7 +626,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     
     if (currentWaiting > prevWaitingCountRef.current) {
       // Solo anunciar si no somos distribución (ellos son los que crean el pedido)
-      if (user.role !== 'distribución') {
+      if (!isDistri) {
         announcePickupEvent("Nuevo retira cliente a la espera");
         
         // Pulsar automáticamente el botón de test audio cuando entra un pedido
@@ -635,12 +636,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     }
     
     prevWaitingCountRef.current = currentWaiting;
-  }, [activePickups, user.role, announcePickupEvent, hasLoadedInitialData, testAudio]);
+  }, [activePickups, user.role, announcePickupEvent, hasLoadedInitialData, testAudio, isDistri]);
 
   // 3. Avisos de espera prolongada y recordatorios periódicos
   useEffect(() => {
     const checkStatus = () => {
-      if (user.role === 'distribución') return;
+      if (isDistri) return;
 
       const waiting = activePickups.filter(p => p.status === 'waiting');
       if (waiting.length === 0) return;
@@ -668,7 +669,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
     const interval = setInterval(checkStatus, 30000);
     return () => clearInterval(interval);
-  }, [activePickups, user.role, announcePickupEvent]);
+  }, [activePickups, user.role, announcePickupEvent, isDistri]);
 
   // 4. Recuperación al volver a la pestaña (Visibility Change)
   useEffect(() => {
@@ -677,7 +678,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         // Pequeño delay para que el audio se desbloquee si es necesario
         setTimeout(() => {
           const waiting = activePickups.filter(p => p.status === 'waiting').length;
-          if (waiting > 0 && user.role !== 'distribución') {
+          if (waiting > 0 && !isDistri) {
             speak(`Recordatorio: Hay ${waiting} retira cliente pendientes.`);
           }
         }, 1500);
@@ -686,7 +687,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [activePickups, user.role, speak]);
+  }, [activePickups, user.role, speak, isDistri]);
 
   // 5. Auto-activación de audio si hay pedidos
   useEffect(() => {
@@ -803,110 +804,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
   const todayStr = new Date().toISOString().split('T')[0];
   const activeToday = activePickups.filter(p => p.created_at.startsWith(todayStr));
-
-  if (user.role === 'distribución') {
-    return (
-      <div className="max-w-md mx-auto space-y-6 animate-fade-in">
-        <div className="bg-white p-10 rounded-[2.5rem] shadow-xl border border-slate-100 relative overflow-hidden">
-          <div className="absolute -right-8 -top-8 text-slate-50 text-9xl font-medium opacity-10 pointer-events-none">📦</div>
-          <div className="relative z-10">
-            <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight mb-8">Distribución</h2>
-            
-            <div className="space-y-4">
-              <div className="relative">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Número de Pedido</label>
-                <input 
-                  type="text" 
-                  value={orderNumber}
-                  onChange={e => setOrderNumber(e.target.value)}
-                  placeholder="EJ: 123456"
-                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-5 px-6 focus:border-indigo-500 font-black text-2xl outline-none uppercase transition-all text-center"
-                />
-              </div>
-              <button 
-                onClick={handleCreatePickup}
-                disabled={loading || !orderNumber.trim()}
-                className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl shadow-xl uppercase tracking-widest text-xs active:scale-95 transition-all disabled:opacity-50"
-              >
-                {loading ? 'ENVIANDO...' : 'ENVIAR PEDIDO'}
-              </button>
-            </div>
-
-            {message && (
-              <div className={`mt-6 p-4 rounded-2xl text-[10px] font-black text-center uppercase tracking-widest ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
-                {message.text}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100">
-          <div className="flex items-center justify-between mb-6 px-2">
-            <div className="flex space-x-4">
-              <button 
-                onClick={() => setDistribTab('active')}
-                className={`text-xs font-black uppercase tracking-widest transition-all ${distribTab === 'active' ? 'text-indigo-600' : 'text-slate-300 hover:text-slate-400'}`}
-              >
-                En Curso ({activeToday.length})
-              </button>
-              <button 
-                onClick={() => setDistribTab('finished')}
-                className={`text-xs font-black uppercase tracking-widest transition-all ${distribTab === 'finished' ? 'text-indigo-600' : 'text-slate-300 hover:text-slate-400'}`}
-              >
-                Finalizados ({finishedPickups.length})
-              </button>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            {distribTab === 'active' ? (
-              activeToday.length === 0 ? (
-                <p className="text-center py-10 text-slate-300 font-black text-[10px] uppercase tracking-widest">No hay pedidos activos de hoy</p>
-              ) : activeToday.map(pickup => (
-                <div key={pickup.id} className="bg-slate-50 p-5 rounded-2xl border border-slate-100 flex items-center justify-between">
-                  <div>
-                    <p className="text-lg font-black text-slate-800 tracking-tighter">#{pickup.order_number}</p>
-                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-1">
-                      {pickup.status === 'waiting' ? '⌛ ESPERANDO' : `👷 ${pickup.operator_name}`}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs font-black text-indigo-600">
-                      {pickup.status === 'waiting' ? getWaitTime(pickup.created_at) : getWorkTime(pickup.accepted_at!)}
-                    </p>
-                    <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">
-                      {pickup.status === 'waiting' ? 'TIEMPO ESPERA' : 'TIEMPO TRABAJO'}
-                    </p>
-                  </div>
-                </div>
-              ))
-            ) : (
-              finishedPickups.length === 0 ? (
-                <p className="text-center py-10 text-slate-300 font-black text-[10px] uppercase tracking-widest">No hay pedidos finalizados hoy</p>
-              ) : finishedPickups.map(pickup => (
-                <div key={pickup.id} className="bg-emerald-50/30 p-5 rounded-2xl border border-emerald-100 flex items-center justify-between">
-                  <div>
-                    <p className="text-lg font-black text-slate-800 tracking-tighter">#{pickup.order_number}</p>
-                    <p className="text-[8px] font-black text-emerald-600 uppercase tracking-widest mt-1">
-                      ✅ FINALIZADO POR {pickup.operator_name}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs font-black text-slate-400">
-                      {pickup.completed_at ? new Date(pickup.completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
-                    </p>
-                    <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">
-                      HORA CIERRE
-                    </p>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   const checkSlotAndPrepare = async () => {
     const codeToSearch = slotCode.trim().toUpperCase();
@@ -1161,12 +1058,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                     🔊 AUDIO OK
                   </button>
                 )}
-                {(user.role === 'carretillero' || user.role === 'admin') && (
+                {(user.role.toLowerCase() === 'carretillero' || user.role.toLowerCase() === 'admin') && (
                   <button 
-                    onClick={() => user.role === 'admin' ? setShowRTCAdminModal(true) : setShowPickupsModal(true)}
+                    onClick={() => user.role.toLowerCase() === 'admin' ? setShowRTCAdminModal(true) : setShowPickupsModal(true)}
                     className={`relative px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-all active:scale-95 ${waitingPickups.length > 0 ? 'bg-amber-500 text-white border-amber-600 animate-pulse' : 'bg-slate-50 text-slate-400 border-slate-100'}`}
                   >
-                    {user.role === 'admin' ? 'RTC' : 'Retira Cliente'}
+                    {user.role.toLowerCase() === 'admin' ? 'RTC' : 'Retira Cliente'}
                     {waitingPickups.length > 0 && (
                       <span className="absolute -top-2 -right-2 bg-rose-600 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shadow-lg">
                         {waitingPickups.length}
