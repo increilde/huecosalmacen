@@ -24,6 +24,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
   
   const [showCapacityModal, setShowCapacityModal] = useState(false);
   const [showSizeModal, setShowSizeModal] = useState(false);
+  const [showCreateSlotModal, setShowCreateSlotModal] = useState(false);
   const [capacity, setCapacity] = useState<number>(100);
   const [selectedSize, setSelectedSize] = useState<string>('Mediano');
 
@@ -91,8 +92,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
         .single();
 
       if (slotError || !slot) {
-        setMessage({ text: 'UBICACIÓN NO ENCONTRADA EN EL SISTEMA', type: 'error' });
-        setLocation('');
+        setShowCreateSlotModal(true);
         return;
       }
 
@@ -135,6 +135,33 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
       setStep('items');
     } catch (err: any) {
       setMessage({ text: 'ERROR AL GUARDAR TAMAÑO', type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateSlot = async () => {
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('warehouse_slots')
+        .insert([{
+          code: location.toUpperCase(),
+          size: 'Mediano',
+          status: 'empty',
+          quantity: 0,
+          is_scanned_once: true,
+          last_updated: new Date().toISOString()
+        }]);
+
+      if (error) throw error;
+      
+      setShowCreateSlotModal(false);
+      setSelectedSize('Mediano');
+      setShowSizeModal(true);
+    } catch (err: any) {
+      setMessage({ text: 'ERROR AL CREAR UBICACIÓN', type: 'error' });
+      setShowCreateSlotModal(false);
     } finally {
       setLoading(false);
     }
@@ -329,7 +356,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
                     ref={itemInputRef}
                     type="text"
                     value={currentItemCode}
-                    onChange={e => currentItemCode(e.target.value)}
+                    onChange={e => setCurrentItemCode(e.target.value)}
                     placeholder="CÓDIGO ARTÍCULO..."
                     className="w-full bg-slate-50 p-6 rounded-3xl text-center text-xl font-black outline-none border-2 border-transparent focus:border-indigo-500 transition-all uppercase"
                     autoFocus
@@ -472,6 +499,35 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Create Slot Modal */}
+      {showCreateSlotModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-[3rem] p-8 shadow-2xl animate-scale-in">
+            <div className="text-center space-y-4 mb-8">
+              <div className="text-4xl">🆕</div>
+              <h3 className="text-xl font-black text-slate-800 uppercase">Nueva Ubicación</h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">El hueco {location} no existe. ¿Deseas darlo de alta?</p>
+            </div>
+
+            <div className="flex gap-3">
+              <button 
+                onClick={() => { setShowCreateSlotModal(false); setLocation(''); }}
+                className="flex-1 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest text-slate-400 hover:bg-slate-50 transition-all"
+              >
+                No, Cancelar
+              </button>
+              <button 
+                onClick={handleCreateSlot}
+                disabled={loading}
+                className="flex-1 bg-emerald-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 transition-all"
+              >
+                {loading ? 'CREANDO...' : 'SÍ, DAR DE ALTA'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
