@@ -27,7 +27,7 @@ interface TaskLog {
   profiles?: { full_name: string };
 }
 
-type AdminTab = 'movements' | 'operators' | 'sectors' | 'reports' | 'machinery' | 'tasks' | 'map' | 'map_config';
+type AdminTab = 'movements' | 'operators' | 'sectors' | 'reports' | 'machinery' | 'tasks' | 'map' | 'map_config' | 'truckers' | 'installers';
 type ReportScope = 'range' | 'week' | 'today';
 
 interface AdminPanelProps {
@@ -245,6 +245,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
             pending: allSectorSlots.filter(s => !s.is_scanned_once).length
           });
         }
+      } else if (activeSubTab === 'truckers') {
+        const { data } = await supabase.from('truckers').select('*').order('full_name');
+        setTruckers((data || []).map((t: any) => ({ ...t, label: t.full_name })));
+      } else if (activeSubTab === 'installers') {
+        const { data } = await supabase.from('installers').select('*').order('full_name');
+        setInstallers((data || []).map((t: any) => ({ ...t, label: t.full_name })));
+      } else if (activeSubTab === 'machinery') {
+        const { data } = await supabase.from('machinery').select('*').order('type', { ascending: true }).order('identifier', { ascending: true });
+        setMachinery(data || []);
+        const { data: maintData } = await supabase.from('machinery_maintenance').select('*').order('created_at', { ascending: false });
+        setMaintenanceRecords(maintData || []);
       }
     } catch (err) {
       console.error(err);
@@ -856,10 +867,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
             { id: 'sectors', label: 'SECTORES', icon: '📊' },
             { id: 'machinery', label: 'MAQUINARIA', icon: '🛠️' },
             { id: 'tasks', label: 'TAREAS', icon: '📌' },
+            { id: 'truckers', label: 'CAMIONEROS', icon: '🚛' },
+            { id: 'installers', label: 'INSTALADORES', icon: '👷' },
+            { id: 'map_config', label: 'CONFIG MAPA', icon: '⚙️' },
           ].filter(tab => {
             if (user.role === 'admin') return true;
             if (user.role === 'supervisor_distri') {
-              return tab.id === 'movements' || tab.id === 'reports';
+              return ['map', 'movements', 'reports', 'operators', 'machinery', 'tasks', 'truckers', 'installers'].includes(tab.id);
             }
             return false;
           }).map((tab) => (

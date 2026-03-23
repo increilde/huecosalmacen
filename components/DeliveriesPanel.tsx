@@ -320,11 +320,24 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
         created_at: t.created_at 
       })) || [];
       
-      // Mover "PENDIENTE ASIGNAR" al principio
+      // Ordenar: PENDIENTE primero, luego por número de menor a mayor
       sortedTrucks.sort((a, b) => {
-        if (a.label.toUpperCase().includes('PENDIENTE ASIGNAR')) return -1;
-        if (b.label.toUpperCase().includes('PENDIENTE ASIGNAR')) return 1;
-        return 0;
+        const aLabel = a.label.toUpperCase();
+        const bLabel = b.label.toUpperCase();
+        const aPendiente = aLabel.startsWith('PENDIENTE');
+        const bPendiente = bLabel.startsWith('PENDIENTE');
+        
+        if (aPendiente && !bPendiente) return -1;
+        if (!aPendiente && bPendiente) return 1;
+        
+        // Extraer números para ordenar numéricamente
+        const aNum = parseInt(aLabel.replace(/\D/g, '')) || 0;
+        const bNum = parseInt(bLabel.replace(/\D/g, '')) || 0;
+        
+        if (aNum !== bNum) return aNum - bNum;
+        
+        // Si no hay números o son iguales, alfabético
+        return aLabel.localeCompare(bLabel);
       });
       
       setTrucks(sortedTrucks);
