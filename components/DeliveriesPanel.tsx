@@ -212,6 +212,16 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
     }
   }, [selectedDate, assignmentDate, view]);
 
+  // Sync assignmentDate with selectedDate
+  useEffect(() => {
+    setAssignmentDate(selectedDate);
+  }, [selectedDate]);
+
+  // Sync selectedDate with assignmentDate (optional, but keeps them perfectly in sync)
+  useEffect(() => {
+    setSelectedDate(assignmentDate);
+  }, [assignmentDate]);
+
   useEffect(() => {
     const cleanupEmptyAssignments = async () => {
       // Solo limpiar si estamos en la vista de agenda y no estamos cargando
@@ -1447,13 +1457,22 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                                   >✕</button>
                                 </div>
                               ) : delivery.is_scheduled ? (
-                                <button 
-                                  onClick={(e) => { e.stopPropagation(); toggleAtDock(delivery); }}
-                                  className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg shadow-md hover:bg-indigo-700 transition-all flex items-center gap-1.5 w-full justify-center"
-                                >
-                                  <span className="text-xs">📦</span>
-                                  <span className="text-[9px] font-black uppercase tracking-widest">PASAR A MUELLE</span>
-                                </button>
+                                <div className="flex items-center gap-1.5 w-full">
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); toggleAtDock(delivery); }}
+                                    className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg shadow-md hover:bg-indigo-700 transition-all flex items-center gap-1.5 flex-1 justify-center"
+                                  >
+                                    <span className="text-xs">📦</span>
+                                    <span className="text-[9px] font-black uppercase tracking-widest">PASAR A MUELLE</span>
+                                  </button>
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); toggleScheduled(delivery); }}
+                                    className="p-1.5 bg-slate-100 text-slate-400 hover:bg-rose-50 hover:text-rose-600 rounded-lg transition-all"
+                                    title="Quitar de agenda"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
                               ) : (
                                 <button 
                                   onClick={(e) => { e.stopPropagation(); toggleScheduled(delivery); }}

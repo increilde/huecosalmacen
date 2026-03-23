@@ -57,6 +57,13 @@ const WAREHOUSES = [
 
 const ZONES = ['GRANADA', 'COSTA 1', 'COSTA 2', 'ANTEQUERA', 'ALMERÍA'];
 
+const TIME_OPTIONS = Array.from({ length: 27 }, (_, i) => {
+  const totalMinutes = 8 * 60 + i * 30;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+});
+
 const getNextWorkingDay = (date: Date = new Date()) => {
   const d = new Date(date);
   d.setDate(d.getDate() + 1);
@@ -188,7 +195,8 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
   
   const [newInstallation, setNewInstallation] = useState<Partial<Installation>>({
     warehouse_origin: '3',
-    installation_time: 'morning',
+    start_time: '08:00',
+    end_time: '09:00',
     merchandise_type: ''
   });
   const [postalCodeLocality, setPostalCodeLocality] = useState('');
@@ -203,6 +211,16 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
       fetchDailyAssignments(assignmentDate);
     }
   }, [selectedDate, assignmentDate, view]);
+
+  // Sync assignmentDate with selectedDate
+  useEffect(() => {
+    setAssignmentDate(selectedDate);
+  }, [selectedDate]);
+
+  // Sync selectedDate with assignmentDate
+  useEffect(() => {
+    setSelectedDate(assignmentDate);
+  }, [assignmentDate]);
 
   useEffect(() => {
     const cleanupEmptyAssignments = async () => {
@@ -512,7 +530,8 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
 
       setNewInstallation({
         warehouse_origin: '3',
-        installation_time: 'morning',
+        start_time: '08:00',
+        end_time: '09:00',
         merchandise_type: '',
         address: ''
       });
@@ -534,7 +553,8 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
       installer_id: installation.installer_id,
       order_number: installation.order_number,
       warehouse_origin: installation.warehouse_origin,
-      installation_time: installation.installation_time,
+      start_time: installation.start_time || '08:00',
+      end_time: installation.end_time || '09:00',
       postal_code: installation.postal_code,
       address: installation.address,
       merchandise_type: installation.merchandise_type,
@@ -708,6 +728,7 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
             />
           </div>
           <div className="flex items-center gap-3 bg-white px-5 py-2 rounded-2xl border-2 border-slate-200 shadow-md hover:border-indigo-300 transition-all no-print">
+            <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Fecha Agenda:</span>
             <button onClick={() => setSelectedDate(getPrevWorkingDay(selectedDate))} className="p-1 text-slate-400 hover:text-indigo-600">
               <ChevronRight className="w-4 h-4 rotate-180" />
             </button>
@@ -753,6 +774,7 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Asigna instaladores a zonas</p>
             </div>
             <div className="flex items-center gap-3 bg-slate-50 px-5 py-2 rounded-2xl border-2 border-slate-100 shadow-sm">
+              <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Fecha Previsión:</span>
               <button onClick={() => setAssignmentDate(getPrevWorkingDay(assignmentDate))} className="p-1 text-slate-400 hover:text-indigo-600">
                 <ChevronRight className="w-4 h-4 rotate-180" />
               </button>
@@ -929,20 +951,32 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
               <div>
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Horario de Instalación</label>
                 <div className="flex gap-3">
-                  <button 
-                    onClick={() => setNewInstallation(prev => ({ ...prev, installation_time: 'morning' }))} 
-                    className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest border transition-all ${newInstallation.installation_time === 'morning' ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-slate-50 border-slate-100 text-slate-400'}`}
-                    tabIndex={6}
-                  >
-                    Mañana
-                  </button>
-                  <button 
-                    onClick={() => setNewInstallation(prev => ({ ...prev, installation_time: 'afternoon' }))} 
-                    className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest border transition-all ${newInstallation.installation_time === 'afternoon' ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-slate-50 border-slate-100 text-slate-400'}`}
-                    tabIndex={7}
-                  >
-                    Tarde
-                  </button>
+                  <div className="flex-1">
+                    <label className="text-[9px] font-bold text-slate-400 uppercase mb-1 block ml-1">Inicio</label>
+                    <select 
+                      value={newInstallation.start_time || '08:00'}
+                      onChange={e => setNewInstallation(prev => ({ ...prev, start_time: e.target.value }))}
+                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4 text-sm font-bold outline-none focus:border-indigo-500 transition-all"
+                      tabIndex={6}
+                    >
+                      {TIME_OPTIONS.map(time => (
+                        <option key={time} value={time}>{time}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-[9px] font-bold text-slate-400 uppercase mb-1 block ml-1">Fin</label>
+                    <select 
+                      value={newInstallation.end_time || '09:00'}
+                      onChange={e => setNewInstallation(prev => ({ ...prev, end_time: e.target.value }))}
+                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4 text-sm font-bold outline-none focus:border-indigo-500 transition-all"
+                      tabIndex={7}
+                    >
+                      {TIME_OPTIONS.map(time => (
+                        <option key={time} value={time}>{time}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </div>
 
@@ -967,7 +1001,8 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
               setEditingId(null);
               setNewInstallation({
                 warehouse_origin: '3',
-                installation_time: 'morning',
+                start_time: '08:00',
+                end_time: '09:00',
                 merchandise_type: ''
               });
               setPostalCodeLocality('');
@@ -1029,8 +1064,13 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
             const installerInstallations = installations
               .filter(i => i.installer_id === installer.id)
               .sort((a, b) => {
-                if (a.installation_time === 'morning' && b.installation_time === 'afternoon') return -1;
-                if (a.installation_time === 'afternoon' && b.installation_time === 'morning') return 1;
+                const timeA = a.start_time || (a.installation_time === 'morning' ? '08:00' : '14:00');
+                const timeB = b.start_time || (b.installation_time === 'morning' ? '08:00' : '14:00');
+                
+                if (timeA !== timeB) {
+                  return timeA.localeCompare(timeB);
+                }
+
                 if (a.sequence !== undefined && b.sequence !== undefined && a.sequence !== null && b.sequence !== null) {
                   return a.sequence - b.sequence;
                 }
@@ -1099,7 +1139,7 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <button onClick={(e) => { e.stopPropagation(); setNewInstallation({ installer_id: installer.id, warehouse_origin: '3', installation_time: 'morning', merchandise_type: '' }); setView('create'); }} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-indigo-200 transition-all active:scale-95">NUEVO</button>
+                    <button onClick={(e) => { e.stopPropagation(); setNewInstallation({ installer_id: installer.id, warehouse_origin: '3', start_time: '08:00', end_time: '09:00', merchandise_type: '' }); setView('create'); }} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-indigo-200 transition-all active:scale-95">NUEVO</button>
                     <span className="bg-white/10 text-white/80 px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest">{installerInstallations.length} TAREAS</span>
                   </div>
                 </div>
@@ -1115,7 +1155,10 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
                         <React.Fragment key={installation.id}>
                           <div className={`p-2 px-6 rounded-xl border transition-all group flex items-center justify-between gap-3 ${installation.at_dock ? 'bg-blue-500 border-blue-600 text-white shadow-lg shadow-blue-100' : installation.is_scheduled ? 'bg-emerald-200 border-emerald-300' : 'bg-slate-50 border-slate-100 hover:border-indigo-200'}`}>
                             <div className="flex items-center gap-8 flex-1">
-                              <div className="w-28 shrink-0">
+                              <div className="w-28 shrink-0 flex flex-col gap-1">
+                                <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase shadow-sm w-fit ${installation.start_time ? 'bg-indigo-600 text-white border border-indigo-700' : installation.installation_time === 'morning' ? 'bg-amber-100 text-amber-700 border border-amber-200' : 'bg-indigo-100 text-indigo-700 border border-indigo-200'}`}>
+                                  {installation.start_time ? `${installation.start_time} - ${installation.end_time}` : installation.installation_time === 'morning' ? 'MAÑANA' : 'TARDE'}
+                                </span>
                                 <p className={`text-base font-black tracking-tighter ${installation.at_dock ? 'text-white' : 'text-slate-800'}`}>{installation.order_number}</p>
                                 <p className={`text-[11px] font-black uppercase tracking-widest ${installation.at_dock ? 'text-blue-100' : 'text-indigo-600'}`}>
                                   {WAREHOUSES.find(w => w.id === installation.warehouse_origin)?.label || installation.warehouse_origin}
@@ -1162,10 +1205,6 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
                               </div>
                             </div>
                             <div className="flex items-center gap-3 shrink-0">
-                              <span className={`text-[9px] font-black px-3 py-1.5 rounded-lg uppercase shadow-sm ${installation.installation_time === 'morning' ? 'bg-amber-100 text-amber-700 border border-amber-200' : 'bg-indigo-100 text-indigo-700 border border-indigo-200'}`}>
-                                {installation.installation_time === 'morning' ? 'MAÑANA' : 'TARDE'}
-                              </span>
-
                               <div className="flex flex-col gap-1 items-center">
                                 <div className="flex items-center gap-0.5 bg-white p-0.5 rounded-xl border border-slate-100 shadow-sm">
                                   <button 
@@ -1195,10 +1234,19 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
                                     <button onClick={(e) => { e.stopPropagation(); toggleAtDock(installation); }} className="ml-1 text-blue-300 hover:text-blue-500" title="Quitar de muelle">✕</button>
                                   </div>
                                 ) : installation.is_scheduled ? (
-                                  <button onClick={(e) => { e.stopPropagation(); toggleAtDock(installation); }} className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg shadow-md hover:bg-indigo-700 transition-all flex items-center gap-1.5 w-full justify-center">
-                                    <span className="text-xs">📦</span>
-                                    <span className="text-[9px] font-black uppercase tracking-widest">PASAR A MUELLE</span>
-                                  </button>
+                                  <div className="flex items-center gap-1.5 w-full">
+                                    <button onClick={(e) => { e.stopPropagation(); toggleAtDock(installation); }} className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg shadow-md hover:bg-indigo-700 transition-all flex items-center gap-1.5 flex-1 justify-center">
+                                      <span className="text-xs">📦</span>
+                                      <span className="text-[9px] font-black uppercase tracking-widest">PASAR A MUELLE</span>
+                                    </button>
+                                    <button 
+                                      onClick={(e) => { e.stopPropagation(); toggleScheduled(installation); }}
+                                      className="p-1.5 bg-slate-100 text-slate-400 hover:bg-rose-50 hover:text-rose-600 rounded-lg transition-all"
+                                      title="Quitar de agenda"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
                                 ) : (
                                   <button onClick={(e) => { e.stopPropagation(); toggleScheduled(installation); }} className="bg-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-emerald-500 hover:text-white transition-all flex items-center gap-1.5 w-full justify-center">
                                     <span className="text-xs">📅</span>

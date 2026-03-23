@@ -209,7 +209,9 @@ export interface Installation {
   installer_id: string;
   order_number: string;
   warehouse_origin: string;
-  installation_time: 'morning' | 'afternoon';
+  installation_time?: 'morning' | 'afternoon';
+  start_time?: string;
+  end_time?: string;
   postal_code: string;
   locality: string;
   merchandise_type: string;

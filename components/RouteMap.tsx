@@ -144,14 +144,25 @@ const RouteMap: React.FC<RouteMapProps> = ({ truckId, truckLabel, deliveries, on
   };
 
   const getItemTime = (item: RoutableItem) => {
-    return (item as Delivery).delivery_time || (item as Installation).installation_time;
+    if ('start_time' in item && item.start_time) {
+      return item.start_time;
+    }
+    return (item as Delivery).delivery_time || (item as Installation).installation_time || '';
+  };
+
+  const isMorning = (time: string) => {
+    if (!time) return true;
+    if (time === 'morning') return true;
+    if (time === 'afternoon') return false;
+    const hour = parseInt(time.split(':')[0]);
+    return hour < 14;
   };
 
   useEffect(() => {
     const calculateOptimalRoute = async () => {
       setIsLoadingRoute(true);
-      const morning = deliveries.filter(d => getItemTime(d) === 'morning');
-      const afternoon = deliveries.filter(d => getItemTime(d) === 'afternoon');
+      const morning = deliveries.filter(d => isMorning(getItemTime(d)));
+      const afternoon = deliveries.filter(d => !isMorning(getItemTime(d)));
       
       const optimizedPoints: any[] = [{ ...ORIGIN, isOrigin: true }];
       let currentPos = ORIGIN;
@@ -172,7 +183,13 @@ const RouteMap: React.FC<RouteMapProps> = ({ truckId, truckLabel, deliveries, on
         return nearestIndex;
       };
       
-      const remainingMorning = [...morning];
+      const remainingMorning = [...morning].sort((a, b) => {
+        const timeA = getItemTime(a);
+        const timeB = getItemTime(b);
+        if (timeA.includes(':') && timeB.includes(':')) return timeA.localeCompare(timeB);
+        return 0;
+      });
+
       while (remainingMorning.length > 0) {
         const index = findNearest(remainingMorning, currentPos);
         const item = remainingMorning.splice(index, 1)[0];
@@ -181,7 +198,13 @@ const RouteMap: React.FC<RouteMapProps> = ({ truckId, truckLabel, deliveries, on
         currentPos = coords;
       }
       
-      const remainingAfternoon = [...afternoon];
+      const remainingAfternoon = [...afternoon].sort((a, b) => {
+        const timeA = getItemTime(a);
+        const timeB = getItemTime(b);
+        if (timeA.includes(':') && timeB.includes(':')) return timeA.localeCompare(timeB);
+        return 0;
+      });
+
       while (remainingAfternoon.length > 0) {
         const index = findNearest(remainingAfternoon, currentPos);
         const item = remainingAfternoon.splice(index, 1)[0];
@@ -310,10 +333,10 @@ const RouteMap: React.FC<RouteMapProps> = ({ truckId, truckLabel, deliveries, on
                 key={idx} 
                 onMouseEnter={() => setHoveredPointIdx(idx)}
                 onMouseLeave={() => setHoveredPointIdx(null)}
-                className={`p-4 rounded-2xl border transition-all cursor-pointer ${hoveredPointIdx === idx ? 'ring-2 ring-emerald-500 scale-[1.02]' : ''} ${point.isOrigin ? 'bg-white/5 border-white/10' : getItemTime(point.item!) === 'morning' ? 'bg-amber-500/10 border-amber-500/20' : 'bg-indigo-500/10 border-indigo-500/20'}`}
+                className={`p-4 rounded-2xl border transition-all cursor-pointer ${hoveredPointIdx === idx ? 'ring-2 ring-emerald-500 scale-[1.02]' : ''} ${point.isOrigin ? 'bg-white/5 border-white/10' : isMorning(getItemTime(point.item!)) ? 'bg-amber-500/10 border-amber-500/20' : 'bg-indigo-500/10 border-indigo-500/20'}`}
               >
                 <div className="flex items-start gap-3">
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 mt-0.5 ${point.isOrigin ? 'bg-white/20 text-white' : getItemTime(point.item!) === 'morning' ? 'bg-amber-500 text-white' : 'bg-indigo-500 text-white'}`}>
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 mt-0.5 ${point.isOrigin ? 'bg-white/20 text-white' : isMorning(getItemTime(point.item!)) ? 'bg-amber-500 text-white' : 'bg-indigo-500 text-white'}`}>
                     {idx}
                   </div>
                   <div className="flex-1">
@@ -332,8 +355,10 @@ const RouteMap: React.FC<RouteMapProps> = ({ truckId, truckLabel, deliveries, on
                         )}
                         <div className="flex items-center gap-1.5 mt-2">
                           <Clock className="w-3 h-3 text-white/30" />
-                          <span className={`text-[9px] font-black uppercase tracking-widest ${getItemTime(point.item!) === 'morning' ? 'text-amber-400' : 'text-indigo-400'}`}>
-                            {getItemTime(point.item!) === 'morning' ? '8:00 - 12:00' : '13:00 - 18:00'}
+                          <span className={`text-[9px] font-black uppercase tracking-widest ${isMorning(getItemTime(point.item!)) ? 'text-amber-400' : 'text-indigo-400'}`}>
+                            {'start_time' in point.item! && point.item.start_time 
+                              ? `${point.item.start_time} - ${point.item.end_time}`
+                              : isMorning(getItemTime(point.item!)) ? '8:00 - 12:00' : '13:00 - 18:00'}
                           </span>
                         </div>
                       </>
@@ -362,7 +387,7 @@ const RouteMap: React.FC<RouteMapProps> = ({ truckId, truckLabel, deliveries, on
                 }}
                 icon={L.divIcon({
                   className: 'custom-div-icon',
-                  html: `<div style="background-color: ${point.isOrigin ? '#ffffff' : getItemTime(point.item!) === 'morning' ? '#f59e0b' : '#6366f1'}; width: ${hoveredPointIdx === idx ? '36px' : '24px'}; height: ${hoveredPointIdx === idx ? '36px' : '24px'}; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; color: ${point.isOrigin ? '#000' : '#fff'}; font-weight: 900; font-size: ${hoveredPointIdx === idx ? '14px' : '10px'}; box-shadow: 0 4px 6px rgba(0,0,0,0.3); transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);">${idx}</div>`,
+                  html: `<div style="background-color: ${point.isOrigin ? '#ffffff' : isMorning(getItemTime(point.item!)) ? '#f59e0b' : '#6366f1'}; width: ${hoveredPointIdx === idx ? '36px' : '24px'}; height: ${hoveredPointIdx === idx ? '36px' : '24px'}; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; color: ${point.isOrigin ? '#000' : '#fff'}; font-weight: 900; font-size: ${hoveredPointIdx === idx ? '14px' : '10px'}; box-shadow: 0 4px 6px rgba(0,0,0,0.3); transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);">${idx}</div>`,
                   iconSize: [hoveredPointIdx === idx ? 36 : 24, hoveredPointIdx === idx ? 36 : 24],
                   iconAnchor: [hoveredPointIdx === idx ? 18 : 12, hoveredPointIdx === idx ? 18 : 12]
                 })}
