@@ -212,6 +212,29 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
     }
   }, [selectedDate, assignmentDate, view]);
 
+  useEffect(() => {
+    const cleanupEmptyAssignments = async () => {
+      // Solo limpiar si estamos en la vista de agenda y no estamos cargando
+      if (view !== 'agenda' || loading || !agendaAssignments.length) return;
+      
+      const emptyAssignments = agendaAssignments.filter(a => 
+        !deliveries.some(d => d.truck_id === a.truck_id)
+      );
+
+      if (emptyAssignments.length > 0) {
+        for (const assignment of emptyAssignments) {
+          await supabase
+            .from('daily_truck_assignments')
+            .delete()
+            .eq('id', assignment.id);
+        }
+        fetchAgendaAssignments(selectedDate);
+      }
+    };
+
+    cleanupEmptyAssignments();
+  }, [deliveries, agendaAssignments, selectedDate, loading, view]);
+
   const fetchAgendaAssignments = async (date: string) => {
     try {
       const { data, error } = await supabase
