@@ -11,17 +11,20 @@ import {
   useSensor, 
   useSensors,
   DragEndEvent,
-  DragStartEvent
+  DragStartEvent,
+  useDroppable
 } from '@dnd-kit/core';
 import { 
   SortableContext, 
   sortableKeyboardCoordinates, 
   verticalListSortingStrategy,
-  useSortable
+  useSortable,
+  arrayMove
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Calendar, Wrench, MapPin, Plus, History, Search, Filter, ChevronDown, ChevronRight, Save, X, Trash2, GripVertical, Printer, Navigation, User } from 'lucide-react';
 import RouteMap from './RouteMap';
+import ConfirmationModal from './ConfirmationModal';
 
 interface InstallationsPanelProps {
   user: UserProfile;
@@ -85,8 +88,6 @@ const getNextWorkingDayFromStr = (date: string) => {
   return d.toISOString().split('T')[0];
 };
 
-import { useDroppable } from '@dnd-kit/core';
-
 const SortableInstallerItem: React.FC<{ installer: Installer }> = ({ installer }) => {
   const {
     attributes,
@@ -116,6 +117,200 @@ const SortableInstallerItem: React.FC<{ installer: Installer }> = ({ installer }
         <User className="w-3 h-3 text-indigo-500 shrink-0" />
       </div>
       <span className="text-[10px] font-bold text-slate-700 leading-tight break-words w-full">{installer.full_name}</span>
+    </div>
+  );
+};
+
+const InstallerDroppable = ({ id, children }: { id: string; children: React.ReactNode }) => {
+  const { setNodeRef, isOver } = useDroppable({ id: `installer-${id}` });
+  
+  return (
+    <div 
+      ref={setNodeRef} 
+      className={`min-h-[50px] transition-colors rounded-xl ${isOver ? 'bg-indigo-500/10 border-2 border-dashed border-indigo-500/30' : ''}`}
+    >
+      {children}
+    </div>
+  );
+};
+
+const SortableAgendaInstallationItem: React.FC<{ 
+  installation: Installation; 
+  onEdit: (i: Installation) => void;
+  onDelete: (id: string) => void;
+  onToggleScheduled: (i: Installation) => void;
+  onToggleAtDock: (i: Installation) => void;
+  onShowHistory: (id: string) => void;
+  showHistoryId: string | null;
+  installationLogs: InstallationLog[];
+  onCloseHistory: () => void;
+  warehouses: { id: string, label: string }[];
+}> = ({ 
+  installation, 
+  onEdit, 
+  onDelete, 
+  onToggleScheduled, 
+  onToggleAtDock, 
+  onShowHistory, 
+  showHistoryId, 
+  installationLogs, 
+  onCloseHistory,
+  warehouses
+}) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id: installation.id });
+
+  const style = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="relative">
+      <div className={`p-2 px-6 rounded-xl border transition-all group flex items-center justify-between gap-3 ${installation.at_dock ? 'bg-blue-500 border-blue-600 text-white shadow-lg shadow-blue-100' : installation.is_scheduled ? 'bg-emerald-200 border-emerald-300' : 'bg-slate-50 border-slate-100 hover:border-indigo-200'}`}>
+        <div className="flex items-center gap-8 flex-1">
+          <div className="flex items-center gap-3 shrink-0">
+            <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing p-1 hover:bg-black/5 rounded transition-colors">
+              <GripVertical className={`w-4 h-4 ${installation.at_dock ? 'text-white/40' : 'text-slate-400'}`} />
+            </div>
+            <div className="w-28 flex flex-col gap-1">
+              <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase shadow-sm w-fit ${installation.start_time ? 'bg-indigo-600 text-white border border-indigo-700' : installation.installation_time === 'morning' ? 'bg-amber-100 text-amber-700 border border-amber-200' : 'bg-indigo-100 text-indigo-700 border border-indigo-200'}`}>
+                {installation.start_time ? `${installation.start_time} - ${installation.end_time}` : installation.installation_time === 'morning' ? 'MAÑANA' : 'TARDE'}
+              </span>
+              <p className={`text-base font-black tracking-tighter ${installation.at_dock ? 'text-white' : 'text-slate-800'}`}>{installation.order_number}</p>
+              <p className={`text-[11px] font-black uppercase tracking-widest ${installation.at_dock ? 'text-blue-100' : 'text-indigo-600'}`}>
+                {warehouses.find(w => w.id === installation.warehouse_origin)?.label || installation.warehouse_origin}
+              </p>
+            </div>
+          </div>
+
+          <div className={`h-12 w-px shrink-0 ${installation.at_dock ? 'bg-white/20' : 'bg-slate-200'}`} />
+
+          <div className="flex-1 flex flex-col justify-center gap-2 py-1">
+            <div className="flex flex-wrap items-start gap-x-8 gap-y-1">
+              <div className="flex items-center gap-2 min-w-[180px]">
+                <span className="text-lg">📍</span>
+                <div className="flex flex-col">
+                  <p className={`text-[12px] font-bold uppercase leading-tight ${installation.at_dock ? 'text-white' : 'text-slate-700'}`}>
+                    {installation.postal_code} - {installation.locality}
+                  </p>
+                  {installation.address && (
+                    <p className={`text-[10px] font-medium uppercase leading-tight mt-0.5 ${installation.at_dock ? 'text-blue-100' : 'text-slate-500'}`}>
+                      {installation.address}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-1 min-w-[150px]">
+                <span className="text-lg">📦</span>
+                <p className={`text-[12px] font-bold uppercase leading-tight break-words ${installation.at_dock ? 'text-white' : 'text-slate-700'}`}>
+                  {installation.merchandise_type}
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex flex-col gap-1">
+              {installation.created_by_name && (
+                <p className={`text-[8px] font-black uppercase tracking-widest ${installation.at_dock ? 'text-blue-100' : 'text-slate-400'}`}>Por: {installation.created_by_name}</p>
+              )}
+              {installation.comments && (
+                <div className={`px-3 py-1.5 rounded-lg border-l-4 w-full mt-0.5 ${installation.at_dock ? 'bg-white/10 border-white' : 'bg-slate-100/80 border-indigo-500'}`}>
+                  <p className={`text-[11px] font-bold italic leading-snug break-words ${installation.at_dock ? 'text-white' : 'text-slate-900'}`}>
+                    {installation.comments}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="flex flex-col gap-1 items-center">
+            <div className="flex items-center gap-0.5 bg-white p-0.5 rounded-xl border border-slate-100 shadow-sm">
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onShowHistory(installation.id);
+                }}
+                className={`p-1.5 rounded-lg transition-all ${showHistoryId === installation.id ? 'bg-indigo-600 text-white' : 'hover:bg-slate-50 text-slate-400'}`}
+                title="Ver histórico"
+              >
+                <span className="text-xs">📜</span>
+              </button>
+
+              <button onClick={(e) => { e.stopPropagation(); onEdit(installation); }} className="p-1.5 hover:bg-slate-50 rounded-lg text-slate-400 hover:text-indigo-600 transition-all" title="Editar instalación"><span className="text-xs">✏️</span></button>
+              <button onClick={(e) => { e.stopPropagation(); onDelete(installation.id); }} className="p-1.5 hover:bg-rose-50 rounded-lg text-slate-400 hover:text-rose-600 transition-all" title="Eliminar instalación"><span className="text-xs">🗑️</span></button>
+            </div>
+
+            {installation.at_dock ? (
+              <div className="bg-white text-blue-500 px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-1.5 border border-blue-100">
+                <span className="text-xs">⚓</span>
+                <span className="text-[9px] font-black uppercase tracking-widest">EN MUELLE</span>
+                <button onClick={(e) => { e.stopPropagation(); onToggleAtDock(installation); }} className="ml-1 text-blue-300 hover:text-blue-500" title="Quitar de muelle">✕</button>
+              </div>
+            ) : installation.is_scheduled ? (
+              <div className="flex items-center gap-1.5 w-full">
+                <button onClick={(e) => { e.stopPropagation(); onToggleAtDock(installation); }} className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg shadow-md hover:bg-indigo-700 transition-all flex items-center gap-1.5 flex-1 justify-center">
+                  <span className="text-xs">📦</span>
+                  <span className="text-[9px] font-black uppercase tracking-widest">PASAR A MUELLE</span>
+                </button>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); onToggleScheduled(installation); }}
+                  className="p-1.5 bg-slate-100 text-slate-400 hover:bg-rose-50 hover:text-rose-600 rounded-lg transition-all"
+                  title="Quitar de agenda"
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <button onClick={(e) => { e.stopPropagation(); onToggleScheduled(installation); }} className="bg-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-emerald-500 hover:text-white transition-all flex items-center gap-1.5 w-full justify-center">
+                <span className="text-xs">📅</span>
+                <span className="text-[9px] font-black uppercase tracking-widest">AGENDAR</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {showHistoryId === installation.id && (
+        <div className="mx-6 mb-4 bg-white rounded-2xl border border-slate-100 shadow-inner p-4 animate-fade-in">
+          <div className="flex items-center justify-between mb-3 border-b border-slate-50 pb-2">
+            <h5 className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Histórico de Movimientos</h5>
+            <button onClick={(e) => { e.stopPropagation(); onCloseHistory(); }} className="text-slate-300 hover:text-slate-500 text-xs">✕</button>
+          </div>
+          <div className="space-y-3">
+            {installationLogs.length === 0 ? (
+              <p className="text-[9px] text-slate-400 italic text-center py-2">No hay registros para esta instalación</p>
+            ) : installationLogs.map(log => (
+              <div key={log.id} className="flex items-start gap-3 text-[9px]">
+                <div className="w-20 shrink-0 text-slate-400 font-medium">
+                  {new Date(log.created_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                </div>
+                <div className="shrink-0">
+                  <span className={`px-2 py-0.5 rounded-md font-black uppercase tracking-tighter ${
+                    log.action === 'CREACIÓN' ? 'bg-emerald-100 text-emerald-700' :
+                    log.action === 'EDICIÓN' ? 'bg-blue-100 text-blue-700' :
+                    log.action === 'AGENDADO' ? 'bg-indigo-100 text-indigo-700' :
+                    'bg-slate-100 text-slate-600'
+                  }`}>
+                    {log.action}
+                  </span>
+                </div>
+                <div className="flex-1">
+                  <span className="font-bold text-slate-700">{log.user_name}:</span>
+                  <span className="ml-2 text-slate-500">{log.details || 'Sin detalles adicionales'}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -180,6 +375,7 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
   const [agendaAssignments, setAgendaAssignments] = useState<DailyInstallerAssignment[]>([]);
   const [assignmentDate, setAssignmentDate] = useState(getNextWorkingDay());
   const [activeInstallerId, setActiveInstallerId] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeZone, setActiveZone] = useState<string>('TODOS');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -322,20 +518,66 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
   );
 
   const handleDragStart = (event: DragStartEvent) => {
-    setActiveInstallerId(event.active.id as string);
+    const activeId = event.active.id as string;
+    if (installers.some(i => i.id === activeId)) {
+      setActiveInstallerId(activeId);
+    } else {
+      setActiveId(activeId);
+    }
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveInstallerId(null);
+    setActiveId(null);
 
     if (!over) return;
 
-    const installerId = active.id as string;
+    const activeId = active.id as string;
     const overId = over.id as string;
 
-    if (ZONES.includes(overId)) {
-      await handleSaveAssignment(installerId, overId);
+    // Caso 1: Arrastrar instalador a una zona
+    if (ZONES.includes(overId) && installers.some(i => i.id === activeId)) {
+      await handleSaveAssignment(activeId, overId);
+      return;
+    }
+
+    // Caso 2: Arrastrar instalación para reordenar (dentro del mismo instalador o entre instaladores)
+    const activeInstallation = installations.find(i => i.id === activeId);
+    if (activeInstallation) {
+      // Si el destino es otra instalación
+      const overInstallation = installations.find(i => i.id === overId);
+      if (overInstallation) {
+        if (activeInstallation.installer_id !== overInstallation.installer_id) {
+          // Cambiar de instalador
+          await supabase
+            .from('installations')
+            .update({ installer_id: overInstallation.installer_id })
+            .eq('id', activeId);
+          fetchInstallations(selectedDate);
+        } else {
+          // Reordenar visualmente
+          const installerInstallations = installations.filter(i => i.installer_id === activeInstallation.installer_id);
+          const oldIndex = installerInstallations.findIndex(i => i.id === activeId);
+          const newIndex = installerInstallations.findIndex(i => i.id === overId);
+          
+          if (oldIndex !== newIndex) {
+            const newOrdered = arrayMove(installerInstallations, oldIndex, newIndex);
+            await handleMaintainRoute(newOrdered);
+          }
+        }
+      } 
+      // Si el destino es un instalador (droppable)
+      else if (overId.startsWith('installer-')) {
+        const targetInstallerId = overId.replace('installer-', '');
+        if (activeInstallation.installer_id !== targetInstallerId) {
+          await supabase
+            .from('installations')
+            .update({ installer_id: targetInstallerId })
+            .eq('id', activeId);
+          fetchInstallations(selectedDate);
+        }
+      }
     }
   };
 
@@ -397,6 +639,18 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
     } catch (err) {
       console.error("Error in handleAssignZoneAndSchedule:", err);
     }
+  };
+
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmModalConfig, setConfirmModalConfig] = useState<{
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  const confirm = (title: string, message: string, onConfirm: () => void) => {
+    setConfirmModalConfig({ title, message, onConfirm });
+    setShowConfirmModal(true);
   };
 
   const fetchInstallations = async (date: string) => {
@@ -631,25 +885,29 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
   };
 
   const handleDeleteInstallation = async (id: string) => {
-    if (!window.confirm('¿Estás seguro de que deseas eliminar esta instalación?')) return;
-    
-    setLoading(true);
-    try {
-      const { error } = await supabase
-        .from('installations')
-        .delete()
-        .eq('id', id);
-      
-      if (error) throw error;
-      
-      setInstallations(prev => prev.filter(i => i.id !== id));
-      setMessage({ type: 'success', text: 'Instalación eliminada correctamente' });
-      setTimeout(() => setMessage(null), 3000);
-    } catch (err: any) {
-      setMessage({ type: 'error', text: err.message });
-    } finally {
-      setLoading(false);
-    }
+    confirm(
+      '¿Eliminar instalación?',
+      '¿Estás seguro de que deseas eliminar esta instalación permanentemente?',
+      async () => {
+        setLoading(true);
+        try {
+          const { error } = await supabase
+            .from('installations')
+            .delete()
+            .eq('id', id);
+          
+          if (error) throw error;
+          
+          setInstallations(prev => prev.filter(i => i.id !== id));
+          setMessage({ type: 'success', text: 'Instalación eliminada correctamente' });
+          setTimeout(() => setMessage(null), 3000);
+        } catch (err: any) {
+          setMessage({ type: 'error', text: err.message });
+        } finally {
+          setLoading(false);
+        }
+      }
+    );
   };
 
   const handlePostalCodeChange = async (code: string) => {
@@ -1015,7 +1273,8 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
           </button>
         </div>
       ) : (
-        <div className="flex flex-col gap-6 w-full max-w-[1800px] mx-auto">
+        <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+          <div className="flex flex-col gap-6 w-full max-w-[1800px] mx-auto">
           {/* Tabs de Zonas */}
           <div className="flex flex-col gap-4 mb-2 tabs-container">
             <div className="flex flex-wrap gap-2 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm">
@@ -1139,6 +1398,22 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
+                    {dailyAssignment && (
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          confirm(
+                            '¿Quitar instalador?',
+                            '¿Estás seguro de que deseas quitar este instalador de la agenda de hoy?',
+                            () => handleRemoveAssignment(dailyAssignment.id)
+                          );
+                        }}
+                        className="bg-rose-600/20 hover:bg-rose-600 text-rose-400 hover:text-white p-1.5 rounded-lg transition-all active:scale-95 border border-rose-600/30"
+                        title="Quitar instalador de hoy"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     <button onClick={(e) => { e.stopPropagation(); setNewInstallation({ installer_id: installer.id, warehouse_origin: '3', start_time: '08:00', end_time: '09:00', merchandise_type: '' }); setView('create'); }} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-indigo-200 transition-all active:scale-95">NUEVO</button>
                     <span className="bg-white/10 text-white/80 px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest">{installerInstallations.length} TAREAS</span>
                   </div>
@@ -1147,151 +1422,42 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
                 <div className={`grid transition-all duration-500 ease-in-out ${expandedInstallers.has(installer.id) ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
                   <div className="overflow-hidden">
                     <div className="p-3 space-y-2">
-                      {installerInstallations.length === 0 ? (
-                        <div className="py-10 text-center">
-                          <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest italic">Sin instalaciones para hoy</p>
-                        </div>
-                      ) : installerInstallations.map(installation => (
-                        <React.Fragment key={installation.id}>
-                          <div className={`p-2 px-6 rounded-xl border transition-all group flex items-center justify-between gap-3 ${installation.at_dock ? 'bg-blue-500 border-blue-600 text-white shadow-lg shadow-blue-100' : installation.is_scheduled ? 'bg-emerald-200 border-emerald-300' : 'bg-slate-50 border-slate-100 hover:border-indigo-200'}`}>
-                            <div className="flex items-center gap-8 flex-1">
-                              <div className="w-28 shrink-0 flex flex-col gap-1">
-                                <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase shadow-sm w-fit ${installation.start_time ? 'bg-indigo-600 text-white border border-indigo-700' : installation.installation_time === 'morning' ? 'bg-amber-100 text-amber-700 border border-amber-200' : 'bg-indigo-100 text-indigo-700 border border-indigo-200'}`}>
-                                  {installation.start_time ? `${installation.start_time} - ${installation.end_time}` : installation.installation_time === 'morning' ? 'MAÑANA' : 'TARDE'}
-                                </span>
-                                <p className={`text-base font-black tracking-tighter ${installation.at_dock ? 'text-white' : 'text-slate-800'}`}>{installation.order_number}</p>
-                                <p className={`text-[11px] font-black uppercase tracking-widest ${installation.at_dock ? 'text-blue-100' : 'text-indigo-600'}`}>
-                                  {WAREHOUSES.find(w => w.id === installation.warehouse_origin)?.label || installation.warehouse_origin}
-                                </p>
-                              </div>
-
-                              <div className={`h-12 w-px shrink-0 ${installation.at_dock ? 'bg-white/20' : 'bg-slate-200'}`} />
-
-                              <div className="flex-1 flex flex-col justify-center gap-2 py-1">
-                                <div className="flex flex-wrap items-start gap-x-8 gap-y-1">
-                                  <div className="flex items-center gap-2 min-w-[180px]">
-                                    <span className="text-lg">📍</span>
-                                    <div className="flex flex-col">
-                                      <p className={`text-[12px] font-bold uppercase leading-tight ${installation.at_dock ? 'text-white' : 'text-slate-700'}`}>
-                                        {installation.postal_code} - {installation.locality}
-                                      </p>
-                                      {installation.address && (
-                                        <p className={`text-[10px] font-medium uppercase leading-tight mt-0.5 ${installation.at_dock ? 'text-blue-100' : 'text-slate-500'}`}>
-                                          {installation.address}
-                                        </p>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center gap-2 flex-1 min-w-[150px]">
-                                    <span className="text-lg">📦</span>
-                                    <p className={`text-[12px] font-bold uppercase leading-tight break-words ${installation.at_dock ? 'text-white' : 'text-slate-700'}`}>
-                                      {installation.merchandise_type}
-                                    </p>
-                                  </div>
-                                </div>
-                                
-                                <div className="flex flex-col gap-1">
-                                  {installation.created_by_name && (
-                                    <p className={`text-[8px] font-black uppercase tracking-widest ${installation.at_dock ? 'text-blue-100' : 'text-slate-400'}`}>Por: {installation.created_by_name}</p>
-                                  )}
-                                  {installation.comments && (
-                                    <div className={`px-3 py-1.5 rounded-lg border-l-4 w-full mt-0.5 ${installation.at_dock ? 'bg-white/10 border-white' : 'bg-slate-100/80 border-indigo-500'}`}>
-                                      <p className={`text-[11px] font-bold italic leading-snug break-words ${installation.at_dock ? 'text-white' : 'text-slate-900'}`}>
-                                        {installation.comments}
-                                      </p>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-3 shrink-0">
-                              <div className="flex flex-col gap-1 items-center">
-                                <div className="flex items-center gap-0.5 bg-white p-0.5 rounded-xl border border-slate-100 shadow-sm">
-                                  <button 
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (showHistoryId === installation.id) {
-                                        setShowHistoryId(null);
-                                      } else {
-                                        setShowHistoryId(installation.id);
-                                        fetchLogs(installation.id);
-                                      }
-                                    }}
-                                    className={`p-1.5 rounded-lg transition-all ${showHistoryId === installation.id ? 'bg-indigo-600 text-white' : 'hover:bg-slate-50 text-slate-400'}`}
-                                    title="Ver histórico"
-                                  >
-                                    <span className="text-xs">📜</span>
-                                  </button>
-
-                                  <button onClick={(e) => { e.stopPropagation(); handleEdit(installation); }} className="p-1.5 hover:bg-slate-50 rounded-lg text-slate-400 hover:text-indigo-600 transition-all" title="Editar instalación"><span className="text-xs">✏️</span></button>
-                                  <button onClick={(e) => { e.stopPropagation(); handleDeleteInstallation(installation.id); }} className="p-1.5 hover:bg-rose-50 rounded-lg text-slate-400 hover:text-rose-600 transition-all" title="Eliminar instalación"><span className="text-xs">🗑️</span></button>
-                                </div>
-
-                                {installation.at_dock ? (
-                                  <div className="bg-white text-blue-500 px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-1.5 border border-blue-100">
-                                    <span className="text-xs">⚓</span>
-                                    <span className="text-[9px] font-black uppercase tracking-widest">EN MUELLE</span>
-                                    <button onClick={(e) => { e.stopPropagation(); toggleAtDock(installation); }} className="ml-1 text-blue-300 hover:text-blue-500" title="Quitar de muelle">✕</button>
-                                  </div>
-                                ) : installation.is_scheduled ? (
-                                  <div className="flex items-center gap-1.5 w-full">
-                                    <button onClick={(e) => { e.stopPropagation(); toggleAtDock(installation); }} className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg shadow-md hover:bg-indigo-700 transition-all flex items-center gap-1.5 flex-1 justify-center">
-                                      <span className="text-xs">📦</span>
-                                      <span className="text-[9px] font-black uppercase tracking-widest">PASAR A MUELLE</span>
-                                    </button>
-                                    <button 
-                                      onClick={(e) => { e.stopPropagation(); toggleScheduled(installation); }}
-                                      className="p-1.5 bg-slate-100 text-slate-400 hover:bg-rose-50 hover:text-rose-600 rounded-lg transition-all"
-                                      title="Quitar de agenda"
-                                    >
-                                      ✕
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <button onClick={(e) => { e.stopPropagation(); toggleScheduled(installation); }} className="bg-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-emerald-500 hover:text-white transition-all flex items-center gap-1.5 w-full justify-center">
-                                    <span className="text-xs">📅</span>
-                                    <span className="text-[9px] font-black uppercase tracking-widest">AGENDAR</span>
-                                  </button>
-                                )}
-                              </div>
-                            </div>
+                      <InstallerDroppable id={installer.id}>
+                        {installerInstallations.length === 0 ? (
+                          <div className="py-10 text-center">
+                            <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest italic">Sin instalaciones para hoy</p>
                           </div>
-
-                          {showHistoryId === installation.id && (
-                            <div className="mx-6 mb-4 bg-white rounded-2xl border border-slate-100 shadow-inner p-4 animate-fade-in">
-                              <div className="flex items-center justify-between mb-3 border-b border-slate-50 pb-2">
-                                <h5 className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Histórico de Movimientos</h5>
-                                <button onClick={(e) => { e.stopPropagation(); setShowHistoryId(null); }} className="text-slate-300 hover:text-slate-500 text-xs">✕</button>
-                              </div>
-                              <div className="space-y-3">
-                                {installationLogs.length === 0 ? (
-                                  <p className="text-[9px] text-slate-400 italic text-center py-2">No hay registros para esta instalación</p>
-                                ) : installationLogs.map(log => (
-                                  <div key={log.id} className="flex items-start gap-3 text-[9px]">
-                                    <div className="w-20 shrink-0 text-slate-400 font-medium">
-                                      {new Date(log.created_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                                    </div>
-                                    <div className="shrink-0">
-                                      <span className={`px-2 py-0.5 rounded-md font-black uppercase tracking-tighter ${
-                                        log.action === 'CREACIÓN' ? 'bg-emerald-100 text-emerald-700' :
-                                        log.action === 'EDICIÓN' ? 'bg-blue-100 text-blue-700' :
-                                        log.action === 'AGENDADO' ? 'bg-indigo-100 text-indigo-700' :
-                                        'bg-slate-100 text-slate-600'
-                                      }`}>
-                                        {log.action}
-                                      </span>
-                                    </div>
-                                    <div className="flex-1">
-                                      <span className="font-bold text-slate-700">{log.user_name}:</span>
-                                      <span className="ml-2 text-slate-500">{log.details || 'Sin detalles adicionales'}</span>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
+                        ) : (
+                          <SortableContext 
+                            items={installerInstallations.map(i => i.id)} 
+                            strategy={verticalListSortingStrategy}
+                          >
+                            <div className="space-y-2">
+                              {installerInstallations.map(installation => (
+                                <SortableAgendaInstallationItem
+                                  key={installation.id}
+                                  installation={installation}
+                                  onEdit={handleEdit}
+                                  onDelete={handleDeleteInstallation}
+                                  onToggleScheduled={toggleScheduled}
+                                  onToggleAtDock={toggleAtDock}
+                                  onShowHistory={(id) => {
+                                    if (showHistoryId === id) setShowHistoryId(null);
+                                    else {
+                                      setShowHistoryId(id);
+                                      fetchLogs(id);
+                                    }
+                                  }}
+                                  showHistoryId={showHistoryId}
+                                  installationLogs={installationLogs}
+                                  onCloseHistory={() => setShowHistoryId(null)}
+                                  warehouses={WAREHOUSES}
+                                />
+                              ))}
                             </div>
-                          )}
-                        </React.Fragment>
-                      ))}
+                          </SortableContext>
+                        )}
+                      </InstallerDroppable>
                     </div>
                   </div>
                 </div>
@@ -1299,7 +1465,25 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
             );
           })}
         </div>
-      )}
+        <DragOverlay>
+          {activeId && (
+            <div className="bg-white p-4 rounded-xl border-2 border-indigo-500 shadow-2xl opacity-80 scale-105 pointer-events-none">
+              <div className="flex items-center gap-3">
+                <span className="text-xl">📦</span>
+                <div className="flex flex-col">
+                  <p className="text-sm font-black text-slate-800">
+                    {installations.find(i => i.id === activeId)?.order_number || 'Moviendo...'}
+                  </p>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                    {installations.find(i => i.id === activeId)?.locality || ''}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </DragOverlay>
+      </DndContext>
+    )}
 
       {showZoneModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -1356,6 +1540,16 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
           }}
         />
       )}
+      <ConfirmationModal
+        isOpen={showConfirmModal}
+        title={confirmModalConfig?.title || ''}
+        message={confirmModalConfig?.message || ''}
+        onConfirm={() => {
+          confirmModalConfig?.onConfirm();
+          setShowConfirmModal(false);
+        }}
+        onCancel={() => setShowConfirmModal(false)}
+      />
     </div>
   );
 };
