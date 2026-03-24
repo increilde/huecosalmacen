@@ -12,6 +12,7 @@ import {
   useSensors,
   DragEndEvent,
   DragStartEvent,
+  DragOverEvent,
   useDroppable
 } from '@dnd-kit/core';
 import { 
@@ -113,7 +114,7 @@ const SortableInstallerItem: React.FC<{ installer: Installer }> = ({ installer }
       className={`bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col items-center gap-1 text-center cursor-grab active:cursor-grabbing hover:border-indigo-300 transition-colors ${isDragging ? 'z-50 ring-2 ring-indigo-500' : ''}`}
     >
       <div className="flex items-center justify-center gap-1.5 mb-0.5">
-        <GripVertical className="w-3 h-3 text-slate-300 shrink-0" />
+        <GripVertical className="w-3 h-3 text-indigo-500 shrink-0" />
         <User className="w-3 h-3 text-indigo-500 shrink-0" />
       </div>
       <span className="text-[10px] font-bold text-slate-700 leading-tight break-words w-full">{installer.full_name}</span>
@@ -178,7 +179,7 @@ const SortableAgendaInstallationItem: React.FC<{
         <div className="flex items-center gap-8 flex-1">
           <div className="flex items-center gap-3 shrink-0">
             <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing p-1 hover:bg-black/5 rounded transition-colors">
-              <GripVertical className={`w-4 h-4 ${installation.at_dock ? 'text-white/40' : 'text-slate-400'}`} />
+              <GripVertical className={`w-4 h-4 ${installation.at_dock ? 'text-white' : 'text-indigo-500'}`} />
             </div>
             <div className="w-28 flex flex-col gap-1">
               <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase shadow-sm w-fit ${installation.start_time ? 'bg-indigo-600 text-white border border-indigo-700' : installation.installation_time === 'morning' ? 'bg-amber-100 text-amber-700 border border-amber-200' : 'bg-indigo-100 text-indigo-700 border border-indigo-200'}`}>
@@ -517,12 +518,64 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
     })
   );
 
+  const sortInstallations = (list: Installation[]) => {
+    return [...list].sort((a, b) => {
+      // Prioridad absoluta a la secuencia manual
+      if (a.sequence !== null && a.sequence !== undefined && b.sequence !== null && b.sequence !== undefined) {
+        if (a.sequence !== b.sequence) return a.sequence - b.sequence;
+      }
+      
+      if (a.sequence !== null && a.sequence !== undefined) return -1;
+      if (b.sequence !== null && b.sequence !== undefined) return 1;
+
+      // Fallback a hora de inicio si no hay secuencia
+      const timeA = a.start_time || (a.installation_time === 'morning' ? '08:00' : '14:00');
+      const timeB = b.start_time || (b.installation_time === 'morning' ? '08:00' : '14:00');
+      
+      if (timeA !== timeB) return timeA.localeCompare(timeB);
+      
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    });
+  };
+
   const handleDragStart = (event: DragStartEvent) => {
     const activeId = event.active.id as string;
     if (installers.some(i => i.id === activeId)) {
       setActiveInstallerId(activeId);
     } else {
       setActiveId(activeId);
+    }
+  };
+
+  const handleDragOver = (event: DragOverEvent) => {
+    const { active, over } = event;
+    if (!over) return;
+
+    const activeId = active.id as string;
+    const overId = over.id as string;
+
+    // Solo nos interesa si estamos moviendo una instalación
+    const activeInstallation = installations.find(i => i.id === activeId);
+    if (!activeInstallation) return;
+
+    // Caso A: Sobre otra instalación
+    const overInstallation = installations.find(i => i.id === overId);
+    if (overInstallation) {
+      if (activeInstallation.installer_id !== overInstallation.installer_id) {
+        setInstallations(prev => prev.map(i => 
+          i.id === activeId ? { ...i, installer_id: overInstallation.installer_id } : i
+        ));
+      }
+    }
+    
+    // Caso B: Sobre un contenedor de instalador (droppable) o sobre el propio instalador
+    else if (overId.startsWith('installer-') || installers.some(i => i.id === overId)) {
+      const targetInstallerId = overId.startsWith('installer-') ? overId.replace('installer-', '') : overId;
+      if (activeInstallation.installer_id !== targetInstallerId) {
+        setInstallations(prev => prev.map(i => 
+          i.id === activeId ? { ...i, installer_id: targetInstallerId } : i
+        ));
+      }
     }
   };
 
@@ -545,50 +598,43 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
     // Caso 2: Arrastrar instalación para reordenar (dentro del mismo instalador o entre instaladores)
     const activeInstallation = installations.find(i => i.id === activeId);
     if (activeInstallation) {
-      // Si el destino es otra instalación
       const overInstallation = installations.find(i => i.id === overId);
-      if (overInstallation) {
-        if (activeInstallation.installer_id !== overInstallation.installer_id) {
-          // Cambiar de instalador (Optimista)
-          setInstallations(prev => prev.map(i => 
-            i.id === activeId ? { ...i, installer_id: overInstallation.installer_id } : i
-          ));
-          
-          await supabase
-            .from('installations')
-            .update({ installer_id: overInstallation.installer_id })
-            .eq('id', activeId);
-          // No llamamos a fetchInstallations aquí para evitar el refresco brusco
-        } else {
-          // Reordenar visualmente (Optimista)
-          const installerInstallations = installations.filter(i => i.installer_id === activeInstallation.installer_id);
-          const oldIndex = installerInstallations.findIndex(i => i.id === activeId);
-          const newIndex = installerInstallations.findIndex(i => i.id === overId);
-          
-          if (oldIndex !== newIndex) {
+      const targetInstallerId = overInstallation ? overInstallation.installer_id : (overId.startsWith('installer-') ? overId.replace('installer-', '') : (installers.some(i => i.id === overId) ? overId : null));
+      
+      if (targetInstallerId) {
+        // Obtenemos las instalaciones del instalador destino, ORDENADAS
+        const installerInstallations = sortInstallations(installations.filter(i => i.installer_id === targetInstallerId));
+        
+        const oldIndex = installerInstallations.findIndex(i => i.id === activeId);
+        let newIndex = overInstallation ? installerInstallations.findIndex(i => i.id === overId) : installerInstallations.length;
+
+        if (oldIndex !== -1) {
+          // Reordenar dentro del mismo instalador (o ya movido por handleDragOver)
+          if (oldIndex !== newIndex || activeInstallation.installer_id !== targetInstallerId) {
             const newOrdered = arrayMove(installerInstallations, oldIndex, newIndex);
             
-            // Actualizar estado local inmediatamente
-            const otherInstallations = installations.filter(i => i.installer_id !== activeInstallation.installer_id);
+            const otherInstallations = installations.filter(i => i.installer_id !== targetInstallerId);
             setInstallations([...otherInstallations, ...newOrdered]);
             
-            await handleMaintainRoute(newOrdered, true); // true para indicar que ya se actualizó el estado local
+            // Actualizar installer_id en DB por si acaso cambió
+            await supabase.from('installations').update({ installer_id: targetInstallerId }).eq('id', activeId);
+            
+            await handleMaintainRoute(newOrdered, true);
           }
-        }
-      } 
-      // Si el destino es un instalador (droppable)
-      else if (overId.startsWith('installer-')) {
-        const targetInstallerId = overId.replace('installer-', '');
-        if (activeInstallation.installer_id !== targetInstallerId) {
-          // Cambiar de instalador (Optimista)
-          setInstallations(prev => prev.map(i => 
-            i.id === activeId ? { ...i, installer_id: targetInstallerId } : i
-          ));
-
-          await supabase
-            .from('installations')
-            .update({ installer_id: targetInstallerId })
-            .eq('id', activeId);
+        } else {
+          // Mover a otro instalador (si handleDragOver no lo hizo)
+          const newOrdered = [...installerInstallations];
+          const newItem = { ...activeInstallation, installer_id: targetInstallerId };
+          newOrdered.splice(newIndex, 0, newItem);
+          
+          const otherInstallations = installations.filter(i => i.installer_id !== targetInstallerId && i.id !== activeId);
+          setInstallations([...otherInstallations, ...newOrdered]);
+          
+          await supabase.from('installations').update({ 
+            installer_id: targetInstallerId
+          }).eq('id', activeId);
+          
+          await handleMaintainRoute(newOrdered, true);
         }
       }
     }
@@ -673,6 +719,7 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
         .from('installations')
         .select('*')
         .eq('installation_date', date)
+        .order('sequence', { ascending: true })
         .order('created_at', { ascending: true });
 
       if (error) throw error;
@@ -1071,7 +1118,13 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
             </div>
           </div>
 
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+          <DndContext 
+            sensors={sensors} 
+            collisionDetection={pointerWithin} 
+            onDragStart={handleDragStart} 
+            onDragOver={handleDragOver}
+            onDragEnd={handleDragEnd}
+          >
             <div className="grid grid-cols-1 lg:grid-cols-7 gap-6">
               <div className="lg:col-span-2 bg-slate-50 rounded-3xl p-4 border-2 border-dashed border-slate-200">
                 <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 text-center">Instaladores</h3>
@@ -1296,7 +1349,13 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
           </button>
         </div>
       ) : (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+        <DndContext 
+          sensors={sensors} 
+          collisionDetection={pointerWithin} 
+          onDragStart={handleDragStart} 
+          onDragOver={handleDragOver}
+          onDragEnd={handleDragEnd}
+        >
           <div className="flex flex-col gap-6 w-full max-w-[1800px] mx-auto">
           {/* Tabs de Zonas */}
           <div className="flex flex-col gap-4 mb-2 tabs-container">
@@ -1343,23 +1402,7 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
               const matchesZone = activeZone === 'TODOS' || (activeZone === 'SIN ZONA' ? (effectiveZone === 'SIN ZONA' || effectiveZone === '') : effectiveZone === activeZone);
               return (hasInstallations || !!dailyAssignment) && matchesSearch && matchesZone;
             }).map(installer => {
-            const installerInstallations = installations
-              .filter(i => i.installer_id === installer.id)
-              .sort((a, b) => {
-                const timeA = a.start_time || (a.installation_time === 'morning' ? '08:00' : '14:00');
-                const timeB = b.start_time || (b.installation_time === 'morning' ? '08:00' : '14:00');
-                
-                if (timeA !== timeB) {
-                  return timeA.localeCompare(timeB);
-                }
-
-                if (a.sequence !== undefined && b.sequence !== undefined && a.sequence !== null && b.sequence !== null) {
-                  return a.sequence - b.sequence;
-                }
-                if (a.sequence !== undefined && a.sequence !== null) return -1;
-                if (b.sequence !== undefined && b.sequence !== null) return 1;
-                return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-              });
+            const installerInstallations = sortInstallations(installations.filter(i => i.installer_id === installer.id));
             
             const dailyAssignment = agendaAssignments.find(a => a.installer_id === installer.id);
             const displayZone = dailyAssignment ? dailyAssignment.zone : (installer.zone || 'SIN ZONA');

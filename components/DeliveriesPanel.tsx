@@ -13,6 +13,7 @@ import {
   useSensors,
   DragEndEvent,
   DragStartEvent,
+  DragOverEvent,
   useDroppable
 } from '@dnd-kit/core';
 import { 
@@ -153,9 +154,7 @@ const SortableAgendaDeliveryItem: React.FC<{
       className="flex flex-col w-full"
     >
       <div
-        {...attributes}
-        {...listeners}
-        className={`p-2 px-6 rounded-xl border transition-all group flex items-center justify-between gap-3 cursor-grab active:cursor-grabbing ${
+        className={`p-2 px-6 rounded-xl border transition-all group flex items-center justify-between gap-3 ${
           delivery.at_dock
             ? 'bg-blue-500 border-blue-600 text-white shadow-lg shadow-blue-100'
             : delivery.is_scheduled 
@@ -163,6 +162,10 @@ const SortableAgendaDeliveryItem: React.FC<{
               : 'bg-slate-50 border-slate-100 hover:border-indigo-200'
         } ${isDragging ? 'z-50 ring-2 ring-indigo-500' : ''}`}
       >
+        <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing p-1 hover:bg-black/5 rounded transition-colors shrink-0">
+          <GripVertical className={`w-4 h-4 ${delivery.at_dock ? 'text-white' : 'text-indigo-500'}`} />
+        </div>
+
         <div className="flex items-center gap-8 flex-1">
           <div className="w-28 shrink-0">
             <p className={`text-base font-black tracking-tighter ${delivery.at_dock ? 'text-white' : 'text-slate-800'}`}>{delivery.order_number}</p>
@@ -321,7 +324,7 @@ const SortableDeliveryItem: React.FC<{
     >
       <div className={`bg-white p-3 rounded-xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-all group relative flex items-center gap-3 ${isDragging ? 'z-50 ring-2 ring-indigo-500' : ''}`}>
         <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing p-1 hover:bg-slate-50 rounded transition-colors shrink-0">
-          <GripVertical className="w-4 h-4 text-slate-400" />
+          <GripVertical className="w-4 h-4 text-indigo-500" />
         </div>
         
         <div className="flex-1 min-w-0">
@@ -671,6 +674,25 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
     })
   );
 
+  const sortDeliveries = (list: Delivery[]) => {
+    return [...list].sort((a, b) => {
+      // Prioridad absoluta a la secuencia manual
+      if (a.sequence !== null && a.sequence !== undefined && b.sequence !== null && b.sequence !== undefined) {
+        if (a.sequence !== b.sequence) return a.sequence - b.sequence;
+      }
+      
+      if (a.sequence !== null && a.sequence !== undefined) return -1;
+      if (b.sequence !== null && b.sequence !== undefined) return 1;
+
+      // Fallback a franja horaria si no hay secuencia
+      if (a.delivery_time === 'morning' && b.delivery_time === 'afternoon') return -1;
+      if (a.delivery_time === 'afternoon' && b.delivery_time === 'morning') return 1;
+      
+      // Por defecto por fecha de creación
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    });
+  };
+
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;
     const activeId = active.id as string;
@@ -679,6 +701,38 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
       setActiveTruckId(activeId);
     } else {
       setActiveId(activeId);
+    }
+  };
+
+  const handleDragOver = (event: DragOverEvent) => {
+    const { active, over } = event;
+    if (!over) return;
+
+    const activeId = active.id as string;
+    const overId = over.id as string;
+
+    // Solo nos interesa si estamos moviendo un reparto
+    const activeDelivery = deliveries.find(d => d.id === activeId);
+    if (!activeDelivery) return;
+
+    // Caso A: Sobre otro reparto
+    const overDelivery = deliveries.find(d => d.id === overId);
+    if (overDelivery) {
+      if (activeDelivery.truck_id !== overDelivery.truck_id) {
+        setDeliveries(prev => prev.map(d => 
+          d.id === activeId ? { ...d, truck_id: overDelivery.truck_id } : d
+        ));
+      }
+    }
+    
+    // Caso B: Sobre un contenedor de camión (droppable) o sobre el propio camión
+    else if (overId.startsWith('truck-') || trucks.some(t => t.id === overId)) {
+      const targetTruckId = overId.startsWith('truck-') ? overId.replace('truck-', '') : overId;
+      if (activeDelivery.truck_id !== targetTruckId) {
+        setDeliveries(prev => prev.map(d => 
+          d.id === activeId ? { ...d, truck_id: targetTruckId } : d
+        ));
+      }
     }
   };
 
@@ -701,50 +755,43 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
     // Caso 2: Arrastrar reparto para reordenar (dentro del mismo camión o entre camiones)
     const activeDelivery = deliveries.find(d => d.id === activeId);
     if (activeDelivery) {
-      // Si el destino es otro reparto
       const overDelivery = deliveries.find(d => d.id === overId);
-      if (overDelivery) {
-        if (activeDelivery.truck_id !== overDelivery.truck_id) {
-          // Cambiar de camión (Optimista)
-          setDeliveries(prev => prev.map(d => 
-            d.id === activeId ? { ...d, truck_id: overDelivery.truck_id } : d
-          ));
-          
-          await supabase
-            .from('deliveries')
-            .update({ truck_id: overDelivery.truck_id })
-            .eq('id', activeId);
-          // No llamamos a fetchDeliveries aquí para evitar el refresco brusco
-        } else {
-          // Reordenar visualmente (Optimista)
-          const truckDeliveries = deliveries.filter(d => d.truck_id === activeDelivery.truck_id);
-          const oldIndex = truckDeliveries.findIndex(d => d.id === activeId);
-          const newIndex = truckDeliveries.findIndex(d => d.id === overId);
-          
-          if (oldIndex !== newIndex) {
+      const targetTruckId = overDelivery ? overDelivery.truck_id : (overId.startsWith('truck-') ? overId.replace('truck-', '') : (trucks.some(t => t.id === overId) ? overId : null));
+      
+      if (targetTruckId) {
+        // Obtenemos los repartos del camión destino, ORDENADOS tal cual se ven
+        const truckDeliveries = sortDeliveries(deliveries.filter(d => d.truck_id === targetTruckId));
+        
+        const oldIndex = truckDeliveries.findIndex(d => d.id === activeId);
+        let newIndex = overDelivery ? truckDeliveries.findIndex(d => d.id === overId) : truckDeliveries.length;
+
+        if (oldIndex !== -1) {
+          // Reordenar dentro del mismo camión (o ya movido por handleDragOver)
+          if (oldIndex !== newIndex || activeDelivery.truck_id !== targetTruckId) {
             const newOrdered = arrayMove(truckDeliveries, oldIndex, newIndex);
             
-            // Actualizar estado local inmediatamente
-            const otherDeliveries = deliveries.filter(d => d.truck_id !== activeDelivery.truck_id);
+            const otherDeliveries = deliveries.filter(d => d.truck_id !== targetTruckId);
             setDeliveries([...otherDeliveries, ...newOrdered]);
             
-            await handleMaintainRoute(newOrdered, true); // true para indicar que ya se actualizó el estado local
+            // Actualizar truck_id en DB por si acaso cambió
+            await supabase.from('deliveries').update({ truck_id: targetTruckId }).eq('id', activeId);
+            
+            await handleMaintainRoute(newOrdered, true);
           }
-        }
-      } 
-      // Si el destino es un camión (droppable)
-      else if (overId.startsWith('truck-')) {
-        const targetTruckId = overId.replace('truck-', '');
-        if (activeDelivery.truck_id !== targetTruckId) {
-          // Cambiar de camión (Optimista)
-          setDeliveries(prev => prev.map(d => 
-            d.id === activeId ? { ...d, truck_id: targetTruckId } : d
-          ));
-
-          await supabase
-            .from('deliveries')
-            .update({ truck_id: targetTruckId })
-            .eq('id', activeId);
+        } else {
+          // Mover a otro camión (si handleDragOver no lo hizo)
+          const newOrdered = [...truckDeliveries];
+          const newItem = { ...activeDelivery, truck_id: targetTruckId };
+          newOrdered.splice(newIndex, 0, newItem);
+          
+          const otherDeliveries = deliveries.filter(d => d.truck_id !== targetTruckId && d.id !== activeId);
+          setDeliveries([...otherDeliveries, ...newOrdered]);
+          
+          await supabase.from('deliveries').update({ 
+            truck_id: targetTruckId
+          }).eq('id', activeId);
+          
+          await handleMaintainRoute(newOrdered, true);
         }
       }
     }
@@ -863,6 +910,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
         .from('deliveries')
         .select('*')
         .eq('delivery_date', date)
+        .order('sequence', { ascending: true })
         .order('created_at', { ascending: true });
 
       if (error) throw error;
@@ -1206,8 +1254,9 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
   return (
     <DndContext 
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={pointerWithin}
       onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
     >
       <div className="p-2 md:p-4 w-full animate-fade-in">
@@ -1673,25 +1722,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
               
               return (hasDeliveries || !!dailyAssignment) && matchesSearch && matchesZone;
             }).map(truck => {
-            const truckDeliveries = deliveries
-              .filter(d => d.truck_id === truck.id)
-              .sort((a, b) => {
-                // Primero por franja horaria
-                if (a.delivery_time === 'morning' && b.delivery_time === 'afternoon') return -1;
-                if (a.delivery_time === 'afternoon' && b.delivery_time === 'morning') return 1;
-                
-                // Luego por secuencia si existe
-                if (a.sequence !== undefined && b.sequence !== undefined && a.sequence !== null && b.sequence !== null) {
-                  return a.sequence - b.sequence;
-                }
-                
-                // Si solo uno tiene secuencia, ese va primero
-                if (a.sequence !== undefined && a.sequence !== null) return -1;
-                if (b.sequence !== undefined && b.sequence !== null) return 1;
-                
-                // Por defecto por fecha de creación
-                return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-              });
+            const truckDeliveries = sortDeliveries(deliveries.filter(d => d.truck_id === truck.id));
             
             // Obtener zona para mostrar en el header
             const dailyAssignment = agendaAssignments.find(a => a.truck_id === truck.id);
