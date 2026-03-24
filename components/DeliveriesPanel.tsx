@@ -12,9 +12,7 @@ import {
   useSensor, 
   useSensors,
   DragEndEvent,
-  DragStartEvent,
-  DragOverEvent,
-  useDroppable
+  DragStartEvent
 } from '@dnd-kit/core';
 import { 
   arrayMove, 
@@ -24,9 +22,8 @@ import {
   useSortable
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Calendar, Truck, MapPin, Plus, History, Search, Filter, ChevronDown, ChevronRight, Save, X, Trash2, GripVertical, Printer, Navigation, Edit2, Package } from 'lucide-react';
+import { Calendar, Truck, MapPin, Plus, History, Search, Filter, ChevronDown, ChevronRight, Save, X, Trash2, GripVertical, Printer, Navigation } from 'lucide-react';
 import RouteMap from './RouteMap';
-import ConfirmationModal from './ConfirmationModal';
 
 interface DeliveriesPanelProps {
   user: UserProfile;
@@ -89,6 +86,8 @@ const getNextWorkingDayFromStr = (date: string) => {
   return d.toISOString().split('T')[0];
 };
 
+import { useDroppable } from '@dnd-kit/core';
+
 const SortableTruckItem: React.FC<{ truck: Trucker }> = ({ truck }) => {
   const {
     attributes,
@@ -122,306 +121,12 @@ const SortableTruckItem: React.FC<{ truck: Trucker }> = ({ truck }) => {
   );
 };
 
-const SortableAgendaDeliveryItem: React.FC<{ 
-  delivery: Delivery;
-  onEdit: (d: Delivery) => void;
-  onToggleScheduled: (d: Delivery, s: boolean) => void;
-  onToggleAtDock: (d: Delivery) => void;
-  onShowLogs: (d: Delivery) => void;
-  showHistoryId: string | null;
-  deliveryLogs: DeliveryLog[];
-  onCloseHistory: () => void;
-}> = ({ delivery, onEdit, onToggleScheduled, onToggleAtDock, onShowLogs, showHistoryId, deliveryLogs, onCloseHistory }) => {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging
-  } = useSortable({ id: delivery.id });
-
-  const style = {
-    transform: CSS.Translate.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className="flex flex-col w-full"
-    >
-      <div
-        className={`p-2 px-6 rounded-xl border transition-all group flex items-center justify-between gap-3 ${
-          delivery.at_dock
-            ? 'bg-blue-500 border-blue-600 text-white shadow-lg shadow-blue-100'
-            : delivery.is_scheduled 
-              ? 'bg-emerald-200 border-emerald-300' 
-              : 'bg-slate-50 border-slate-100 hover:border-indigo-200'
-        } ${isDragging ? 'z-50 ring-2 ring-indigo-500' : ''}`}
-      >
-        <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing p-1 hover:bg-black/5 rounded transition-colors shrink-0">
-          <GripVertical className={`w-4 h-4 ${delivery.at_dock ? 'text-white' : 'text-indigo-500'}`} />
-        </div>
-
-        <div className="flex items-center gap-8 flex-1">
-          <div className="w-28 shrink-0">
-            <p className={`text-base font-black tracking-tighter ${delivery.at_dock ? 'text-white' : 'text-slate-800'}`}>{delivery.order_number}</p>
-            <p className={`text-[11px] font-black uppercase tracking-widest ${delivery.at_dock ? 'text-blue-100' : 'text-indigo-600'}`}>
-              {WAREHOUSES.find(w => w.id === delivery.warehouse_origin)?.label || delivery.warehouse_origin}
-            </p>
-          </div>
-
-          <div className={`h-12 w-px shrink-0 ${delivery.at_dock ? 'bg-white/20' : 'bg-slate-200'}`} />
-
-          <div className="flex-1 flex flex-col justify-center gap-2 py-1">
-            <div className="flex flex-wrap items-start gap-x-8 gap-y-1">
-              <div className="flex items-center gap-2 min-w-[180px]">
-                <span className="text-lg">📍</span>
-                <div className="flex flex-col">
-                  <p className={`text-[12px] font-bold uppercase leading-tight ${delivery.at_dock ? 'text-white' : 'text-slate-700'}`}>
-                    {delivery.postal_code} - {delivery.locality}
-                  </p>
-                  {delivery.address && (
-                    <p className={`text-[10px] font-medium uppercase leading-tight mt-0.5 ${delivery.at_dock ? 'text-blue-100' : 'text-slate-500'}`}>
-                      {delivery.address}
-                    </p>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center gap-2 flex-1 min-w-[150px]">
-                <span className="text-lg">📦</span>
-                <p className={`text-[12px] font-bold uppercase leading-tight break-words ${delivery.at_dock ? 'text-white' : 'text-slate-700'}`}>
-                  {delivery.merchandise_type}
-                </p>
-              </div>
-            </div>
-            
-            <div className="flex flex-col gap-1">
-              {delivery.created_by_name && (
-                <p className={`text-[8px] font-black uppercase tracking-widest ${delivery.at_dock ? 'text-blue-100' : 'text-slate-400'}`}>Por: {delivery.created_by_name}</p>
-              )}
-            </div>
-          </div>
-
-          <div className={`h-12 w-px shrink-0 ${delivery.at_dock ? 'bg-white/20' : 'bg-slate-200'}`} />
-
-          <div className="w-24 shrink-0 flex flex-col items-center">
-            <span className={`text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest ${
-              delivery.at_dock 
-                ? 'bg-white/20 text-white' 
-                : delivery.delivery_time === 'morning' 
-                  ? 'bg-amber-50 text-amber-600 border border-amber-100' 
-                  : 'bg-blue-50 text-blue-600 border border-blue-100'
-            }`}>
-              {delivery.delivery_time === 'morning' ? 'MAÑANA' : 'TARDE'}
-            </span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 no-print" onPointerDown={(e) => e.stopPropagation()}>
-          <button 
-            onClick={() => onToggleAtDock(delivery)}
-            className={`text-[9px] font-black uppercase tracking-widest px-4 py-2 rounded-xl transition-all ${
-              delivery.at_dock 
-                ? 'bg-white text-blue-600 shadow-lg' 
-                : 'bg-white text-slate-400 hover:bg-blue-50 hover:text-blue-600 border border-slate-100'
-            }`}
-          >
-            {delivery.at_dock ? 'EN MUELLE' : 'PASAR A MUELLE'}
-          </button>
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button 
-              onClick={() => onEdit(delivery)}
-              className={`p-2 rounded-xl transition-colors ${delivery.at_dock ? 'hover:bg-white/10 text-white/60 hover:text-white' : 'hover:bg-slate-100 text-slate-400 hover:text-indigo-600'}`}
-            >
-              <Edit2 className="w-4 h-4" />
-            </button>
-            <button 
-              onClick={() => onShowLogs(delivery)}
-              className={`p-2 rounded-xl transition-colors ${delivery.at_dock ? 'hover:bg-white/10 text-white/60 hover:text-white' : 'hover:bg-slate-100 text-slate-400 hover:text-indigo-600'}`}
-            >
-              <History className="w-4 h-4" />
-            </button>
-            <button 
-              onClick={() => onToggleScheduled(delivery, false)}
-              className={`p-2 rounded-xl transition-colors ${delivery.at_dock ? 'hover:bg-white/10 text-white/60 hover:text-white' : 'hover:bg-rose-50 text-slate-400 hover:text-rose-600'}`}
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {showHistoryId === delivery.id && (
-        <div className="mx-6 mb-4 mt-2 bg-white rounded-2xl border border-slate-100 shadow-inner p-4 animate-fade-in">
-          <div className="flex items-center justify-between mb-3 border-b border-slate-50 pb-2">
-            <h5 className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Histórico de Movimientos</h5>
-            <button onClick={(e) => { e.stopPropagation(); onCloseHistory(); }} className="text-slate-300 hover:text-slate-500 text-xs">✕</button>
-          </div>
-          <div className="space-y-3">
-            {deliveryLogs.length === 0 ? (
-              <p className="text-[9px] text-slate-400 italic text-center py-2">No hay registros para este reparto</p>
-            ) : deliveryLogs.map(log => (
-              <div key={log.id} className="flex items-start gap-3 text-[9px]">
-                <div className="w-20 shrink-0 text-slate-400 font-medium">
-                  {new Date(log.created_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                </div>
-                <div className="shrink-0">
-                  <span className={`px-2 py-0.5 rounded-md font-black uppercase tracking-tighter ${
-                    log.action === 'CREACIÓN' ? 'bg-emerald-100 text-emerald-700' :
-                    log.action === 'EDICIÓN' ? 'bg-blue-100 text-blue-700' :
-                    log.action === 'AGENDADO' ? 'bg-indigo-100 text-indigo-700' :
-                    'bg-slate-100 text-slate-600'
-                  }`}>
-                    {log.action}
-                  </span>
-                </div>
-                <div className="flex-1">
-                  <span className="font-bold text-slate-700">{log.user_name}:</span>
-                  <span className="ml-2 text-slate-500">{log.details || 'Sin detalles adicionales'}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-const SortableDeliveryItem: React.FC<{ 
-  delivery: Delivery;
-  onEdit: (d: Delivery) => void;
-  onToggleScheduled: (d: Delivery, s: boolean) => void;
-  onShowLogs: (d: Delivery) => void;
-  showHistoryId: string | null;
-  deliveryLogs: DeliveryLog[];
-  onCloseHistory: () => void;
-}> = ({ delivery, onEdit, onToggleScheduled, onShowLogs, showHistoryId, deliveryLogs, onCloseHistory }) => {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging
-  } = useSortable({ id: delivery.id });
-
-  const style = {
-    transform: CSS.Translate.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className="flex flex-col w-full"
-    >
-      <div className={`bg-white p-3 rounded-xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-all group relative flex items-center gap-3 ${isDragging ? 'z-50 ring-2 ring-indigo-500' : ''}`}>
-        <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing p-1 hover:bg-slate-50 rounded transition-colors shrink-0">
-          <GripVertical className="w-4 h-4 text-indigo-500" />
-        </div>
-        
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-2 mb-2">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded uppercase tracking-wider">
-                  #{delivery.order_number}
-                </span>
-                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
-                  delivery.delivery_time === 'morning' ? 'bg-amber-50 text-amber-600 border border-amber-100' : 'bg-blue-50 text-blue-600 border border-blue-100'
-                }`}>
-                  {delivery.delivery_time === 'morning' ? 'MAÑANA' : 'TARDE'}
-                </span>
-              </div>
-              <h4 className="text-[11px] font-bold text-slate-800 truncate uppercase">{delivery.client_name || 'SIN NOMBRE'}</h4>
-            </div>
-            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              <button 
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={() => onEdit(delivery)}
-                className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-indigo-600 transition-colors"
-              >
-                <Edit2 className="w-3 h-3" />
-              </button>
-              <button 
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={() => onShowLogs(delivery)}
-                className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-indigo-600 transition-colors"
-              >
-                <History className="w-3 h-3" />
-              </button>
-              <button 
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={() => onToggleScheduled(delivery, false)}
-                className="p-1 hover:bg-red-50 rounded text-slate-400 hover:text-red-600 transition-colors"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <div className="flex items-center gap-1.5 text-slate-500">
-              <MapPin className="w-3 h-3 shrink-0 text-slate-300" />
-              <span className="text-[10px] font-medium truncate uppercase">{delivery.locality || 'SIN LOCALIDAD'}</span>
-            </div>
-            {delivery.merchandise_type && (
-              <div className="flex items-center gap-1.5 text-slate-400">
-                <Package className="w-3 h-3 shrink-0 text-slate-300" />
-                <span className="text-[9px] font-medium truncate uppercase">{delivery.merchandise_type}</span>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {showHistoryId === delivery.id && (
-        <div className="mt-2 bg-white rounded-xl border border-slate-100 shadow-inner p-3 animate-fade-in">
-          <div className="flex items-center justify-between mb-2 border-b border-slate-50 pb-1">
-            <h5 className="text-[9px] font-black text-slate-800 uppercase tracking-widest">Histórico</h5>
-            <button onClick={(e) => { e.stopPropagation(); onCloseHistory(); }} className="text-slate-300 hover:text-slate-500 text-[10px]">✕</button>
-          </div>
-          <div className="space-y-2">
-            {deliveryLogs.length === 0 ? (
-              <p className="text-[8px] text-slate-400 italic text-center py-1">Sin registros</p>
-            ) : deliveryLogs.map(log => (
-              <div key={log.id} className="flex flex-col gap-0.5 text-[8px]">
-                <div className="flex justify-between text-slate-400">
-                  <span>{new Date(log.created_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
-                  <span className="font-black">{log.action}</span>
-                </div>
-                <div className="text-slate-600">
-                  <span className="font-bold">{log.user_name}:</span> {log.details}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
 const ZoneColumn: React.FC<{ 
   zone: string; 
   assignments: DailyTruckAssignment[]; 
   trucks: Trucker[];
   onRemove: (id: string) => void;
-  deliveries: Delivery[];
-  onEdit: (d: Delivery) => void;
-  onToggleScheduled: (d: Delivery, s: boolean) => void;
-  onShowLogs: (d: Delivery) => void;
-  showHistoryId: string | null;
-  deliveryLogs: DeliveryLog[];
-  onCloseHistory: () => void;
-}> = ({ zone, assignments, trucks, onRemove, deliveries, onEdit, onToggleScheduled, onShowLogs, showHistoryId, deliveryLogs, onCloseHistory }) => {
+}> = ({ zone, assignments, trucks, onRemove }) => {
   const { setNodeRef, isOver } = useDroppable({
     id: zone,
   });
@@ -438,77 +143,29 @@ const ZoneColumn: React.FC<{
         </span>
       </div>
       
-      <div className="flex-1 space-y-4">
+      <div className="flex-1 space-y-2">
         {assignments.map(assignment => {
           const truck = trucks.find(t => t.id === assignment.truck_id);
-          const truckDeliveries = deliveries.filter(d => d.truck_id === assignment.truck_id);
-          
           return (
-            <TruckDroppable key={assignment.id} truckId={assignment.truck_id!}>
-              <div className="bg-white/50 rounded-2xl border border-slate-200/50 p-3 space-y-3 relative group">
-                <button
-                  onClick={() => onRemove(assignment.id)}
-                  className="absolute -top-2 -right-2 w-6 h-6 bg-white border border-slate-200 rounded-full flex items-center justify-center text-slate-400 hover:text-red-600 hover:border-red-200 shadow-sm opacity-0 group-hover:opacity-100 transition-all z-10"
-                  title="Eliminar camión de la agenda"
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
-
-                <div className="flex items-center justify-between px-1">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-sm">
-                      <Truck className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h4 className="text-[11px] font-black text-slate-800 uppercase tracking-tight leading-none mb-0.5">
-                        {truck?.label || 'CAMIÓN'}
-                      </h4>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
-                        {truckDeliveries.length} REPARTOS
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <SortableContext items={truckDeliveries.map(d => d.id)} strategy={verticalListSortingStrategy}>
-                    {truckDeliveries.map(delivery => (
-                      <SortableDeliveryItem
-                        key={delivery.id}
-                        delivery={delivery}
-                        onEdit={onEdit}
-                        onToggleScheduled={onToggleScheduled}
-                        onShowLogs={onShowLogs}
-                        showHistoryId={showHistoryId}
-                        deliveryLogs={deliveryLogs}
-                        onCloseHistory={onCloseHistory}
-                      />
-                    ))}
-                  </SortableContext>
-                  
-                  {truckDeliveries.length === 0 && (
-                    <div className="py-4 border-2 border-dashed border-slate-100 rounded-xl flex flex-center justify-center">
-                      <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">Sin repartos</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </TruckDroppable>
+            <div key={assignment.id} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col items-center text-center gap-1 group animate-scale-in relative">
+              <button 
+                onClick={() => onRemove(assignment.id)}
+                className="absolute top-2 right-2 text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100 no-print"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+              <Truck className="w-3 h-3 text-indigo-500 shrink-0" />
+              <span className="text-[10px] font-bold text-slate-700 leading-tight break-words w-full">{truck?.label || 'Desconocido'}</span>
+            </div>
           );
         })}
+        {assignments.length === 0 && !isOver && (
+          <div className="flex flex-col items-center justify-center h-full py-8 opacity-40">
+            <MapPin className="w-6 h-6 text-slate-300 mb-2" />
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Arrastra aquí</p>
+          </div>
+        )}
       </div>
-    </div>
-  );
-};
-
-const TruckDroppable: React.FC<{ truckId: string; children: React.ReactNode }> = ({ truckId, children }) => {
-  const { setNodeRef, isOver } = useDroppable({
-    id: `truck-${truckId}`,
-  });
-
-  return (
-    <div ref={setNodeRef} className={`rounded-2xl transition-all ${isOver ? 'ring-2 ring-indigo-400 ring-offset-2 bg-indigo-50/50' : ''}`}>
-      {children}
     </div>
   );
 };
@@ -524,7 +181,6 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
   const [agendaAssignments, setAgendaAssignments] = useState<DailyTruckAssignment[]>([]);
   const [assignmentDate, setAssignmentDate] = useState(getNextWorkingDay());
   const [activeTruckId, setActiveTruckId] = useState<string | null>(null);
-  const [activeId, setActiveId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeZone, setActiveZone] = useState<string>('TODOS');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -655,14 +311,6 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
     }
   };
 
-  const handleDeleteAssignment = async (id: string) => {
-    confirm(
-      '¿Eliminar camión?',
-      '¿Estás seguro de que deseas eliminar este camión de la agenda? Los repartos asignados a este camión volverán a estar sin camión asignado.',
-      () => handleRemoveAssignment(id)
-    );
-  };
-
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -674,126 +322,22 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
     })
   );
 
-  const sortDeliveries = (list: Delivery[]) => {
-    return [...list].sort((a, b) => {
-      // Prioridad absoluta a la secuencia manual
-      if (a.sequence !== null && a.sequence !== undefined && b.sequence !== null && b.sequence !== undefined) {
-        if (a.sequence !== b.sequence) return a.sequence - b.sequence;
-      }
-      
-      if (a.sequence !== null && a.sequence !== undefined) return -1;
-      if (b.sequence !== null && b.sequence !== undefined) return 1;
-
-      // Fallback a franja horaria si no hay secuencia
-      if (a.delivery_time === 'morning' && b.delivery_time === 'afternoon') return -1;
-      if (a.delivery_time === 'afternoon' && b.delivery_time === 'morning') return 1;
-      
-      // Por defecto por fecha de creación
-      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-    });
-  };
-
   const handleDragStart = (event: DragStartEvent) => {
-    const { active } = event;
-    const activeId = active.id as string;
-    
-    if (trucks.some(t => t.id === activeId)) {
-      setActiveTruckId(activeId);
-    } else {
-      setActiveId(activeId);
-    }
-  };
-
-  const handleDragOver = (event: DragOverEvent) => {
-    const { active, over } = event;
-    if (!over) return;
-
-    const activeId = active.id as string;
-    const overId = over.id as string;
-
-    // Solo nos interesa si estamos moviendo un reparto
-    const activeDelivery = deliveries.find(d => d.id === activeId);
-    if (!activeDelivery) return;
-
-    // Caso A: Sobre otro reparto
-    const overDelivery = deliveries.find(d => d.id === overId);
-    if (overDelivery) {
-      if (activeDelivery.truck_id !== overDelivery.truck_id) {
-        setDeliveries(prev => prev.map(d => 
-          d.id === activeId ? { ...d, truck_id: overDelivery.truck_id } : d
-        ));
-      }
-    }
-    
-    // Caso B: Sobre un contenedor de camión (droppable) o sobre el propio camión
-    else if (overId.startsWith('truck-') || trucks.some(t => t.id === overId)) {
-      const targetTruckId = overId.startsWith('truck-') ? overId.replace('truck-', '') : overId;
-      if (activeDelivery.truck_id !== targetTruckId) {
-        setDeliveries(prev => prev.map(d => 
-          d.id === activeId ? { ...d, truck_id: targetTruckId } : d
-        ));
-      }
-    }
+    setActiveTruckId(event.active.id as string);
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveTruckId(null);
-    setActiveId(null);
 
     if (!over) return;
 
-    const activeId = active.id as string;
+    const truckId = active.id as string;
     const overId = over.id as string;
 
-    // Caso 1: Arrastrar camión a una zona
-    if (ZONES.includes(overId) && trucks.some(t => t.id === activeId)) {
-      await handleSaveAssignment(activeId, overId);
-      return;
-    }
-
-    // Caso 2: Arrastrar reparto para reordenar (dentro del mismo camión o entre camiones)
-    const activeDelivery = deliveries.find(d => d.id === activeId);
-    if (activeDelivery) {
-      const overDelivery = deliveries.find(d => d.id === overId);
-      const targetTruckId = overDelivery ? overDelivery.truck_id : (overId.startsWith('truck-') ? overId.replace('truck-', '') : (trucks.some(t => t.id === overId) ? overId : null));
-      
-      if (targetTruckId) {
-        // Obtenemos los repartos del camión destino, ORDENADOS tal cual se ven
-        const truckDeliveries = sortDeliveries(deliveries.filter(d => d.truck_id === targetTruckId));
-        
-        const oldIndex = truckDeliveries.findIndex(d => d.id === activeId);
-        let newIndex = overDelivery ? truckDeliveries.findIndex(d => d.id === overId) : truckDeliveries.length;
-
-        if (oldIndex !== -1) {
-          // Reordenar dentro del mismo camión (o ya movido por handleDragOver)
-          if (oldIndex !== newIndex || activeDelivery.truck_id !== targetTruckId) {
-            const newOrdered = arrayMove(truckDeliveries, oldIndex, newIndex);
-            
-            const otherDeliveries = deliveries.filter(d => d.truck_id !== targetTruckId);
-            setDeliveries([...otherDeliveries, ...newOrdered]);
-            
-            // Actualizar truck_id en DB por si acaso cambió
-            await supabase.from('deliveries').update({ truck_id: targetTruckId }).eq('id', activeId);
-            
-            await handleMaintainRoute(newOrdered, true);
-          }
-        } else {
-          // Mover a otro camión (si handleDragOver no lo hizo)
-          const newOrdered = [...truckDeliveries];
-          const newItem = { ...activeDelivery, truck_id: targetTruckId };
-          newOrdered.splice(newIndex, 0, newItem);
-          
-          const otherDeliveries = deliveries.filter(d => d.truck_id !== targetTruckId && d.id !== activeId);
-          setDeliveries([...otherDeliveries, ...newOrdered]);
-          
-          await supabase.from('deliveries').update({ 
-            truck_id: targetTruckId
-          }).eq('id', activeId);
-          
-          await handleMaintainRoute(newOrdered, true);
-        }
-      }
+    // Si se arrastra a una zona
+    if (ZONES.includes(overId)) {
+      await handleSaveAssignment(truckId, overId);
     }
   };
 
@@ -891,18 +435,6 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
     }
   };
 
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [confirmModalConfig, setConfirmModalConfig] = useState<{
-    title: string;
-    message: string;
-    onConfirm: () => void;
-  } | null>(null);
-
-  const confirm = (title: string, message: string, onConfirm: () => void) => {
-    setConfirmModalConfig({ title, message, onConfirm });
-    setShowConfirmModal(true);
-  };
-
   const fetchDeliveries = async (date: string) => {
     setLoading(true);
     try {
@@ -910,7 +442,6 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
         .from('deliveries')
         .select('*')
         .eq('delivery_date', date)
-        .order('sequence', { ascending: true })
         .order('created_at', { ascending: true });
 
       if (error) throw error;
@@ -964,13 +495,10 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
     setShowRouteMap(true);
   };
 
-  const handleMaintainRoute = async (orderedDeliveries: Delivery[], skipLocalUpdate: boolean = false) => {
+  const handleMaintainRoute = async (orderedDeliveries: Delivery[]) => {
     if (orderedDeliveries.length === 0) return;
     
-    if (!skipLocalUpdate) {
-      setLoading(true);
-    }
-    
+    setLoading(true);
     try {
       // Actualizar cada reparto con su nueva secuencia de forma individual
       // Usamos Promise.all para que las actualizaciones se ejecuten en paralelo
@@ -987,11 +515,9 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
       const firstError = results.find(r => r.error)?.error;
       if (firstError) throw firstError;
 
-      if (!skipLocalUpdate) {
-        setMessage({ type: 'success', text: 'Orden de ruta guardado correctamente' });
-        fetchDeliveries(selectedDate);
-        setTimeout(() => setMessage(null), 3000);
-      }
+      setMessage({ type: 'success', text: 'Orden de ruta guardado correctamente' });
+      fetchDeliveries(selectedDate);
+      setTimeout(() => setMessage(null), 3000);
     } catch (err: any) {
       console.error("Error updating sequence:", err);
       const errorMsg = err.message || 'Error desconocido';
@@ -999,13 +525,8 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
         type: 'error', 
         text: `Error al guardar el orden: ${errorMsg}. Asegúrate de que la columna 'sequence' existe en la tabla 'deliveries'.` 
       });
-      if (skipLocalUpdate) {
-        fetchDeliveries(selectedDate); // Re-fetch en caso de error para restaurar estado
-      }
     } finally {
-      if (!skipLocalUpdate) {
-        setLoading(false);
-      }
+      setLoading(false);
     }
   };
 
@@ -1160,29 +681,25 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
   };
 
   const handleDeleteDelivery = async (id: string) => {
-    confirm(
-      '¿Eliminar reparto?',
-      '¿Estás seguro de que deseas eliminar este reparto permanentemente?',
-      async () => {
-        setLoading(true);
-        try {
-          const { error } = await supabase
-            .from('deliveries')
-            .delete()
-            .eq('id', id);
-          
-          if (error) throw error;
-          
-          setDeliveries(prev => prev.filter(d => d.id !== id));
-          setMessage({ type: 'success', text: 'Reparto eliminado correctamente' });
-          setTimeout(() => setMessage(null), 3000);
-        } catch (err: any) {
-          setMessage({ type: 'error', text: err.message });
-        } finally {
-          setLoading(false);
-        }
-      }
-    );
+    if (!window.confirm('¿Estás seguro de que deseas eliminar este reparto?')) return;
+    
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('deliveries')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
+      
+      setDeliveries(prev => prev.filter(d => d.id !== id));
+      setMessage({ type: 'success', text: 'Reparto eliminado correctamente' });
+      setTimeout(() => setMessage(null), 3000);
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handlePostalCodeChange = async (code: string) => {
@@ -1252,14 +769,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
   );
 
   return (
-    <DndContext 
-      sensors={sensors}
-      collisionDetection={pointerWithin}
-      onDragStart={handleDragStart}
-      onDragOver={handleDragOver}
-      onDragEnd={handleDragEnd}
-    >
-      <div className="p-2 md:p-4 w-full animate-fade-in">
+    <div className="p-2 md:p-4 w-full animate-fade-in">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-6 max-w-[1800px] mx-auto no-print">
         <div>
           <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Agenda de Repartos</h2>
@@ -1414,50 +924,52 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-7 gap-6">
-            {/* Columna de Camiones Disponibles */}
-            <div className="lg:col-span-2 bg-slate-50 rounded-3xl p-4 border-2 border-dashed border-slate-200">
-              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 text-center">Camiones</h3>
-              <div className="space-y-2">
-                {trucks
-                  .filter(t => !dailyAssignments.some(a => a.truck_id === t.id))
-                  .filter(t => t.label.toLowerCase().includes(searchTerm.toLowerCase()))
-                  .map(truck => (
-                    <SortableTruckItem key={truck.id} truck={truck} />
-                  ))}
-                {trucks.filter(t => !dailyAssignments.some(a => a.truck_id === t.id)).length === 0 && (
-                  <p className="text-[10px] text-slate-400 text-center italic py-4">Todos asignados</p>
-                )}
+          <DndContext 
+            sensors={sensors}
+            collisionDetection={pointerWithin}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+          >
+            <div className="grid grid-cols-1 lg:grid-cols-7 gap-6">
+              {/* Columna de Camiones Disponibles */}
+              <div className="lg:col-span-2 bg-slate-50 rounded-3xl p-4 border-2 border-dashed border-slate-200">
+                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 text-center">Camiones</h3>
+                <div className="space-y-2">
+                  {trucks
+                    .filter(t => !dailyAssignments.some(a => a.truck_id === t.id))
+                    .filter(t => t.label.toLowerCase().includes(searchTerm.toLowerCase()))
+                    .map(truck => (
+                      <SortableTruckItem key={truck.id} truck={truck} />
+                    ))}
+                  {trucks.filter(t => !dailyAssignments.some(a => a.truck_id === t.id)).length === 0 && (
+                    <p className="text-[10px] text-slate-400 text-center italic py-4">Todos asignados</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Columnas de Zonas */}
+              <div className="lg:col-span-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+                {ZONES.map(zone => (
+                  <ZoneColumn 
+                    key={zone} 
+                    zone={zone} 
+                    assignments={dailyAssignments.filter(a => a.zone === zone)}
+                    trucks={trucks}
+                    onRemove={handleRemoveAssignment}
+                  />
+                ))}
               </div>
             </div>
 
-            {/* Columnas de Zonas */}
-            <div className="lg:col-span-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
-              {ZONES.map(zone => (
-                <ZoneColumn 
-                  key={zone} 
-                  zone={zone} 
-                  assignments={dailyAssignments.filter(a => a.zone === zone)}
-                  trucks={trucks}
-                  onRemove={handleRemoveAssignment}
-                  deliveries={deliveries}
-                  onEdit={handleEdit}
-                  onToggleScheduled={toggleScheduled}
-                  onShowLogs={(d) => {
-                    if (showHistoryId === d.id) {
-                      setShowHistoryId(null);
-                    } else {
-                      setShowHistoryId(d.id);
-                      fetchLogs(d.id);
-                    }
-                  }}
-                  showHistoryId={showHistoryId}
-                  deliveryLogs={deliveryLogs}
-                  onCloseHistory={() => setShowHistoryId(null)}
-                />
-              ))}
-            </div>
-          </div>
+            <DragOverlay>
+              {activeTruckId ? (
+                <div className="bg-indigo-600 text-white p-3 rounded-xl shadow-2xl flex items-center gap-2 cursor-grabbing scale-105 rotate-2">
+                  <Truck className="w-4 h-4" />
+                  <span className="text-xs font-bold">{trucks.find(t => t.id === activeTruckId)?.label}</span>
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         </div>
       ) : view === 'create' ? (
         <div className="bg-white rounded-[3rem] p-8 shadow-xl border border-slate-100 animate-fade-in max-w-4xl mx-auto">
@@ -1722,7 +1234,25 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
               
               return (hasDeliveries || !!dailyAssignment) && matchesSearch && matchesZone;
             }).map(truck => {
-            const truckDeliveries = sortDeliveries(deliveries.filter(d => d.truck_id === truck.id));
+            const truckDeliveries = deliveries
+              .filter(d => d.truck_id === truck.id)
+              .sort((a, b) => {
+                // Primero por franja horaria
+                if (a.delivery_time === 'morning' && b.delivery_time === 'afternoon') return -1;
+                if (a.delivery_time === 'afternoon' && b.delivery_time === 'morning') return 1;
+                
+                // Luego por secuencia si existe
+                if (a.sequence !== undefined && b.sequence !== undefined && a.sequence !== null && b.sequence !== null) {
+                  return a.sequence - b.sequence;
+                }
+                
+                // Si solo uno tiene secuencia, ese va primero
+                if (a.sequence !== undefined && a.sequence !== null) return -1;
+                if (b.sequence !== undefined && b.sequence !== null) return 1;
+                
+                // Por defecto por fecha de creación
+                return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+              });
             
             // Obtener zona para mostrar en el header
             const dailyAssignment = agendaAssignments.find(a => a.truck_id === truck.id);
@@ -1739,19 +1269,6 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                       <span className="text-xl">🚚</span>
                       <h4 className="text-white text-sm font-black uppercase tracking-widest">{truck.label}</h4>
                     </div>
-                    
-                    {dailyAssignment && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteAssignment(dailyAssignment.id);
-                        }}
-                        className="p-1.5 bg-white/10 hover:bg-red-500/20 text-white/40 hover:text-red-400 rounded-lg border border-white/10 hover:border-red-500/30 transition-all active:scale-95 group/del"
-                        title="Eliminar camión de la agenda"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 group-hover/del:scale-110 transition-transform" />
-                      </button>
-                    )}
                     
                     <div className="h-6 w-px bg-white/20" />
                     
@@ -1828,44 +1345,188 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                 <div className={`grid transition-all duration-500 ease-in-out ${expandedTrucks.has(truck.id) ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
                   <div className="overflow-hidden">
                     <div className="p-3 flex-1 space-y-2">
-                      <TruckDroppable truckId={truck.id}>
-                        {truckDeliveries.length === 0 ? (
-                          <div className="py-10 text-center">
-                            <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest italic">Sin repartos para hoy</p>
+                      {truckDeliveries.length === 0 ? (
+                        <div className="py-10 text-center">
+                          <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest italic">Sin repartos para hoy</p>
+                        </div>
+                      ) : truckDeliveries.map(delivery => (
+                        <React.Fragment key={delivery.id}>
+                          <div className={`p-2 px-6 rounded-xl border transition-all group flex items-center justify-between gap-3 ${
+                            delivery.at_dock
+                              ? 'bg-blue-500 border-blue-600 text-white shadow-lg shadow-blue-100'
+                              : delivery.is_scheduled 
+                                ? 'bg-emerald-200 border-emerald-300' 
+                                : 'bg-slate-50 border-slate-100 hover:border-indigo-200'
+                          }`}>
+                          <div className="flex items-center gap-8 flex-1">
+                            <div className="w-28 shrink-0">
+                              <p className={`text-base font-black tracking-tighter ${delivery.at_dock ? 'text-white' : 'text-slate-800'}`}>{delivery.order_number}</p>
+                              <p className={`text-[11px] font-black uppercase tracking-widest ${delivery.at_dock ? 'text-blue-100' : 'text-indigo-600'}`}>
+                                {WAREHOUSES.find(w => w.id === delivery.warehouse_origin)?.label || delivery.warehouse_origin}
+                              </p>
+                            </div>
+
+                            <div className={`h-12 w-px shrink-0 ${delivery.at_dock ? 'bg-white/20' : 'bg-slate-200'}`} />
+
+                            <div className="flex-1 flex flex-col justify-center gap-2 py-1">
+                              <div className="flex flex-wrap items-start gap-x-8 gap-y-1">
+                                <div className="flex items-center gap-2 min-w-[180px]">
+                                  <span className="text-lg">📍</span>
+                                  <div className="flex flex-col">
+                                    <p className={`text-[12px] font-bold uppercase leading-tight ${delivery.at_dock ? 'text-white' : 'text-slate-700'}`}>
+                                      {delivery.postal_code} - {delivery.locality}
+                                    </p>
+                                    {delivery.address && (
+                                      <p className={`text-[10px] font-medium uppercase leading-tight mt-0.5 ${delivery.at_dock ? 'text-blue-100' : 'text-slate-500'}`}>
+                                        {delivery.address}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2 flex-1 min-w-[150px]">
+                                  <span className="text-lg">📦</span>
+                                  <p className={`text-[12px] font-bold uppercase leading-tight break-words ${delivery.at_dock ? 'text-white' : 'text-slate-700'}`}>
+                                    {delivery.merchandise_type}
+                                  </p>
+                                </div>
+                              </div>
+                              
+                              <div className="flex flex-col gap-1">
+                                {delivery.created_by_name && (
+                                  <p className={`text-[8px] font-black uppercase tracking-widest ${delivery.at_dock ? 'text-blue-100' : 'text-slate-400'}`}>Por: {delivery.created_by_name}</p>
+                                )}
+                                {delivery.comments && (
+                                  <div className={`px-3 py-1.5 rounded-lg border-l-4 w-full mt-0.5 ${delivery.at_dock ? 'bg-white/10 border-white' : 'bg-slate-100/80 border-indigo-500'}`}>
+                                    <p className={`text-[11px] font-bold italic leading-snug break-words ${delivery.at_dock ? 'text-white' : 'text-slate-900'}`}>
+                                      {delivery.comments}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
                           </div>
-                        ) : (
-                          <SortableContext items={truckDeliveries.map(d => d.id)} strategy={verticalListSortingStrategy}>
-                            <div className="space-y-2">
-                              {truckDeliveries.map(delivery => (
-                                <SortableAgendaDeliveryItem
-                                  key={delivery.id}
-                                  delivery={delivery}
-                                  onEdit={handleEdit}
-                                  onToggleScheduled={toggleScheduled}
-                                  onToggleAtDock={toggleAtDock}
-                                  onShowLogs={(d) => {
-                                    if (showHistoryId === d.id) {
+
+                          <div className="flex items-center gap-3 shrink-0">
+                            <span className={`text-[9px] font-black px-3 py-1.5 rounded-lg uppercase shadow-sm ${delivery.delivery_time === 'morning' ? 'bg-amber-100 text-amber-700 border border-amber-200' : 'bg-indigo-100 text-indigo-700 border border-indigo-200'}`}>
+                              {delivery.delivery_time === 'morning' ? 'MAÑANA' : 'TARDE'}
+                            </span>
+
+                            <div className="flex flex-col gap-1 items-center">
+                              <div className="flex items-center gap-0.5 bg-white p-0.5 rounded-xl border border-slate-100 shadow-sm">
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (showHistoryId === delivery.id) {
                                       setShowHistoryId(null);
                                     } else {
-                                      setShowHistoryId(d.id);
-                                      fetchLogs(d.id);
+                                      setShowHistoryId(delivery.id);
+                                      fetchLogs(delivery.id);
                                     }
                                   }}
-                                  showHistoryId={showHistoryId}
-                                  deliveryLogs={deliveryLogs}
-                                  onCloseHistory={() => setShowHistoryId(null)}
-                                />
+                                  className={`p-1.5 rounded-lg transition-all ${showHistoryId === delivery.id ? 'bg-indigo-600 text-white' : 'hover:bg-slate-50 text-slate-400'}`}
+                                  title="Ver histórico"
+                                >
+                                  <span className="text-xs">📜</span>
+                                </button>
+
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); handleEdit(delivery); }}
+                                  className="p-1.5 hover:bg-slate-50 rounded-lg text-slate-400 hover:text-indigo-600 transition-all"
+                                  title="Editar reparto"
+                                >
+                                  <span className="text-xs">✏️</span>
+                                </button>
+
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); handleDeleteDelivery(delivery.id); }}
+                                  className="p-1.5 hover:bg-rose-50 rounded-lg text-slate-400 hover:text-rose-600 transition-all"
+                                  title="Eliminar reparto"
+                                >
+                                  <span className="text-xs">🗑️</span>
+                                </button>
+                              </div>
+
+                              {delivery.at_dock ? (
+                                <div className="bg-white text-blue-500 px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-1.5 border border-blue-100">
+                                  <span className="text-xs">⚓</span>
+                                  <span className="text-[9px] font-black uppercase tracking-widest">EN MUELLE</span>
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); toggleAtDock(delivery); }}
+                                    className="ml-1 text-blue-300 hover:text-blue-500"
+                                    title="Quitar de muelle"
+                                  >✕</button>
+                                </div>
+                              ) : delivery.is_scheduled ? (
+                                <div className="flex items-center gap-1.5 w-full">
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); toggleAtDock(delivery); }}
+                                    className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg shadow-md hover:bg-indigo-700 transition-all flex items-center gap-1.5 flex-1 justify-center"
+                                  >
+                                    <span className="text-xs">📦</span>
+                                    <span className="text-[9px] font-black uppercase tracking-widest">PASAR A MUELLE</span>
+                                  </button>
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); toggleScheduled(delivery); }}
+                                    className="p-1.5 bg-slate-100 text-slate-400 hover:bg-rose-50 hover:text-rose-600 rounded-lg transition-all"
+                                    title="Quitar de agenda"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              ) : (
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); toggleScheduled(delivery); }}
+                                  className="bg-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-emerald-500 hover:text-white transition-all flex items-center gap-1.5 w-full justify-center"
+                                >
+                                  <span className="text-xs">📅</span>
+                                  <span className="text-[9px] font-black uppercase tracking-widest">AGENDAR</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {showHistoryId === delivery.id && (
+                          <div className="mx-6 mb-4 bg-white rounded-2xl border border-slate-100 shadow-inner p-4 animate-fade-in">
+                            <div className="flex items-center justify-between mb-3 border-b border-slate-50 pb-2">
+                              <h5 className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Histórico de Movimientos</h5>
+                              <button onClick={(e) => { e.stopPropagation(); setShowHistoryId(null); }} className="text-slate-300 hover:text-slate-500 text-xs">✕</button>
+                            </div>
+                            <div className="space-y-3">
+                              {deliveryLogs.length === 0 ? (
+                                <p className="text-[9px] text-slate-400 italic text-center py-2">No hay registros para este reparto</p>
+                              ) : deliveryLogs.map(log => (
+                                <div key={log.id} className="flex items-start gap-3 text-[9px]">
+                                  <div className="w-20 shrink-0 text-slate-400 font-medium">
+                                    {new Date(log.created_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                  </div>
+                                  <div className="shrink-0">
+                                    <span className={`px-2 py-0.5 rounded-md font-black uppercase tracking-tighter ${
+                                      log.action === 'CREACIÓN' ? 'bg-emerald-100 text-emerald-700' :
+                                      log.action === 'EDICIÓN' ? 'bg-blue-100 text-blue-700' :
+                                      log.action === 'AGENDADO' ? 'bg-indigo-100 text-indigo-700' :
+                                      'bg-slate-100 text-slate-600'
+                                    }`}>
+                                      {log.action}
+                                    </span>
+                                  </div>
+                                  <div className="flex-1">
+                                    <span className="font-bold text-slate-700">{log.user_name}:</span>
+                                    <span className="ml-2 text-slate-500">{log.details || 'Sin detalles adicionales'}</span>
+                                  </div>
+                                </div>
                               ))}
                             </div>
-                          </SortableContext>
+                          </div>
                         )}
-                      </TruckDroppable>
-                    </div>
+                      </React.Fragment>
+                    ))}
                   </div>
                 </div>
               </div>
-            );
-          })}
+            </div>
+          );
+        })}
         </div>
       )}
 
@@ -1926,40 +1587,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
           }}
         />
       )}
-      <ConfirmationModal
-        isOpen={showConfirmModal}
-        title={confirmModalConfig?.title || ''}
-        message={confirmModalConfig?.message || ''}
-        onConfirm={() => {
-          confirmModalConfig?.onConfirm();
-          setShowConfirmModal(false);
-        }}
-        onCancel={() => setShowConfirmModal(false)}
-      />
     </div>
-      <DragOverlay>
-        {activeTruckId ? (
-          <div className="bg-indigo-600 text-white p-3 rounded-xl shadow-2xl flex items-center gap-2 cursor-grabbing scale-105 rotate-2">
-            <Truck className="w-4 h-4" />
-            <span className="text-xs font-bold">{trucks.find(t => t.id === activeTruckId)?.label}</span>
-          </div>
-        ) : activeId ? (
-          <div className="bg-white p-4 rounded-xl border-2 border-indigo-500 shadow-2xl opacity-80 scale-105 pointer-events-none">
-            <div className="flex items-center gap-3">
-              <span className="text-xl">📦</span>
-              <div className="flex flex-col">
-                <p className="text-sm font-black text-slate-800">
-                  {deliveries.find(d => d.id === activeId)?.order_number || 'Moviendo...'}
-                </p>
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                  {deliveries.find(d => d.id === activeId)?.locality || ''}
-                </p>
-              </div>
-            </div>
-          </div>
-        ) : null}
-      </DragOverlay>
-    </DndContext>
   );
 };
 
