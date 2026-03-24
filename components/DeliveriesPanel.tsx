@@ -319,61 +319,63 @@ const SortableDeliveryItem: React.FC<{
       style={style}
       className="flex flex-col w-full"
     >
-      <div
-        {...attributes}
-        {...listeners}
-        className={`bg-white p-3 rounded-xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-all group relative ${isDragging ? 'z-50 ring-2 ring-indigo-500' : ''}`}
-      >
-        <div className="flex items-start justify-between gap-2 mb-2">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded uppercase tracking-wider">
-                #{delivery.order_number}
-              </span>
-              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
-                delivery.delivery_time === 'morning' ? 'bg-amber-50 text-amber-600 border border-amber-100' : 'bg-blue-50 text-blue-600 border border-blue-100'
-              }`}>
-                {delivery.delivery_time === 'morning' ? 'MAÑANA' : 'TARDE'}
-              </span>
-            </div>
-            <h4 className="text-[11px] font-bold text-slate-800 truncate uppercase">{delivery.client_name || 'SIN NOMBRE'}</h4>
-          </div>
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button 
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={() => onEdit(delivery)}
-              className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-indigo-600 transition-colors"
-            >
-              <Edit2 className="w-3 h-3" />
-            </button>
-            <button 
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={() => onShowLogs(delivery)}
-              className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-indigo-600 transition-colors"
-            >
-              <History className="w-3 h-3" />
-            </button>
-            <button 
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={() => onToggleScheduled(delivery, false)}
-              className="p-1 hover:bg-red-50 rounded text-slate-400 hover:text-red-600 transition-colors"
-            >
-              <X className="w-3 h-3" />
-            </button>
-          </div>
+      <div className={`bg-white p-3 rounded-xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-all group relative flex items-center gap-3 ${isDragging ? 'z-50 ring-2 ring-indigo-500' : ''}`}>
+        <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing p-1 hover:bg-slate-50 rounded transition-colors shrink-0">
+          <GripVertical className="w-4 h-4 text-slate-400" />
         </div>
-
-        <div className="space-y-1">
-          <div className="flex items-center gap-1.5 text-slate-500">
-            <MapPin className="w-3 h-3 shrink-0 text-slate-300" />
-            <span className="text-[10px] font-medium truncate uppercase">{delivery.locality || 'SIN LOCALIDAD'}</span>
-          </div>
-          {delivery.merchandise_type && (
-            <div className="flex items-center gap-1.5 text-slate-400">
-              <Package className="w-3 h-3 shrink-0 text-slate-300" />
-              <span className="text-[9px] font-medium truncate uppercase">{delivery.merchandise_type}</span>
+        
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-2 mb-2">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                  #{delivery.order_number}
+                </span>
+                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                  delivery.delivery_time === 'morning' ? 'bg-amber-50 text-amber-600 border border-amber-100' : 'bg-blue-50 text-blue-600 border border-blue-100'
+                }`}>
+                  {delivery.delivery_time === 'morning' ? 'MAÑANA' : 'TARDE'}
+                </span>
+              </div>
+              <h4 className="text-[11px] font-bold text-slate-800 truncate uppercase">{delivery.client_name || 'SIN NOMBRE'}</h4>
             </div>
-          )}
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button 
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => onEdit(delivery)}
+                className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-indigo-600 transition-colors"
+              >
+                <Edit2 className="w-3 h-3" />
+              </button>
+              <button 
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => onShowLogs(delivery)}
+                className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-indigo-600 transition-colors"
+              >
+                <History className="w-3 h-3" />
+              </button>
+              <button 
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => onToggleScheduled(delivery, false)}
+                className="p-1 hover:bg-red-50 rounded text-slate-400 hover:text-red-600 transition-colors"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <div className="flex items-center gap-1.5 text-slate-500">
+              <MapPin className="w-3 h-3 shrink-0 text-slate-300" />
+              <span className="text-[10px] font-medium truncate uppercase">{delivery.locality || 'SIN LOCALIDAD'}</span>
+            </div>
+            {delivery.merchandise_type && (
+              <div className="flex items-center gap-1.5 text-slate-400">
+                <Package className="w-3 h-3 shrink-0 text-slate-300" />
+                <span className="text-[9px] font-medium truncate uppercase">{delivery.merchandise_type}</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -703,21 +705,30 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
       const overDelivery = deliveries.find(d => d.id === overId);
       if (overDelivery) {
         if (activeDelivery.truck_id !== overDelivery.truck_id) {
-          // Cambiar de camión
+          // Cambiar de camión (Optimista)
+          setDeliveries(prev => prev.map(d => 
+            d.id === activeId ? { ...d, truck_id: overDelivery.truck_id } : d
+          ));
+          
           await supabase
             .from('deliveries')
             .update({ truck_id: overDelivery.truck_id })
             .eq('id', activeId);
-          fetchDeliveries(selectedDate);
+          // No llamamos a fetchDeliveries aquí para evitar el refresco brusco
         } else {
-          // Reordenar visualmente (aquí podrías implementar lógica de sequence si fuera necesario)
+          // Reordenar visualmente (Optimista)
           const truckDeliveries = deliveries.filter(d => d.truck_id === activeDelivery.truck_id);
           const oldIndex = truckDeliveries.findIndex(d => d.id === activeId);
           const newIndex = truckDeliveries.findIndex(d => d.id === overId);
           
           if (oldIndex !== newIndex) {
             const newOrdered = arrayMove(truckDeliveries, oldIndex, newIndex);
-            await handleMaintainRoute(newOrdered);
+            
+            // Actualizar estado local inmediatamente
+            const otherDeliveries = deliveries.filter(d => d.truck_id !== activeDelivery.truck_id);
+            setDeliveries([...otherDeliveries, ...newOrdered]);
+            
+            await handleMaintainRoute(newOrdered, true); // true para indicar que ya se actualizó el estado local
           }
         }
       } 
@@ -725,11 +736,15 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
       else if (overId.startsWith('truck-')) {
         const targetTruckId = overId.replace('truck-', '');
         if (activeDelivery.truck_id !== targetTruckId) {
+          // Cambiar de camión (Optimista)
+          setDeliveries(prev => prev.map(d => 
+            d.id === activeId ? { ...d, truck_id: targetTruckId } : d
+          ));
+
           await supabase
             .from('deliveries')
             .update({ truck_id: targetTruckId })
             .eq('id', activeId);
-          fetchDeliveries(selectedDate);
         }
       }
     }
@@ -901,10 +916,13 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
     setShowRouteMap(true);
   };
 
-  const handleMaintainRoute = async (orderedDeliveries: Delivery[]) => {
+  const handleMaintainRoute = async (orderedDeliveries: Delivery[], skipLocalUpdate: boolean = false) => {
     if (orderedDeliveries.length === 0) return;
     
-    setLoading(true);
+    if (!skipLocalUpdate) {
+      setLoading(true);
+    }
+    
     try {
       // Actualizar cada reparto con su nueva secuencia de forma individual
       // Usamos Promise.all para que las actualizaciones se ejecuten en paralelo
@@ -921,9 +939,11 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
       const firstError = results.find(r => r.error)?.error;
       if (firstError) throw firstError;
 
-      setMessage({ type: 'success', text: 'Orden de ruta guardado correctamente' });
-      fetchDeliveries(selectedDate);
-      setTimeout(() => setMessage(null), 3000);
+      if (!skipLocalUpdate) {
+        setMessage({ type: 'success', text: 'Orden de ruta guardado correctamente' });
+        fetchDeliveries(selectedDate);
+        setTimeout(() => setMessage(null), 3000);
+      }
     } catch (err: any) {
       console.error("Error updating sequence:", err);
       const errorMsg = err.message || 'Error desconocido';
@@ -931,8 +951,13 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
         type: 'error', 
         text: `Error al guardar el orden: ${errorMsg}. Asegúrate de que la columna 'sequence' existe en la tabla 'deliveries'.` 
       });
+      if (skipLocalUpdate) {
+        fetchDeliveries(selectedDate); // Re-fetch en caso de error para restaurar estado
+      }
     } finally {
-      setLoading(false);
+      if (!skipLocalUpdate) {
+        setLoading(false);
+      }
     }
   };
 
@@ -1181,7 +1206,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
   return (
     <DndContext 
       sensors={sensors}
-      collisionDetection={pointerWithin}
+      collisionDetection={closestCenter}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >

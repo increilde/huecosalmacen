@@ -549,21 +549,30 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
       const overInstallation = installations.find(i => i.id === overId);
       if (overInstallation) {
         if (activeInstallation.installer_id !== overInstallation.installer_id) {
-          // Cambiar de instalador
+          // Cambiar de instalador (Optimista)
+          setInstallations(prev => prev.map(i => 
+            i.id === activeId ? { ...i, installer_id: overInstallation.installer_id } : i
+          ));
+          
           await supabase
             .from('installations')
             .update({ installer_id: overInstallation.installer_id })
             .eq('id', activeId);
-          fetchInstallations(selectedDate);
+          // No llamamos a fetchInstallations aquí para evitar el refresco brusco
         } else {
-          // Reordenar visualmente
+          // Reordenar visualmente (Optimista)
           const installerInstallations = installations.filter(i => i.installer_id === activeInstallation.installer_id);
           const oldIndex = installerInstallations.findIndex(i => i.id === activeId);
           const newIndex = installerInstallations.findIndex(i => i.id === overId);
           
           if (oldIndex !== newIndex) {
             const newOrdered = arrayMove(installerInstallations, oldIndex, newIndex);
-            await handleMaintainRoute(newOrdered);
+            
+            // Actualizar estado local inmediatamente
+            const otherInstallations = installations.filter(i => i.installer_id !== activeInstallation.installer_id);
+            setInstallations([...otherInstallations, ...newOrdered]);
+            
+            await handleMaintainRoute(newOrdered, true); // true para indicar que ya se actualizó el estado local
           }
         }
       } 
@@ -571,11 +580,15 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
       else if (overId.startsWith('installer-')) {
         const targetInstallerId = overId.replace('installer-', '');
         if (activeInstallation.installer_id !== targetInstallerId) {
+          // Cambiar de instalador (Optimista)
+          setInstallations(prev => prev.map(i => 
+            i.id === activeId ? { ...i, installer_id: targetInstallerId } : i
+          ));
+
           await supabase
             .from('installations')
             .update({ installer_id: targetInstallerId })
             .eq('id', activeId);
-          fetchInstallations(selectedDate);
         }
       }
     }
@@ -713,10 +726,13 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
     setShowRouteMap(true);
   };
 
-  const handleMaintainRoute = async (orderedInstallations: Installation[]) => {
+  const handleMaintainRoute = async (orderedInstallations: Installation[], skipLocalUpdate: boolean = false) => {
     if (orderedInstallations.length === 0) return;
     
-    setLoading(true);
+    if (!skipLocalUpdate) {
+      setLoading(true);
+    }
+    
     try {
       const updatePromises = orderedInstallations.map((d, i) => 
         supabase
@@ -729,14 +745,21 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
       const firstError = results.find(r => r.error)?.error;
       if (firstError) throw firstError;
 
-      setMessage({ type: 'success', text: 'Orden de ruta guardado correctamente' });
-      fetchInstallations(selectedDate);
-      setTimeout(() => setMessage(null), 3000);
+      if (!skipLocalUpdate) {
+        setMessage({ type: 'success', text: 'Orden de ruta guardado correctamente' });
+        fetchInstallations(selectedDate);
+        setTimeout(() => setMessage(null), 3000);
+      }
     } catch (err: any) {
       console.error("Error updating sequence:", err);
       setMessage({ type: 'error', text: `Error al guardar el orden: ${err.message}` });
+      if (skipLocalUpdate) {
+        fetchInstallations(selectedDate); // Re-fetch en caso de error para restaurar estado
+      }
     } finally {
-      setLoading(false);
+      if (!skipLocalUpdate) {
+        setLoading(false);
+      }
     }
   };
 
@@ -1048,7 +1071,7 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
             </div>
           </div>
 
-          <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
             <div className="grid grid-cols-1 lg:grid-cols-7 gap-6">
               <div className="lg:col-span-2 bg-slate-50 rounded-3xl p-4 border-2 border-dashed border-slate-200">
                 <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 text-center">Instaladores</h3>
@@ -1273,7 +1296,7 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
           </button>
         </div>
       ) : (
-        <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <div className="flex flex-col gap-6 w-full max-w-[1800px] mx-auto">
           {/* Tabs de Zonas */}
           <div className="flex flex-col gap-4 mb-2 tabs-container">
