@@ -60,7 +60,7 @@ const WAREHOUSES = [
   { id: '73', label: '73' }
 ];
 
-const ZONES = ['GRANADA', 'COSTA 1', 'COSTA 2', 'ANTEQUERA', 'ALMERÍA'];
+const ZONES = ['GRANADA', 'COSTA 1', 'COSTA 2', 'ANTEQUERA', 'ALMERÍA', 'NO DISPONIBLE'];
 
 const TIME_OPTIONS = Array.from({ length: 27 }, (_, i) => {
   const totalMinutes = 8 * 60 + i * 30;
@@ -341,7 +341,13 @@ const InstallerZoneColumn: React.FC<{
   return (
     <div
       ref={setNodeRef}
-      className={`flex flex-col h-full min-h-[300px] rounded-3xl p-4 transition-all ${isOver ? 'bg-indigo-50 border-2 border-indigo-200 ring-4 ring-indigo-50' : 'bg-slate-50 border-2 border-transparent'}`}
+      className={`flex flex-col h-full min-h-[300px] rounded-3xl p-4 transition-all ${
+        isOver 
+          ? 'bg-indigo-50 border-2 border-indigo-200 ring-4 ring-indigo-50' 
+          : zone === 'NO DISPONIBLE'
+            ? 'bg-rose-50 border-2 border-rose-100'
+            : 'bg-slate-50 border-2 border-transparent'
+      }`}
     >
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{zone}</h3>
@@ -1122,7 +1128,7 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
                     ))}
                 </div>
               </div>
-              <div className="lg:col-span-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+              <div className="lg:col-span-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
                 {ZONES.map(zone => (
                   <InstallerZoneColumn 
                     key={zone} 
@@ -1157,7 +1163,10 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
                   tabIndex={1}
                 >
                   <option value="">Seleccionar instalador...</option>
-                  {installers.map(i => (
+                  {installers.filter(i => {
+                    const assignment = agendaAssignments.find(a => a.installer_id === i.id);
+                    return !assignment || assignment.zone !== 'NO DISPONIBLE';
+                  }).map(i => (
                     <option key={i.id} value={i.id}>{i.full_name}</option>
                   ))}
                 </select>
