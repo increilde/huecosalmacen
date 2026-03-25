@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { WarehouseSlot, UserProfile, Trucker, Installer, UserRole, Machinery, Task, Role, MachineryMaintenance } from '../types';
 import UserManagement from './UserManagement';
+import CustomDatePicker from './CustomDatePicker';
 
 interface MovementLog {
   id: string;
@@ -2125,20 +2126,18 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
                     <div className="space-y-2">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Desde</label>
-                      <input 
-                        type="date" 
-                        value={distriReportDateFrom} 
-                        onChange={e => setDistriReportDateFrom(e.target.value)}
-                        className="w-full bg-white p-4 rounded-2xl text-xs font-bold outline-none border border-slate-200 focus:border-indigo-500 transition-all"
+                      <CustomDatePicker 
+                        selectedDate={distriReportDateFrom} 
+                        onChange={setDistriReportDateFrom} 
+                        variant="input"
                       />
                     </div>
                     <div className="space-y-2">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Hasta</label>
-                      <input 
-                        type="date" 
-                        value={distriReportDateTo} 
-                        onChange={e => setDistriReportDateTo(e.target.value)}
-                        className="w-full bg-white p-4 rounded-2xl text-xs font-bold outline-none border border-slate-200 focus:border-indigo-500 transition-all"
+                      <CustomDatePicker 
+                        selectedDate={distriReportDateTo} 
+                        onChange={setDistriReportDateTo} 
+                        variant="input"
                       />
                     </div>
                     <div className="space-y-2">

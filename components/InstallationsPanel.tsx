@@ -26,6 +26,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { Calendar, Wrench, MapPin, Plus, History, Search, Filter, ChevronDown, ChevronRight, Save, X, Trash2, GripVertical, Printer, Navigation, User } from 'lucide-react';
 import RouteMap from './RouteMap';
 import ConfirmationModal from './ConfirmationModal';
+import CustomDatePicker from './CustomDatePicker';
 
 interface InstallationsPanelProps {
   user: UserProfile;
@@ -69,24 +70,35 @@ const TIME_OPTIONS = Array.from({ length: 27 }, (_, i) => {
 });
 
 const getNextWorkingDay = (date: Date = new Date()) => {
-  const d = new Date(date);
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   d.setDate(d.getDate() + 1);
   while (d.getDay() === 0) { d.setDate(d.getDate() + 1); }
-  return d.toISOString().split('T')[0];
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 const getPrevWorkingDay = (date: string) => {
-  const d = new Date(date);
-  d.setDate(d.getDate() - 1);
-  while (d.getDay() === 0) { d.setDate(d.getDate() - 1); }
-  return d.toISOString().split('T')[0];
+  const [y, m, d] = date.split('-').map(Number);
+  const dateObj = new Date(y, m - 1, d);
+  dateObj.setDate(dateObj.getDate() - 1);
+  while (dateObj.getDay() === 0) { dateObj.setDate(dateObj.getDate() - 1); }
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 const getNextWorkingDayFromStr = (date: string) => {
-  const d = new Date(date);
-  d.setDate(d.getDate() + 1);
-  while (d.getDay() === 0) { d.setDate(d.getDate() + 1); }
-  return d.toISOString().split('T')[0];
+  const [y, m, d] = date.split('-').map(Number);
+  const dateObj = new Date(y, m - 1, d);
+  dateObj.setDate(dateObj.getDate() + 1);
+  while (dateObj.getDay() === 0) { dateObj.setDate(dateObj.getDate() + 1); }
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 const SortableInstallerItem: React.FC<{ installer: Installer }> = ({ installer }) => {
@@ -1037,12 +1049,10 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
             <button onClick={() => setSelectedDate(getPrevWorkingDay(selectedDate))} className="p-1 text-slate-400 hover:text-indigo-600">
               <ChevronRight className="w-4 h-4 rotate-180" />
             </button>
-            <div className="flex flex-col items-center min-w-[120px]">
-              <span className="text-[12px] font-black text-indigo-600 uppercase tracking-widest mb-1">
-                {new Date(selectedDate + 'T00:00:00').toLocaleDateString('es-ES', { weekday: 'long' })}
-              </span>
-              <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="bg-transparent text-base font-black text-slate-800 outline-none text-center" />
-            </div>
+            <CustomDatePicker 
+              selectedDate={selectedDate} 
+              onChange={setSelectedDate} 
+            />
             <button onClick={() => setSelectedDate(getNextWorkingDayFromStr(selectedDate))} className="p-1 text-slate-400 hover:text-indigo-600">
               <ChevronRight className="w-4 h-4" />
             </button>
@@ -1083,12 +1093,10 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
               <button onClick={() => setAssignmentDate(getPrevWorkingDay(assignmentDate))} className="p-1 text-slate-400 hover:text-indigo-600">
                 <ChevronRight className="w-4 h-4 rotate-180" />
               </button>
-              <div className="flex flex-col items-center min-w-[120px]">
-                <span className="text-[12px] font-black text-indigo-600 uppercase tracking-widest mb-1">
-                  {new Date(assignmentDate + 'T00:00:00').toLocaleDateString('es-ES', { weekday: 'long' })}
-                </span>
-                <input type="date" value={assignmentDate} onChange={(e) => setAssignmentDate(e.target.value)} className="bg-transparent text-base font-black text-slate-800 outline-none text-center" />
-              </div>
+              <CustomDatePicker 
+                selectedDate={assignmentDate} 
+                onChange={setAssignmentDate} 
+              />
               <button onClick={() => setAssignmentDate(getNextWorkingDayFromStr(assignmentDate))} className="p-1 text-slate-400 hover:text-indigo-600">
                 <ChevronRight className="w-4 h-4" />
               </button>
