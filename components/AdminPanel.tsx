@@ -27,7 +27,8 @@ interface TaskLog {
   profiles?: { full_name: string };
 }
 
-type AdminTab = 'movements' | 'operators' | 'sectors' | 'reports' | 'machinery' | 'tasks' | 'map' | 'map_config' | 'truckers' | 'installers';
+type AdminTab = 'movements' | 'operators' | 'sectors' | 'reports' | 'machinery' | 'tasks' | 'map' | 'map_config' | 'truckers' | 'installers' | 'distribution';
+type DistributionSubTab = 'truckers' | 'installers' | 'report';
 type ReportScope = 'range' | 'week' | 'today';
 
 interface AdminPanelProps {
@@ -36,6 +37,7 @@ interface AdminPanelProps {
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   const [activeSubTab, setActiveSubTab] = useState<AdminTab>(user.role === 'supervisor_distri' ? 'movements' : 'reports');
+  const [activeDistriTab, setActiveDistriTab] = useState<DistributionSubTab>('truckers');
   const [selectedMachineryId, setSelectedMachineryId] = useState<string | null>(null);
   const [tasksView, setTasksView] = useState<'report' | 'config'>('report');
   const [loading, setLoading] = useState(true);
@@ -81,6 +83,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   const [taskLogOperator, setTaskLogOperator] = useState<string>('todos');
   const [taskLogs, setTaskLogs] = useState<TaskLog[]>([]);
   const [loadingTaskLogs, setLoadingTaskLogs] = useState(false);
+
+  // Estados para Informe de Distribución
+  const [distriReportDateFrom, setDistriReportDateFrom] = useState(todayLocal);
+  const [distriReportDateTo, setDistriReportDateTo] = useState(todayLocal);
+  const [distriReportOperator, setDistriReportOperator] = useState<string>('todos');
+  const [distriReportData, setDistriReportData] = useState<{ id: string, name: string, count: number, deliveries: number, installations: number }[]>([]);
+  const [distriCreators, setDistriCreators] = useState<string[]>([]);
+  const [allDistriRecords, setAllDistriRecords] = useState<any[]>([]);
+  const [selectedCreator, setSelectedCreator] = useState<string | null>(null);
+  const [showCreatorDetailModal, setShowCreatorDetailModal] = useState(false);
+  const [loadingDistriReport, setLoadingDistriReport] = useState(false);
 
   const [stats, setStats] = useState({
     total: 0,
@@ -245,12 +258,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
             pending: allSectorSlots.filter(s => !s.is_scanned_once).length
           });
         }
-      } else if (activeSubTab === 'truckers') {
-        const { data } = await supabase.from('truckers').select('*').order('full_name');
-        setTruckers((data || []).map((t: any) => ({ ...t, label: t.full_name })));
-      } else if (activeSubTab === 'installers') {
-        const { data } = await supabase.from('installers').select('*').order('full_name');
-        setInstallers((data || []).map((t: any) => ({ ...t, label: t.full_name })));
+      } else if (activeSubTab === 'distribution') {
+        const { data: truckersData } = await supabase.from('truckers').select('*').order('full_name');
+        setTruckers((truckersData || []).map((t: any) => ({ ...t, label: t.full_name })));
+        const { data: installersData } = await supabase.from('installers').select('*').order('full_name');
+        setInstallers((installersData || []).map((t: any) => ({ ...t, label: t.full_name })));
       } else if (activeSubTab === 'machinery') {
         const { data } = await supabase.from('machinery').select('*').order('type', { ascending: true }).order('identifier', { ascending: true });
         setMachinery(data || []);
@@ -301,6 +313,69 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
       setLoadingTaskLogs(false);
     }
   }, [taskLogDateFrom, taskLogDateTo, taskLogOperator]);
+
+  const fetchDistriReport = React.useCallback(async () => {
+    setLoadingDistriReport(true);
+    try {
+      // Fetch all deliveries and installations in range to get creators and counts
+      const { data: deliveries } = await supabase
+        .from('deliveries')
+        .select('id, created_by_name, delivery_date, truck_id, order_number')
+        .gte('delivery_date', distriReportDateFrom)
+        .lte('delivery_date', distriReportDateTo);
+
+      const { data: installations } = await supabase
+        .from('installations')
+        .select('id, created_by_name, installation_date, installer_id, order_number')
+        .gte('installation_date', distriReportDateFrom)
+        .lte('installation_date', distriReportDateTo);
+
+      const allRecords = [
+        ...(deliveries || []).map(d => ({ ...d, type: 'reparto', operator_id: d.truck_id, date: d.delivery_date })),
+        ...(installations || []).map(i => ({ ...i, type: 'instalacion', operator_id: i.installer_id, date: i.installation_date }))
+      ];
+
+      setAllDistriRecords(allRecords);
+
+      // Extract unique creators for the dropdown
+      const uniqueCreators = Array.from(new Set(allRecords.map(r => r.created_by_name || 'Sin Nombre').filter(Boolean))).sort();
+      setDistriCreators(uniqueCreators);
+
+      const reportMap = new Map<string, { total: number, deliveries: number, installations: number }>();
+
+      allRecords.forEach(r => {
+        const creator = r.created_by_name || 'Sin Nombre';
+        if (distriReportOperator !== 'todos' && creator !== distriReportOperator) return;
+        
+        const current = reportMap.get(creator) || { total: 0, deliveries: 0, installations: 0 };
+        current.total += 1;
+        if (r.type === 'reparto') current.deliveries += 1;
+        else current.installations += 1;
+        
+        reportMap.set(creator, current);
+      });
+
+      const reportArray = Array.from(reportMap.entries()).map(([name, stats]) => ({
+        id: name,
+        name,
+        count: stats.total,
+        deliveries: stats.deliveries,
+        installations: stats.installations
+      })).sort((a, b) => b.count - a.count);
+
+      setDistriReportData(reportArray);
+    } catch (err) {
+      console.error("Error fetching distribution report:", err);
+    } finally {
+      setLoadingDistriReport(false);
+    }
+  }, [distriReportDateFrom, distriReportDateTo, distriReportOperator]);
+
+  useEffect(() => {
+    if (activeSubTab === 'distribution' && activeDistriTab === 'report') {
+      fetchDistriReport();
+    }
+  }, [activeSubTab, activeDistriTab, fetchDistriReport]);
 
   useEffect(() => {
     fetchData();
@@ -867,13 +942,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
             { id: 'sectors', label: 'SECTORES', icon: '📊' },
             { id: 'machinery', label: 'MAQUINARIA', icon: '🛠️' },
             { id: 'tasks', label: 'TAREAS', icon: '📌' },
-            { id: 'truckers', label: 'CAMIONEROS', icon: '🚛' },
-            { id: 'installers', label: 'INSTALADORES', icon: '👷' },
+            { id: 'distribution', label: 'DISTRIBUCIÓN', icon: '🚛' },
             { id: 'map_config', label: 'CONFIG MAPA', icon: '⚙️' },
           ].filter(tab => {
             if (user.role === 'admin') return true;
             if (user.role === 'supervisor_distri') {
-              return ['map', 'movements', 'reports', 'operators', 'machinery', 'tasks', 'truckers', 'installers'].includes(tab.id);
+              return ['map', 'movements', 'reports', 'operators', 'machinery', 'tasks', 'distribution'].includes(tab.id);
             }
             return false;
           }).map((tab) => (
@@ -1982,41 +2056,184 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
           </div>
         )}
 
-        {activeSubTab === 'truckers' && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center mb-6">
-               <h3 className="text-lg font-black text-slate-800 uppercase tracking-tighter">Transportistas Habituales</h3>
-               <button onClick={() => setShowTruckerModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-100">Nuevo Camión</button>
+        {activeSubTab === 'distribution' && (
+          <div className="space-y-8 animate-fade-in">
+            <div className="flex justify-center mb-8">
+              <div className="bg-slate-100 p-1 rounded-2xl flex gap-1 border border-slate-200">
+                {[
+                  { id: 'truckers', label: 'Camioneros', icon: '🚛' },
+                  { id: 'installers', label: 'Instaladores', icon: '👷' },
+                  { id: 'report', label: 'Informe', icon: '📊' },
+                ].map((sub) => (
+                  <button
+                    key={sub.id}
+                    onClick={() => setActiveDistriTab(sub.id as DistributionSubTab)}
+                    className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+                      activeDistriTab === sub.id 
+                      ? 'bg-white text-slate-900 shadow-md' 
+                      : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    <span>{sub.icon}</span>
+                    <span>{sub.label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-               {truckers.map(t => (
-                 <div key={t.id} className="p-6 bg-slate-50 rounded-[2.5rem] border border-slate-100 flex items-center justify-between group">
-                    <div className="flex-1">
-                      <p className="font-black text-slate-800 uppercase text-sm">{t.label}</p>
-                    </div>
-                    <button onClick={() => deleteTrucker(t.id)} className="w-10 h-10 rounded-xl bg-rose-100 text-rose-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">🗑️</button>
-                 </div>
-               ))}
-            </div>
-          </div>
-        )}
 
-        {activeSubTab === 'installers' && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center mb-6">
-               <h3 className="text-lg font-black text-slate-800 uppercase tracking-tighter">Instaladores Habituales</h3>
-               <button onClick={() => setShowInstallerModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-100">Nuevo Instalador</button>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-               {installers.map(t => (
-                 <div key={t.id} className="p-6 bg-slate-50 rounded-[2.5rem] border border-slate-100 flex items-center justify-between group">
-                    <div className="flex-1">
-                      <p className="font-black text-slate-800 uppercase text-sm">{t.label}</p>
+            {activeDistriTab === 'truckers' && (
+              <div className="space-y-6 animate-fade-in">
+                <div className="flex justify-between items-center mb-6">
+                   <h3 className="text-lg font-black text-slate-800 uppercase tracking-tighter">Transportistas Habituales</h3>
+                   <button onClick={() => setShowTruckerModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-100">Nuevo Camión</button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                   {truckers.map(t => (
+                     <div key={t.id} className="p-6 bg-slate-50 rounded-[2.5rem] border border-slate-100 flex items-center justify-between group">
+                        <div className="flex-1">
+                          <p className="font-black text-slate-800 uppercase text-sm">{t.label}</p>
+                        </div>
+                        <button onClick={() => deleteTrucker(t.id)} className="w-10 h-10 rounded-xl bg-rose-100 text-rose-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">🗑️</button>
+                     </div>
+                   ))}
+                </div>
+              </div>
+            )}
+
+            {activeDistriTab === 'installers' && (
+              <div className="space-y-6 animate-fade-in">
+                <div className="flex justify-between items-center mb-6">
+                   <h3 className="text-lg font-black text-slate-800 uppercase tracking-tighter">Instaladores Habituales</h3>
+                   <button onClick={() => setShowInstallerModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-100">Nuevo Instalador</button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                   {installers.map(t => (
+                     <div key={t.id} className="p-6 bg-slate-50 rounded-[2.5rem] border border-slate-100 flex items-center justify-between group">
+                        <div className="flex-1">
+                          <p className="font-black text-slate-800 uppercase text-sm">{t.label}</p>
+                        </div>
+                        <button onClick={() => deleteInstaller(t.id)} className="w-10 h-10 rounded-xl bg-rose-100 text-rose-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">🗑️</button>
+                     </div>
+                   ))}
+                </div>
+              </div>
+            )}
+
+            {activeDistriTab === 'report' && (
+              <div className="space-y-8 animate-fade-in">
+                <div className="bg-slate-50 p-8 rounded-[3rem] border border-slate-100">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Desde</label>
+                      <input 
+                        type="date" 
+                        value={distriReportDateFrom} 
+                        onChange={e => setDistriReportDateFrom(e.target.value)}
+                        className="w-full bg-white p-4 rounded-2xl text-xs font-bold outline-none border border-slate-200 focus:border-indigo-500 transition-all"
+                      />
                     </div>
-                    <button onClick={() => deleteInstaller(t.id)} className="w-10 h-10 rounded-xl bg-rose-100 text-rose-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">🗑️</button>
-                 </div>
-               ))}
-            </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Hasta</label>
+                      <input 
+                        type="date" 
+                        value={distriReportDateTo} 
+                        onChange={e => setDistriReportDateTo(e.target.value)}
+                        className="w-full bg-white p-4 rounded-2xl text-xs font-bold outline-none border border-slate-200 focus:border-indigo-500 transition-all"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Operario de Agenda</label>
+                      <select 
+                        value={distriReportOperator} 
+                        onChange={e => setDistriReportOperator(e.target.value)}
+                        className="w-full bg-white p-4 rounded-2xl text-xs font-bold outline-none border border-slate-200 focus:border-indigo-500 transition-all uppercase"
+                      >
+                        <option value="todos">TODOS LOS OPERARIOS</option>
+                        {distriCreators.map(creator => (
+                          <option key={creator} value={creator}>{creator}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-4 mb-8">
+                  <div className="bg-white/50 backdrop-blur-md p-6 rounded-[2.5rem] border border-white/20 shadow-xl flex-1 min-w-[200px]">
+                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Repartos</p>
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">🚛</span>
+                      <span className="text-3xl font-black text-slate-800">
+                        {allDistriRecords.filter(r => r.type === 'reparto').length}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="bg-white/50 backdrop-blur-md p-6 rounded-[2.5rem] border border-white/20 shadow-xl flex-1 min-w-[200px]">
+                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Instalaciones</p>
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">👷</span>
+                      <span className="text-3xl font-black text-slate-800">
+                        {allDistriRecords.filter(r => r.type === 'instalacion').length}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {loadingDistriReport ? (
+                  <div className="flex flex-col items-center justify-center py-20 space-y-4">
+                    <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Generando Informe...</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {distriReportData.length === 0 ? (
+                      <div className="col-span-full py-20 text-center bg-slate-50 rounded-[3rem] border border-dashed border-slate-200">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">No hay pedidos agendados en este periodo</p>
+                      </div>
+                    ) : (
+                      distriReportData.map((item) => (
+                        <div 
+                          key={item.id} 
+                          onClick={() => {
+                            setSelectedCreator(item.name);
+                            setShowCreatorDetailModal(true);
+                          }}
+                          className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm hover:shadow-xl transition-all group relative overflow-hidden cursor-pointer active:scale-95"
+                        >
+                          <div className="absolute top-0 right-0 w-24 h-24 -mr-8 -mt-8 rounded-full opacity-5 transition-all group-hover:scale-150 bg-indigo-600"></div>
+                          <div className="flex flex-col h-full justify-between">
+                            <div className="space-y-4">
+                              <div className="flex items-center justify-between">
+                                <span className="px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest bg-indigo-50 text-indigo-600">
+                                  Operario
+                                </span>
+                                <div className="text-right">
+                                  <span className="text-2xl font-black text-slate-800 block leading-none">{item.count}</span>
+                                  <div className="flex gap-2 mt-1">
+                                    <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest">🚛 {item.deliveries}</span>
+                                    <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest">👷 {item.installations}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <h4 className="text-lg font-black text-slate-800 uppercase tracking-tighter leading-tight">{item.name}</h4>
+                            </div>
+                            <div className="mt-8 pt-6 border-t border-slate-50">
+                              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Pedidos Puestos en Agenda</p>
+                              <div className="mt-3 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                <div 
+                                  className="h-full transition-all duration-1000 bg-indigo-600"
+                                  style={{ width: `${Math.min(100, (item.count / (Math.max(...distriReportData.map(d => d.count)) || 1)) * 100)}%` }}
+                                ></div>
+                              </div>
+                              <p className="text-[7px] font-bold text-indigo-500 uppercase tracking-widest mt-4 opacity-0 group-hover:opacity-100 transition-all">Ver detalles →</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -2509,6 +2726,85 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                  <button type="button" onClick={() => { setShowMaintenanceModal(false); setEditingMaintenanceId(null); }} className="w-full py-4 text-slate-400 font-black text-[9px] uppercase tracking-[0.2em]">Cancelar</button>
               </div>
            </form>
+        </div>
+      )}
+      {showCreatorDetailModal && selectedCreator && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-4xl rounded-[3rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
+            <div className="p-8 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter leading-none">{selectedCreator}</h3>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">Detalle de pedidos puestos en agenda</p>
+              </div>
+              <button 
+                onClick={() => setShowCreatorDetailModal(false)}
+                className="w-12 h-12 rounded-2xl bg-white border border-slate-200 text-slate-400 flex items-center justify-center hover:text-rose-500 hover:border-rose-100 transition-all shadow-sm"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-8">
+              <div className="space-y-8">
+                {(() => {
+                  const creatorRecords = allDistriRecords.filter(r => (r.created_by_name || 'Sin Nombre') === selectedCreator);
+                  
+                  // Group by operator (truck/installer)
+                  const groupedByOperator = new Map<string, { name: string, type: string, records: any[] }>();
+                  
+                  creatorRecords.forEach(r => {
+                    // Use a composite key to avoid ID collisions between trucks and installers
+                    const opKey = `${r.type}_${r.operator_id || 'unassigned'}`;
+                    if (!groupedByOperator.has(opKey)) {
+                      let opName = 'Sin Asignar';
+                      const opId = r.operator_id;
+                      if (r.type === 'reparto') {
+                        opName = truckers.find(t => t.id === opId)?.label || 'Camión Desconocido';
+                      } else {
+                        opName = installers.find(i => i.id === opId)?.label || 'Instalador Desconocido';
+                      }
+                      groupedByOperator.set(opKey, { name: opName, type: r.type, records: [] });
+                    }
+                    groupedByOperator.get(opKey)!.records.push(r);
+                  });
+
+                  return Array.from(groupedByOperator.values()).map((group, idx) => (
+                    <div key={idx} className="space-y-4">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xl">{group.type === 'reparto' ? '🚛' : '👷'}</span>
+                        <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight">{group.name}</h4>
+                        <span className="px-2 py-0.5 rounded-full bg-slate-100 text-[8px] font-black text-slate-500 uppercase tracking-widest">
+                          {group.records.length} {group.records.length === 1 ? 'pedido' : 'pedidos'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {group.records.map((rec, rIdx) => (
+                          <div key={rIdx} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col justify-between">
+                            <div className="flex justify-between items-start mb-2">
+                              <span className="text-xs font-black text-slate-800 uppercase tracking-tighter">#{rec.order_number}</span>
+                              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{new Date(rec.date).toLocaleDateString('es-ES')}</span>
+                            </div>
+                            <span className={`text-[7px] font-black uppercase tracking-widest self-start px-2 py-0.5 rounded-full ${rec.type === 'reparto' ? 'bg-indigo-50 text-indigo-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                              {rec.type}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+            </div>
+            
+            <div className="p-8 bg-slate-50 border-t border-slate-100 flex justify-end">
+              <button 
+                onClick={() => setShowCreatorDetailModal(false)}
+                className="px-8 py-4 bg-slate-800 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 transition-all"
+              >
+                Cerrar Detalle
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
