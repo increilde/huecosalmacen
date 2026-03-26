@@ -105,6 +105,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   const [allDistriRecords, setAllDistriRecords] = useState<any[]>([]);
   const [selectedCreator, setSelectedCreator] = useState<string | null>(null);
   const [showCreatorDetailModal, setShowCreatorDetailModal] = useState(false);
+  const [showTodayOnly, setShowTodayOnly] = useState(false);
   const [loadingDistriReport, setLoadingDistriReport] = useState(false);
 
   const [stats, setStats] = useState({
@@ -2257,7 +2258,15 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                             .map((item) => {
                               const avgTime = Math.round(480 / item.registeredToday);
                               return (
-                                <tr key={item.id} className="hover:bg-white/80 transition-colors">
+                                <tr 
+                                  key={item.id} 
+                                  className="hover:bg-white/80 transition-colors cursor-pointer active:scale-[0.99]"
+                                  onClick={() => {
+                                    setSelectedCreator(item.name);
+                                    setShowTodayOnly(true);
+                                    setShowCreatorDetailModal(true);
+                                  }}
+                                >
                                   <td className="p-4 text-[11px] font-black text-slate-700 uppercase tracking-tight border-b border-slate-50">{item.name}</td>
                                   <td className="p-4 text-center border-b border-slate-50">
                                     <span className="text-[10px] font-bold text-slate-600">{item.registeredTodayDeliveries}</span>
@@ -2301,6 +2310,7 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                           key={item.id} 
                           onClick={() => {
                             setSelectedCreator(item.name);
+                            setShowTodayOnly(false);
                             setShowCreatorDetailModal(true);
                           }}
                           className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm hover:shadow-xl transition-all group relative overflow-hidden cursor-pointer active:scale-95"
@@ -2845,10 +2855,15 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
             <div className="p-8 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
               <div>
                 <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter leading-none">{selectedCreator}</h3>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">Detalle de pedidos puestos en agenda</p>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">
+                  {showTodayOnly ? 'Pedidos registrados HOY (Control Diario)' : 'Detalle de pedidos puestos en agenda'}
+                </p>
               </div>
               <button 
-                onClick={() => setShowCreatorDetailModal(false)}
+                onClick={() => {
+                  setShowCreatorDetailModal(false);
+                  setShowTodayOnly(false);
+                }}
                 className="w-12 h-12 rounded-2xl bg-white border border-slate-200 text-slate-400 flex items-center justify-center hover:text-rose-500 hover:border-rose-100 transition-all shadow-sm"
               >
                 ✕
@@ -2861,7 +2876,7 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                   const creatorData = distriReportData.find(d => d.name === selectedCreator);
                   const hasRegisteredToday = creatorData && creatorData.registeredToday > 0;
                   
-                  return hasRegisteredToday && (
+                  return hasRegisteredToday && !showTodayOnly && (
                     <div className="p-6 bg-emerald-50 rounded-[2rem] border border-emerald-100">
                       <div className="flex items-center gap-3 mb-4">
                         <span className="text-xl">✨</span>
@@ -2882,7 +2897,107 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                 })()}
 
                 {(() => {
-                  const creatorRecords = allDistriRecords.filter(r => (r.created_by_name || 'Sin Nombre') === selectedCreator);
+                  const creatorRecords = allDistriRecords.filter(r => {
+                    const isCreator = (r.created_by_name || 'Sin Nombre') === selectedCreator;
+                    if (!isCreator) return false;
+                    if (showTodayOnly) {
+                      const today = new Date().toLocaleDateString('en-CA');
+                      const regDate = new Date(r.created_at).toLocaleDateString('en-CA');
+                      return regDate === today;
+                    }
+                    return true;
+                  });
+
+                  if (showTodayOnly) {
+                    const groupedByDate = new Map<string, any[]>();
+                    creatorRecords.forEach(r => {
+                      const dateKey = r.date;
+                      if (!groupedByDate.has(dateKey)) groupedByDate.set(dateKey, []);
+                      groupedByDate.get(dateKey)!.push(r);
+                    });
+                    const sortedDates = Array.from(groupedByDate.keys()).sort();
+
+                    return (
+                      <div className="space-y-8">
+                        <div className="bg-indigo-600 p-8 rounded-[2.5rem] text-white shadow-xl flex items-center justify-between overflow-hidden relative">
+                          <div className="absolute top-0 right-0 w-32 h-32 -mr-10 -mt-10 bg-white/10 rounded-full"></div>
+                          <div className="relative z-10">
+                            <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-80">Total Gestionado Hoy</p>
+                            <h4 className="text-4xl font-black mt-1 leading-none">{creatorRecords.length} <span className="text-lg opacity-60">pedidos</span></h4>
+                          </div>
+                          <div className="relative z-10 text-right">
+                            <div className="flex gap-4">
+                              <div>
+                                <p className="text-[8px] font-black uppercase tracking-widest opacity-60">Repartos</p>
+                                <p className="text-xl font-black">{creatorRecords.filter(r => r.type === 'reparto').length}</p>
+                              </div>
+                              <div>
+                                <p className="text-[8px] font-black uppercase tracking-widest opacity-60">Instalaciones</p>
+                                <p className="text-xl font-black">{creatorRecords.filter(r => r.type === 'instalacion').length}</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {sortedDates.map(date => {
+                          const records = groupedByDate.get(date)!;
+                          return (
+                            <div key={date} className="space-y-4">
+                              <div className="flex items-center gap-3 px-4">
+                                <span className="text-xl">📅</span>
+                                <h5 className="text-sm font-black text-slate-800 uppercase tracking-tight">
+                                  {new Date(date).toLocaleDateString('es-ES', { weekday: 'long', day: '2-digit', month: 'long' })}
+                                </h5>
+                                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-[8px] font-black text-slate-500 uppercase tracking-widest">
+                                  {records.length} {records.length === 1 ? 'pedido' : 'pedidos'}
+                                </span>
+                              </div>
+                              <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+                                <table className="w-full text-left border-collapse">
+                                  <thead>
+                                    <tr className="bg-slate-50">
+                                      <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Nº Pedido</th>
+                                      <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Tipo</th>
+                                      <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Operario/Camión</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {records.map((rec, idx) => {
+                                      let opName = 'Sin Asignar';
+                                      if (rec.type === 'reparto') {
+                                        opName = truckers.find(t => t.id === rec.operator_id)?.label || 'Camión Desconocido';
+                                      } else {
+                                        opName = installers.find(i => i.id === rec.operator_id)?.label || 'Instalador Desconocido';
+                                      }
+                                      return (
+                                        <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                          <td className="p-6 border-b border-slate-50">
+                                            <span className="px-3 py-1 bg-slate-100 rounded-full text-[10px] font-black text-slate-600 uppercase tracking-widest">
+                                              #{rec.order_number}
+                                            </span>
+                                          </td>
+                                          <td className="p-6 border-b border-slate-50">
+                                            <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-lg ${rec.type === 'reparto' ? 'bg-indigo-50 text-indigo-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                                              {rec.type}
+                                            </span>
+                                          </td>
+                                          <td className="p-6 border-b border-slate-50">
+                                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">
+                                              {opName}
+                                            </span>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  }
                   
                   // Group by operator (truck/installer)
                   const groupedByOperator = new Map<string, { name: string, type: string, records: any[] }>();
@@ -2919,9 +3034,14 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                               <span className="text-xs font-black text-slate-800 uppercase tracking-tighter">#{rec.order_number}</span>
                               <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{new Date(rec.date).toLocaleDateString('es-ES')}</span>
                             </div>
-                            <span className={`text-[7px] font-black uppercase tracking-widest self-start px-2 py-0.5 rounded-full ${rec.type === 'reparto' ? 'bg-indigo-50 text-indigo-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                              {rec.type}
-                            </span>
+                            <div className="flex gap-2 items-center">
+                              <span className={`text-[7px] font-black uppercase tracking-widest self-start px-2 py-0.5 rounded-full ${rec.type === 'reparto' ? 'bg-indigo-50 text-indigo-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                                {rec.type}
+                              </span>
+                              {new Date(rec.created_at).toLocaleDateString('en-CA') === new Date().toLocaleDateString('en-CA') && (
+                                <span className="text-[6px] font-black bg-emerald-500 text-white px-1.5 py-0.5 rounded-md uppercase tracking-tighter">Hoy</span>
+                              )}
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -2933,7 +3053,10 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
             
             <div className="p-8 bg-slate-50 border-t border-slate-100 flex justify-end">
               <button 
-                onClick={() => setShowCreatorDetailModal(false)}
+                onClick={() => {
+                  setShowCreatorDetailModal(false);
+                  setShowTodayOnly(false);
+                }}
                 className="px-8 py-4 bg-slate-800 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 transition-all"
               >
                 Cerrar Detalle
