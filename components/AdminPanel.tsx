@@ -44,6 +44,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   const [loading, setLoading] = useState(true);
   
   const todayLocal = new Date().toLocaleDateString('en-CA');
+  const endOfYearLocal = `${new Date().getFullYear()}-12-31`;
   
   // Periodo seleccionado - Por defecto hoy
   const [scope, setScope] = useState<ReportScope>('today');
@@ -87,9 +88,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
 
   // Estados para Informe de Distribución
   const [distriReportDateFrom, setDistriReportDateFrom] = useState(todayLocal);
-  const [distriReportDateTo, setDistriReportDateTo] = useState(todayLocal);
+  const [distriReportDateTo, setDistriReportDateTo] = useState(endOfYearLocal);
   const [distriReportOperator, setDistriReportOperator] = useState<string>('todos');
-  const [distriReportData, setDistriReportData] = useState<{ id: string, name: string, count: number, deliveries: number, installations: number }[]>([]);
+  const [distriReportData, setDistriReportData] = useState<{ 
+    id: string, 
+    name: string, 
+    count: number, 
+    deliveries: number, 
+    installations: number,
+    registeredToday: number,
+    registeredTodayBreakdown: Record<string, number>
+  }[]>([]);
   const [distriCreators, setDistriCreators] = useState<string[]>([]);
   const [allDistriRecords, setAllDistriRecords] = useState<any[]>([]);
   const [selectedCreator, setSelectedCreator] = useState<string | null>(null);
@@ -321,13 +330,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
       // Fetch all deliveries and installations in range to get creators and counts
       const { data: deliveries } = await supabase
         .from('deliveries')
-        .select('id, created_by_name, delivery_date, truck_id, order_number')
+        .select('id, created_by_name, delivery_date, truck_id, order_number, created_at')
         .gte('delivery_date', distriReportDateFrom)
         .lte('delivery_date', distriReportDateTo);
 
       const { data: installations } = await supabase
         .from('installations')
-        .select('id, created_by_name, installation_date, installer_id, order_number')
+        .select('id, created_by_name, installation_date, installer_id, order_number, created_at')
         .gte('installation_date', distriReportDateFrom)
         .lte('installation_date', distriReportDateTo);
 
@@ -342,16 +351,39 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
       const uniqueCreators = Array.from(new Set(allRecords.map(r => r.created_by_name || 'Sin Nombre').filter(Boolean))).sort();
       setDistriCreators(uniqueCreators);
 
-      const reportMap = new Map<string, { total: number, deliveries: number, installations: number }>();
+      const reportMap = new Map<string, { 
+        total: number, 
+        deliveries: number, 
+        installations: number,
+        registeredToday: number,
+        registeredTodayBreakdown: Record<string, number>
+      }>();
+
+      const today = new Date().toLocaleDateString('en-CA');
 
       allRecords.forEach(r => {
         const creator = r.created_by_name || 'Sin Nombre';
         if (distriReportOperator !== 'todos' && creator !== distriReportOperator) return;
         
-        const current = reportMap.get(creator) || { total: 0, deliveries: 0, installations: 0 };
+        const current = reportMap.get(creator) || { 
+          total: 0, 
+          deliveries: 0, 
+          installations: 0,
+          registeredToday: 0,
+          registeredTodayBreakdown: {}
+        };
+        
         current.total += 1;
         if (r.type === 'reparto') current.deliveries += 1;
         else current.installations += 1;
+
+        // Check if registered today
+        const regDate = new Date(r.created_at).toLocaleDateString('en-CA');
+        if (regDate === today) {
+          current.registeredToday += 1;
+          const scheduledDate = r.date;
+          current.registeredTodayBreakdown[scheduledDate] = (current.registeredTodayBreakdown[scheduledDate] || 0) + 1;
+        }
         
         reportMap.set(creator, current);
       });
@@ -361,7 +393,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
         name,
         count: stats.total,
         deliveries: stats.deliveries,
-        installations: stats.installations
+        installations: stats.installations,
+        registeredToday: stats.registeredToday,
+        registeredTodayBreakdown: stats.registeredTodayBreakdown
       })).sort((a, b) => b.count - a.count);
 
       setDistriReportData(reportArray);
@@ -2207,10 +2241,15 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                                 </span>
                                 <div className="text-right">
                                   <span className="text-2xl font-black text-slate-800 block leading-none">{item.count}</span>
-                                  <div className="flex gap-2 mt-1">
+                                  <div className="flex gap-2 mt-1 justify-end">
                                     <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest">🚛 {item.deliveries}</span>
                                     <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest">👷 {item.installations}</span>
                                   </div>
+                                  {item.registeredToday > 0 && (
+                                    <div className="mt-2 px-2 py-1 bg-emerald-50 rounded-lg inline-block">
+                                      <p className="text-[7px] font-black text-emerald-600 uppercase tracking-widest">Hoy: +{item.registeredToday}</p>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                               <h4 className="text-lg font-black text-slate-800 uppercase tracking-tighter leading-tight">{item.name}</h4>
@@ -2745,6 +2784,30 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
             
             <div className="flex-1 overflow-y-auto p-8">
               <div className="space-y-8">
+                {(() => {
+                  const creatorData = distriReportData.find(d => d.name === selectedCreator);
+                  const hasRegisteredToday = creatorData && creatorData.registeredToday > 0;
+                  
+                  return hasRegisteredToday && (
+                    <div className="p-6 bg-emerald-50 rounded-[2rem] border border-emerald-100">
+                      <div className="flex items-center gap-3 mb-4">
+                        <span className="text-xl">✨</span>
+                        <h4 className="text-sm font-black text-emerald-800 uppercase tracking-tight">Registrados Hoy por este Operario</h4>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                        {Object.entries(creatorData.registeredTodayBreakdown)
+                          .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+                          .map(([date, count]) => (
+                            <div key={date} className="bg-white p-4 rounded-2xl border border-emerald-100 shadow-sm">
+                              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">{new Date(date).toLocaleDateString('es-ES')}</p>
+                              <p className="text-lg font-black text-emerald-600 leading-none">{count} <span className="text-[10px] text-emerald-400">pedidos</span></p>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {(() => {
                   const creatorRecords = allDistriRecords.filter(r => (r.created_by_name || 'Sin Nombre') === selectedCreator);
                   
