@@ -97,6 +97,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
     deliveries: number, 
     installations: number,
     registeredToday: number,
+    registeredTodayDeliveries: number,
+    registeredTodayInstallations: number,
     registeredTodayBreakdown: Record<string, number>
   }[]>([]);
   const [distriCreators, setDistriCreators] = useState<string[]>([]);
@@ -356,6 +358,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
         deliveries: number, 
         installations: number,
         registeredToday: number,
+        registeredTodayDeliveries: number,
+        registeredTodayInstallations: number,
         registeredTodayBreakdown: Record<string, number>
       }>();
 
@@ -370,6 +374,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
           deliveries: 0, 
           installations: 0,
           registeredToday: 0,
+          registeredTodayDeliveries: 0,
+          registeredTodayInstallations: 0,
           registeredTodayBreakdown: {}
         };
         
@@ -381,6 +387,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
         const regDate = new Date(r.created_at).toLocaleDateString('en-CA');
         if (regDate === today) {
           current.registeredToday += 1;
+          if (r.type === 'reparto') current.registeredTodayDeliveries += 1;
+          else current.registeredTodayInstallations += 1;
+          
           const scheduledDate = r.date;
           current.registeredTodayBreakdown[scheduledDate] = (current.registeredTodayBreakdown[scheduledDate] || 0) + 1;
         }
@@ -395,6 +404,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
         deliveries: stats.deliveries,
         installations: stats.installations,
         registeredToday: stats.registeredToday,
+        registeredTodayDeliveries: stats.registeredTodayDeliveries,
+        registeredTodayInstallations: stats.registeredTodayInstallations,
         registeredTodayBreakdown: stats.registeredTodayBreakdown
       })).sort((a, b) => b.count - a.count);
 
@@ -2208,6 +2219,68 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                         {allDistriRecords.filter(r => r.type === 'instalacion').length}
                       </span>
                     </div>
+                  </div>
+                </div>
+
+                <div className="mb-8 overflow-hidden bg-white/50 backdrop-blur-md rounded-[2.5rem] border border-white/20 shadow-xl">
+                  <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                    <div>
+                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Rendimiento de Operarios (Hoy)</h4>
+                      <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-1">Basado en jornada de 8 horas (480 min)</p>
+                    </div>
+                    <div className="px-3 py-1 bg-indigo-50 rounded-full">
+                      <span className="text-[8px] font-black text-indigo-600 uppercase tracking-widest">Tiempo Medio por Pedido</span>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50/30">
+                          <th className="p-4 text-[8px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Operario</th>
+                          <th className="p-4 text-[8px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-center">Repartos</th>
+                          <th className="p-4 text-[8px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-center">Instalaciones</th>
+                          <th className="p-4 text-[8px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-center">Total Hoy</th>
+                          <th className="p-4 text-[8px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-center">Tiempo Medio</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {distriReportData.filter(d => d.registeredToday > 0).length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="p-8 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                              No se han registrado pedidos hoy
+                            </td>
+                          </tr>
+                        ) : (
+                          distriReportData
+                            .filter(d => d.registeredToday > 0)
+                            .sort((a, b) => b.registeredToday - a.registeredToday)
+                            .map((item) => {
+                              const avgTime = Math.round(480 / item.registeredToday);
+                              return (
+                                <tr key={item.id} className="hover:bg-white/80 transition-colors">
+                                  <td className="p-4 text-[11px] font-black text-slate-700 uppercase tracking-tight border-b border-slate-50">{item.name}</td>
+                                  <td className="p-4 text-center border-b border-slate-50">
+                                    <span className="text-[10px] font-bold text-slate-600">{item.registeredTodayDeliveries}</span>
+                                  </td>
+                                  <td className="p-4 text-center border-b border-slate-50">
+                                    <span className="text-[10px] font-bold text-slate-600">{item.registeredTodayInstallations}</span>
+                                  </td>
+                                  <td className="p-4 text-center border-b border-slate-50">
+                                    <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-black">
+                                      {item.registeredToday}
+                                    </span>
+                                  </td>
+                                  <td className="p-4 text-center border-b border-slate-50">
+                                    <span className="text-[10px] font-black text-slate-600">
+                                      {avgTime} min
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                        )}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
 
