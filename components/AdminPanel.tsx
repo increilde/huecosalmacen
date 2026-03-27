@@ -44,6 +44,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   const [loading, setLoading] = useState(true);
   
   const todayLocal = new Date().toLocaleDateString('en-CA');
+  const startOfMonthLocal = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`;
   const endOfYearLocal = `${new Date().getFullYear()}-12-31`;
   
   // Periodo seleccionado - Por defecto hoy
@@ -87,19 +88,24 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   const [loadingTaskLogs, setLoadingTaskLogs] = useState(false);
 
   // Estados para Informe de Distribución
-  const [distriReportDateFrom, setDistriReportDateFrom] = useState(todayLocal);
+  const [distriReportDateFrom, setDistriReportDateFrom] = useState(startOfMonthLocal);
   const [distriReportDateTo, setDistriReportDateTo] = useState(endOfYearLocal);
   const [distriReportOperator, setDistriReportOperator] = useState<string>('todos');
   const [distriReportData, setDistriReportData] = useState<{ 
     id: string, 
     name: string, 
-    count: number, 
+    count: number,
+    scheduledCount: number, 
+    registeredCount: number,
     deliveries: number, 
     installations: number,
     registeredToday: number,
     registeredTodayDeliveries: number,
     registeredTodayInstallations: number,
-    registeredTodayBreakdown: Record<string, number>
+    registeredTodayBreakdown: Record<string, number>,
+    scheduledDailyBreakdown: Record<string, number>,
+    registeredDailyBreakdown: Record<string, number>,
+    dailyBreakdown: Record<string, number>
   }[]>([]);
   const [distriCreators, setDistriCreators] = useState<string[]>([]);
   const [allDistriRecords, setAllDistriRecords] = useState<any[]>([]);
@@ -330,67 +336,126 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   const fetchDistriReport = React.useCallback(async () => {
     setLoadingDistriReport(true);
     try {
-      // Fetch all deliveries and installations in range to get creators and counts
-      const { data: deliveries } = await supabase
+      // 1. Fetch orders SCHEDULED in range
+      const { data: scheduledDeliveries, error: sDelErr } = await supabase
         .from('deliveries')
         .select('id, created_by_name, delivery_date, truck_id, order_number, created_at')
         .gte('delivery_date', distriReportDateFrom)
         .lte('delivery_date', distriReportDateTo);
+      if (sDelErr) throw sDelErr;
 
-      const { data: installations } = await supabase
+      const { data: scheduledInstallations, error: sInstErr } = await supabase
         .from('installations')
         .select('id, created_by_name, installation_date, installer_id, order_number, created_at')
         .gte('installation_date', distriReportDateFrom)
         .lte('installation_date', distriReportDateTo);
+      if (sInstErr) throw sInstErr;
 
-      const allRecords = [
-        ...(deliveries || []).map(d => ({ ...d, type: 'reparto', operator_id: d.truck_id, date: d.delivery_date })),
-        ...(installations || []).map(i => ({ ...i, type: 'instalacion', operator_id: i.installer_id, date: i.installation_date }))
+      // 2. Fetch orders REGISTERED in range
+      const startTimestamp = new Date(distriReportDateFrom + 'T00:00:00Z').toISOString();
+      const endTimestamp = new Date(distriReportDateTo + 'T23:59:59Z').toISOString();
+
+      const { data: registeredDeliveries, error: rDelErr } = await supabase
+        .from('deliveries')
+        .select('id, created_by_name, delivery_date, truck_id, order_number, created_at')
+        .gte('created_at', startTimestamp)
+        .lte('created_at', endTimestamp);
+      if (rDelErr) throw rDelErr;
+
+      const { data: registeredInstallations, error: rInstErr } = await supabase
+        .from('installations')
+        .select('id, created_by_name, installation_date, installer_id, order_number, created_at')
+        .gte('created_at', startTimestamp)
+        .lte('created_at', endTimestamp);
+      if (rInstErr) throw rInstErr;
+
+      const scheduledRecords = [
+        ...(scheduledDeliveries || []).map(d => ({ ...d, type: 'reparto', operator_id: d.truck_id, date: d.delivery_date })),
+        ...(scheduledInstallations || []).map(i => ({ ...i, type: 'instalacion', operator_id: i.installer_id, date: i.installation_date }))
       ];
 
-      setAllDistriRecords(allRecords);
+      const registeredRecords = [
+        ...(registeredDeliveries || []).map(d => ({ ...d, type: 'reparto', operator_id: d.truck_id, date: d.delivery_date })),
+        ...(registeredInstallations || []).map(i => ({ ...i, type: 'instalacion', operator_id: i.installer_id, date: i.installation_date }))
+      ];
 
-      // Extract unique creators for the dropdown
-      const uniqueCreators = Array.from(new Set(allRecords.map(r => r.created_by_name || 'Sin Nombre').filter(Boolean))).sort();
-      setDistriCreators(uniqueCreators);
+      // Combine and deduplicate for summary cards
+      const allUniqueRecords = Array.from(new Map([
+        ...scheduledRecords,
+        ...registeredRecords
+      ].map(r => [r.id, r])).values());
+      
+      setAllDistriRecords(allUniqueRecords);
+
+      // Extract unique creators
+      const allCreators = Array.from(new Set([
+        ...scheduledRecords.map(r => r.created_by_name),
+        ...registeredRecords.map(r => r.created_by_name)
+      ].map(name => name || 'Sin Nombre'))).sort();
+      setDistriCreators(allCreators);
 
       const reportMap = new Map<string, { 
-        total: number, 
+        scheduledCount: number, 
+        registeredCount: number,
         deliveries: number, 
         installations: number,
         registeredToday: number,
         registeredTodayDeliveries: number,
         registeredTodayInstallations: number,
-        registeredTodayBreakdown: Record<string, number>
+        registeredTodayBreakdown: Record<string, number>,
+        scheduledDailyBreakdown: Record<string, number>,
+        registeredDailyBreakdown: Record<string, number>
       }>();
 
       const today = new Date().toLocaleDateString('en-CA');
 
-      allRecords.forEach(r => {
+      // Process Scheduled Records
+      scheduledRecords.forEach(r => {
         const creator = r.created_by_name || 'Sin Nombre';
         if (distriReportOperator !== 'todos' && creator !== distriReportOperator) return;
         
         const current = reportMap.get(creator) || { 
-          total: 0, 
-          deliveries: 0, 
-          installations: 0,
-          registeredToday: 0,
-          registeredTodayDeliveries: 0,
-          registeredTodayInstallations: 0,
-          registeredTodayBreakdown: {}
+          scheduledCount: 0, registeredCount: 0,
+          deliveries: 0, installations: 0,
+          registeredToday: 0, registeredTodayDeliveries: 0, registeredTodayInstallations: 0,
+          registeredTodayBreakdown: {}, scheduledDailyBreakdown: {}, registeredDailyBreakdown: {}
         };
         
-        current.total += 1;
+        current.scheduledCount += 1;
         if (r.type === 'reparto') current.deliveries += 1;
         else current.installations += 1;
 
-        // Check if registered today
+        const scheduledDate = r.date;
+        current.scheduledDailyBreakdown[scheduledDate] = (current.scheduledDailyBreakdown[scheduledDate] || 0) + 1;
+        
+        reportMap.set(creator, current);
+      });
+
+      // Process Registered Records
+      registeredRecords.forEach(r => {
+        const creator = r.created_by_name || 'Sin Nombre';
+        if (distriReportOperator !== 'todos' && creator !== distriReportOperator) return;
+        
+        const current = reportMap.get(creator) || { 
+          scheduledCount: 0, registeredCount: 0,
+          deliveries: 0, installations: 0,
+          registeredToday: 0, registeredTodayDeliveries: 0, registeredTodayInstallations: 0,
+          registeredTodayBreakdown: {}, scheduledDailyBreakdown: {}, registeredDailyBreakdown: {}
+        };
+        
+        current.registeredCount += 1;
+        
+        // Use created_at for registered breakdown
         const regDate = new Date(r.created_at).toLocaleDateString('en-CA');
+        current.registeredDailyBreakdown[regDate] = (current.registeredDailyBreakdown[regDate] || 0) + 1;
+
+        // Check if registered today
         if (regDate === today) {
           current.registeredToday += 1;
           if (r.type === 'reparto') current.registeredTodayDeliveries += 1;
           else current.registeredTodayInstallations += 1;
           
+          // Breakdown by scheduled date for today's registrations
           const scheduledDate = r.date;
           current.registeredTodayBreakdown[scheduledDate] = (current.registeredTodayBreakdown[scheduledDate] || 0) + 1;
         }
@@ -401,14 +466,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
       const reportArray = Array.from(reportMap.entries()).map(([name, stats]) => ({
         id: name,
         name,
-        count: stats.total,
+        count: stats.scheduledCount, // Used in UI cards
+        scheduledCount: stats.scheduledCount,
+        registeredCount: stats.registeredCount,
         deliveries: stats.deliveries,
         installations: stats.installations,
         registeredToday: stats.registeredToday,
         registeredTodayDeliveries: stats.registeredTodayDeliveries,
         registeredTodayInstallations: stats.registeredTodayInstallations,
-        registeredTodayBreakdown: stats.registeredTodayBreakdown
-      })).sort((a, b) => b.count - a.count);
+        registeredTodayBreakdown: stats.registeredTodayBreakdown,
+        scheduledDailyBreakdown: stats.scheduledDailyBreakdown,
+        registeredDailyBreakdown: stats.registeredDailyBreakdown,
+        dailyBreakdown: stats.scheduledDailyBreakdown // Used in modal
+      })).sort((a, b) => b.scheduledCount - a.scheduledCount);
 
       setDistriReportData(reportArray);
     } catch (err) {
@@ -1014,7 +1084,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
         </nav>
       </div>
 
-      <div className="bg-white p-4 md:p-10 rounded-[3rem] border border-slate-100 shadow-sm min-h-[500px]">
+      <div className="bg-white p-4 md:p-8 rounded-[2.5rem] border border-slate-100 shadow-sm min-h-[500px]">
         {activeSubTab === 'map' && (
           <div className="space-y-8 animate-fade-in">
             <div className="flex justify-between items-center">
@@ -1590,7 +1660,7 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                             <input 
                               type="text" 
                               value={calibForm.point_name}
-                              onChange={e => setCalibForm(prev => ({ ...prev, point_name: e.target.value }))}
+                              onChange={e => setCalibForm(prev => ({ ...prev, point_name: e.target.value.toUpperCase() }))}
                               className="w-full bg-slate-50 p-4 rounded-2xl text-xs font-bold outline-none border border-slate-100"
                             />
                           </div>
@@ -2203,51 +2273,51 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                 </div>
 
                 <div className="flex flex-wrap gap-4 mb-8">
-                  <div className="bg-white/50 backdrop-blur-md p-6 rounded-[2.5rem] border border-white/20 shadow-xl flex-1 min-w-[200px]">
-                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Repartos</p>
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl">🚛</span>
-                      <span className="text-3xl font-black text-slate-800">
+                  <div className="bg-white/50 backdrop-blur-md p-8 rounded-[2.5rem] border border-white/20 shadow-xl flex-1 min-w-[200px]">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Total Repartos</p>
+                    <div className="flex items-center gap-4">
+                      <span className="text-4xl">🚛</span>
+                      <span className="text-4xl font-black text-slate-800">
                         {allDistriRecords.filter(r => r.type === 'reparto').length}
                       </span>
                     </div>
                   </div>
-                  <div className="bg-white/50 backdrop-blur-md p-6 rounded-[2.5rem] border border-white/20 shadow-xl flex-1 min-w-[200px]">
-                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Instalaciones</p>
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl">👷</span>
-                      <span className="text-3xl font-black text-slate-800">
+                  <div className="bg-white/50 backdrop-blur-md p-8 rounded-[2.5rem] border border-white/20 shadow-xl flex-1 min-w-[200px]">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Total Instalaciones</p>
+                    <div className="flex items-center gap-4">
+                      <span className="text-4xl">👷</span>
+                      <span className="text-4xl font-black text-slate-800">
                         {allDistriRecords.filter(r => r.type === 'instalacion').length}
                       </span>
                     </div>
                   </div>
                 </div>
 
-                <div className="mb-8 overflow-hidden bg-white/50 backdrop-blur-md rounded-[2.5rem] border border-white/20 shadow-xl">
-                  <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                <div className="mb-8 overflow-hidden bg-white/50 backdrop-blur-md rounded-[3rem] border border-white/20 shadow-xl">
+                  <div className="p-8 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
                     <div>
-                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Rendimiento de Operarios (Hoy)</h4>
-                      <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-1">Basado en jornada de 8 horas (480 min)</p>
+                      <h4 className="text-[14px] font-black text-slate-400 uppercase tracking-[0.2em]">Rendimiento de Operarios (Hoy)</h4>
+                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-1">Basado en jornada de 8 horas (480 min)</p>
                     </div>
-                    <div className="px-3 py-1 bg-indigo-50 rounded-full">
-                      <span className="text-[8px] font-black text-indigo-600 uppercase tracking-widest">Tiempo Medio por Pedido</span>
+                    <div className="px-4 py-2 bg-indigo-50 rounded-full">
+                      <span className="text-[11px] font-black text-indigo-600 uppercase tracking-widest">Tiempo Medio por Pedido</span>
                     </div>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr className="bg-slate-50/30">
-                          <th className="p-4 text-[8px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Operario</th>
-                          <th className="p-4 text-[8px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-center">Repartos</th>
-                          <th className="p-4 text-[8px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-center">Instalaciones</th>
-                          <th className="p-4 text-[8px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-center">Total Hoy</th>
-                          <th className="p-4 text-[8px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-center">Tiempo Medio</th>
+                          <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Operario</th>
+                          <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-center">Repartos</th>
+                          <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-center">Instalaciones</th>
+                          <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-center">Total Hoy</th>
+                          <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-center">Tiempo Medio</th>
                         </tr>
                       </thead>
                       <tbody>
                         {distriReportData.filter(d => d.registeredToday > 0).length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="p-8 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                            <td colSpan={5} className="p-12 text-center text-[12px] font-bold text-slate-400 uppercase tracking-widest">
                               No se han registrado pedidos hoy
                             </td>
                           </tr>
@@ -2267,20 +2337,20 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                                     setShowCreatorDetailModal(true);
                                   }}
                                 >
-                                  <td className="p-4 text-[11px] font-black text-slate-700 uppercase tracking-tight border-b border-slate-50">{item.name}</td>
-                                  <td className="p-4 text-center border-b border-slate-50">
-                                    <span className="text-[10px] font-bold text-slate-600">{item.registeredTodayDeliveries}</span>
+                                  <td className="p-6 text-[14px] font-black text-slate-700 uppercase tracking-tight border-b border-slate-50">{item.name}</td>
+                                  <td className="p-6 text-center border-b border-slate-50">
+                                    <span className="text-[14px] font-bold text-slate-600">{item.registeredTodayDeliveries}</span>
                                   </td>
-                                  <td className="p-4 text-center border-b border-slate-50">
-                                    <span className="text-[10px] font-bold text-slate-600">{item.registeredTodayInstallations}</span>
+                                  <td className="p-6 text-center border-b border-slate-50">
+                                    <span className="text-[14px] font-bold text-slate-600">{item.registeredTodayInstallations}</span>
                                   </td>
-                                  <td className="p-4 text-center border-b border-slate-50">
-                                    <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-black">
+                                  <td className="p-6 text-center border-b border-slate-50">
+                                    <span className="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-full text-[14px] font-black">
                                       {item.registeredToday}
                                     </span>
                                   </td>
-                                  <td className="p-4 text-center border-b border-slate-50">
-                                    <span className="text-[10px] font-black text-slate-600">
+                                  <td className="p-6 text-center border-b border-slate-50">
+                                    <span className="text-[14px] font-black text-slate-600">
                                       {avgTime} min
                                     </span>
                                   </td>
@@ -2324,13 +2394,13 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                                 </span>
                                 <div className="text-right">
                                   <span className="text-2xl font-black text-slate-800 block leading-none">{item.count}</span>
-                                  <div className="flex gap-2 mt-1 justify-end">
-                                    <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest">🚛 {item.deliveries}</span>
-                                    <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest">👷 {item.installations}</span>
+                                  <div className="flex gap-3 mt-1 justify-end">
+                                    <span className="text-[14px] font-black text-slate-600 uppercase tracking-widest">🚛 {item.deliveries}</span>
+                                    <span className="text-[14px] font-black text-slate-600 uppercase tracking-widest">👷 {item.installations}</span>
                                   </div>
                                   {item.registeredToday > 0 && (
-                                    <div className="mt-2 px-2 py-1 bg-emerald-50 rounded-lg inline-block">
-                                      <p className="text-[7px] font-black text-emerald-600 uppercase tracking-widest">Hoy: +{item.registeredToday}</p>
+                                    <div className="mt-2 px-4 py-2 bg-emerald-50 rounded-2xl inline-block border border-emerald-100/50">
+                                      <p className="text-[14px] font-black text-emerald-600 uppercase tracking-widest">Hoy: +{item.registeredToday}</p>
                                     </div>
                                   )}
                                 </div>
@@ -2508,7 +2578,7 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                     placeholder="EJ: TRASPASOS..." 
                     className="w-full bg-slate-50 border border-slate-100 rounded-xl py-2.5 px-5 font-black text-xs text-center outline-none focus:border-indigo-500 uppercase" 
                     value={taskForm.name} 
-                    onChange={e => setTaskForm({ ...taskForm, name: e.target.value })} 
+                    onChange={e => setTaskForm({ ...taskForm, name: e.target.value.toUpperCase() })} 
                   />
                 </div>
 
@@ -2518,7 +2588,7 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                     placeholder="DETALLES..." 
                     className="w-full bg-slate-50 border border-slate-100 rounded-xl py-2.5 px-5 font-black text-[10px] outline-none focus:border-indigo-500 min-h-[50px]" 
                     value={taskForm.description} 
-                    onChange={e => setTaskForm({ ...taskForm, description: e.target.value })} 
+                    onChange={e => setTaskForm({ ...taskForm, description: e.target.value.toUpperCase() })} 
                   />
                 </div>
 
@@ -2645,7 +2715,7 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                 placeholder="NOMBRE / Nº CAMIÓN" 
                 className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 font-black text-xs text-center outline-none focus:border-indigo-500 uppercase" 
                 value={truckerForm.label} 
-                onChange={e => setTruckerForm({ ...truckerForm, label: e.target.value })} 
+                onChange={e => setTruckerForm({ ...truckerForm, label: e.target.value.toUpperCase() })} 
               />
               <div className="space-y-3">
                  <button type="submit" className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-xl uppercase tracking-widest text-[10px]">Guardar Transportista</button>
@@ -2667,7 +2737,7 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                 placeholder="NOMBRE COMPLETO" 
                 className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 font-black text-xs text-center outline-none focus:border-indigo-500 uppercase" 
                 value={installerForm.label} 
-                onChange={e => setInstallerForm({ ...installerForm, label: e.target.value })} 
+                onChange={e => setInstallerForm({ ...installerForm, label: e.target.value.toUpperCase() })} 
               />
               <div className="space-y-3">
                  <button type="submit" className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-xl uppercase tracking-widest text-[10px]">Guardar Instalador</button>
@@ -2704,7 +2774,7 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                     placeholder="EJ: C-14, PDA-02..." 
                     className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-xs text-center outline-none focus:border-indigo-500 uppercase" 
                     value={machineryForm.identifier} 
-                    onChange={e => setMachineryForm({ ...machineryForm, identifier: e.target.value })} 
+                    onChange={e => setMachineryForm({ ...machineryForm, identifier: e.target.value.toUpperCase() })} 
                   />
                 </div>
               </div>
@@ -2772,7 +2842,7 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                     placeholder="DETALLES DE LA INTERVENCIÓN..." 
                     className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-xs outline-none focus:border-indigo-500 min-h-[100px]" 
                     value={maintenanceForm.description} 
-                    onChange={e => setMaintenanceForm({ ...maintenanceForm, description: e.target.value })} 
+                    onChange={e => setMaintenanceForm({ ...maintenanceForm, description: e.target.value.toUpperCase() })} 
                     required
                   />
                 </div>
@@ -2889,6 +2959,30 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                             <div key={date} className="bg-white p-4 rounded-2xl border border-emerald-100 shadow-sm">
                               <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">{new Date(date).toLocaleDateString('es-ES')}</p>
                               <p className="text-lg font-black text-emerald-600 leading-none">{count} <span className="text-[10px] text-emerald-400">pedidos</span></p>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {(() => {
+                  const creatorData = distriReportData.find(d => d.name === selectedCreator);
+                  if (!creatorData || showTodayOnly) return null;
+                  
+                  return (
+                    <div className="p-6 bg-indigo-50 rounded-[2rem] border border-indigo-100">
+                      <div className="flex items-center gap-3 mb-4">
+                        <span className="text-xl">📅</span>
+                        <h4 className="text-sm font-black text-indigo-800 uppercase tracking-tight">Desglose Diario del Periodo</h4>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                        {Object.entries(creatorData.dailyBreakdown)
+                          .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+                          .map(([date, count]) => (
+                            <div key={date} className="bg-white p-4 rounded-2xl border border-indigo-100 shadow-sm">
+                              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">{new Date(date).toLocaleDateString('es-ES')}</p>
+                              <p className="text-lg font-black text-indigo-600 leading-none">{count} <span className="text-[10px] text-indigo-400">pedidos</span></p>
                             </div>
                           ))}
                       </div>
