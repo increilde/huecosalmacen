@@ -342,8 +342,8 @@ const UserManagement: React.FC = () => {
                   </label>
                 </div>
               </div>
-              <input placeholder="NOMBRE COMPLETO" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-xs outline-none focus:border-indigo-500 transition-all uppercase" value={userForm.full_name} onChange={e => setUserForm({...userForm, full_name: e.target.value})} />
-              <input placeholder="USUARIO (EMAIL)" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-xs outline-none focus:border-indigo-500 transition-all uppercase" value={userForm.username} onChange={e => setUserForm({...userForm, username: e.target.value})} />
+              <input placeholder="NOMBRE COMPLETO" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-xs outline-none focus:border-indigo-500 transition-all uppercase" value={userForm.full_name} onChange={e => setUserForm({...userForm, full_name: e.target.value.toUpperCase()})} />
+              <input placeholder="USUARIO (EMAIL)" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-xs outline-none focus:border-indigo-500 transition-all uppercase" value={userForm.username} onChange={e => setUserForm({...userForm, username: e.target.value.toUpperCase()})} />
               <input type="text" placeholder={editingUserId ? "NUEVA CONTRASEÑA (OPCIONAL)" : "CONTRASEÑA"} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-xs outline-none focus:border-indigo-500" value={userForm.password_plain} onChange={e => setUserForm({...userForm, password_plain: e.target.value})} />
               <select className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-xs outline-none focus:border-indigo-500 transition-all uppercase" value={userForm.role} onChange={e => setUserForm({...userForm, role: e.target.value})}>
                 {roles.map(r => <option key={r.id} value={r.name}>{roleLabels[r.name] || r.name.toUpperCase()}</option>)}
@@ -394,7 +394,7 @@ const UserManagement: React.FC = () => {
             <div className="space-y-6">
               <div className="space-y-1">
                 <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2">Identificador</label>
-                <input placeholder="EJ: CARRETILLERO..." className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-xs text-center outline-none focus:border-indigo-500 uppercase" value={roleForm.name} onChange={e => setRoleForm({ ...roleForm, name: e.target.value })} />
+                <input placeholder="EJ: CARRETILLERO..." className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3.5 px-6 font-black text-xs text-center outline-none focus:border-indigo-500 uppercase" value={roleForm.name} onChange={e => setRoleForm({ ...roleForm, name: e.target.value.toUpperCase() })} />
               </div>
               <div className="space-y-2">
                 <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2 mb-2 block">Accesos al Menú</label>

@@ -401,6 +401,7 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
   const [showHistoryId, setShowHistoryId] = useState<string | null>(null);
   const [installationLogs, setInstallationLogs] = useState<InstallationLog[]>([]);
   const [showZoneModal, setShowZoneModal] = useState(false);
+  const [showUnavailableModal, setShowUnavailableModal] = useState(false);
   const [showRouteMap, setShowRouteMap] = useState(false);
   const [routeInstallerId, setRouteInstallerId] = useState<string | null>(null);
   const [pendingZoneInstallerId, setPendingZoneInstallerId] = useState<string | null>(null);
@@ -763,6 +764,24 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
     });
   };
 
+  const filteredInstallers = installers.filter(installer => {
+    const hasInstallations = installations.some(i => i.installer_id === installer.id);
+    const matchesSearch = installer.full_name.toLowerCase().includes(searchTerm.toLowerCase());
+    const dailyAssignment = agendaAssignments.find(a => a.installer_id === installer.id);
+    const effectiveZone = dailyAssignment ? dailyAssignment.zone : (installer.zone || 'SIN ZONA');
+    
+    if (effectiveZone === 'NO DISPONIBLE') return false;
+
+    const matchesZone = activeZone === 'TODOS' || (activeZone === 'SIN ZONA' ? (effectiveZone === 'SIN ZONA' || effectiveZone === '') : effectiveZone === activeZone);
+    return (hasInstallations || !!dailyAssignment) && matchesSearch && matchesZone;
+  });
+
+  const unavailableInstallers = installers.filter(installer => {
+    const dailyAssignment = agendaAssignments.find(a => a.installer_id === installer.id);
+    const effectiveZone = dailyAssignment ? dailyAssignment.zone : (installer.zone || 'SIN ZONA');
+    return effectiveZone === 'NO DISPONIBLE';
+  });
+
   const handleCalculateRoute = (installerId: string) => {
     setRouteInstallerId(installerId);
     setShowRouteMap(true);
@@ -1046,7 +1065,7 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
               type="text" 
               placeholder="Instalador..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => setSearchTerm(e.target.value.toUpperCase())}
               className="bg-transparent text-[10px] font-bold text-slate-700 outline-none w-24 md:w-32"
             />
           </div>
@@ -1210,7 +1229,7 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
                     <input 
                       type="text" 
                       value={postalCodeLocality} 
-                      onChange={e => setPostalCodeLocality(e.target.value)} 
+                      onChange={e => setPostalCodeLocality(e.target.value.toUpperCase())} 
                       placeholder="Ej: Madrid" 
                       className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 text-sm font-bold outline-none focus:border-indigo-500 transition-all"
                       tabIndex={2.5}
@@ -1229,7 +1248,7 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
                 <input 
                   type="text" 
                   value={newInstallation.address || ''} 
-                  onChange={e => setNewInstallation(prev => ({ ...prev, address: e.target.value }))} 
+                  onChange={e => setNewInstallation(prev => ({ ...prev, address: e.target.value.toUpperCase() }))} 
                   placeholder="Ej: Calle Mayor, 1" 
                   className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 text-sm font-bold outline-none focus:border-indigo-500 transition-all"
                   tabIndex={2.7}
@@ -1241,7 +1260,7 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
                 <input 
                   type="text" 
                   value={newInstallation.order_number || ''} 
-                  onChange={e => setNewInstallation(prev => ({ ...prev, order_number: e.target.value }))} 
+                  onChange={e => setNewInstallation(prev => ({ ...prev, order_number: e.target.value.toUpperCase() }))} 
                   placeholder="Ej: 987654" 
                   className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 text-sm font-bold outline-none focus:border-indigo-500 transition-all"
                   tabIndex={3}
@@ -1269,7 +1288,7 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
                 <input 
                   type="text" 
                   value={newInstallation.merchandise_type || ''} 
-                  onChange={e => setNewInstallation(prev => ({ ...prev, merchandise_type: e.target.value }))} 
+                  onChange={e => setNewInstallation(prev => ({ ...prev, merchandise_type: e.target.value.toUpperCase() }))} 
                   placeholder="Ej: Aire Acondicionado / Electrodoméstico" 
                   className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 text-sm font-bold outline-none focus:border-indigo-500 transition-all"
                   tabIndex={4}
@@ -1312,7 +1331,7 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Comentarios / Observaciones</label>
                 <textarea 
                   value={newInstallation.comments || ''} 
-                  onChange={e => setNewInstallation(prev => ({ ...prev, comments: e.target.value }))} 
+                  onChange={e => setNewInstallation(prev => ({ ...prev, comments: e.target.value.toUpperCase() }))} 
                   placeholder="Notas para el instalador..." 
                   rows={4} 
                   className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 text-sm font-bold outline-none focus:border-indigo-500 transition-all resize-none"
@@ -1353,49 +1372,91 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
           <div className="flex flex-col gap-6 w-full max-w-[1800px] mx-auto">
           {/* Tabs de Zonas */}
           <div className="flex flex-col gap-4 mb-2 tabs-container">
-            <div className="flex flex-wrap gap-2 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm">
-              {['TODOS', 'SIN ZONA', ...ZONES].map(zone => (
+            <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm">
+              <div className="flex flex-wrap gap-2">
+                {['TODOS', 'SIN ZONA', ...ZONES.filter(z => z !== 'NO DISPONIBLE')].map(zone => (
+                  <button
+                    key={zone}
+                    onClick={() => setActiveZone(zone)}
+                    className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                      activeZone === zone 
+                        ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' 
+                        : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
+                    }`}
+                  >
+                    {zone}
+                  </button>
+                ))}
+              </div>
+
+              {unavailableInstallers.length > 0 && (
                 <button
-                  key={zone}
-                  onClick={() => setActiveZone(zone)}
-                  className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                    activeZone === zone 
-                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' 
-                      : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
-                  }`}
+                  onClick={() => setShowUnavailableModal(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 rounded-xl border border-rose-100 hover:bg-rose-100 transition-all group"
                 >
-                  {zone}
+                  <span className="text-[10px] font-black uppercase tracking-widest">No Disponibles</span>
+                  <div className="bg-rose-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full group-hover:scale-110 transition-transform">
+                    {unavailableInstallers.length}
+                  </div>
                 </button>
-              ))}
+              )}
             </div>
           </div>
+
+          {/* Modal de Instaladores No Disponibles */}
+          {showUnavailableModal && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+              <div className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                <div className="bg-rose-600 px-8 py-6 flex justify-between items-center">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">🚫</span>
+                    <h3 className="text-white font-black uppercase tracking-widest text-sm">Instaladores No Disponibles</h3>
+                  </div>
+                  <button onClick={() => setShowUnavailableModal(false)} className="text-white/60 hover:text-white transition-colors">
+                    <X size={24} />
+                  </button>
+                </div>
+                <div className="p-8">
+                  <div className="flex flex-col gap-3">
+                    {unavailableInstallers.length > 0 ? (
+                      unavailableInstallers.map(installer => (
+                        <div key={installer.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                          <div className="flex items-center gap-3">
+                            <User size={18} className="text-rose-500" />
+                            <span className="text-sm font-bold text-slate-700 uppercase">{installer.full_name}</span>
+                          </div>
+                          <span className="text-[9px] font-black text-rose-500 bg-rose-50 px-2 py-1 rounded-lg uppercase tracking-widest border border-rose-100">
+                            NO DISPONIBLE
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-center text-slate-400 text-xs font-bold py-4 uppercase tracking-widest">No hay instaladores marcados como no disponibles</p>
+                    )}
+                  </div>
+                  <button 
+                    onClick={() => setShowUnavailableModal(false)}
+                    className="w-full mt-8 py-4 bg-slate-900 text-white font-black rounded-2xl uppercase tracking-widest text-xs hover:bg-slate-800 transition-all active:scale-95 shadow-lg shadow-slate-200"
+                  >
+                    CERRAR
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {loading ? (
             <div className="py-20 text-center animate-pulse">
               <p className="text-[11px] font-black text-slate-300 uppercase tracking-widest">Cargando agenda de instalaciones...</p>
             </div>
-          ) : installers.filter(installer => {
-              const hasInstallations = installations.some(i => i.installer_id === installer.id);
-              const matchesSearch = installer.full_name.toLowerCase().includes(searchTerm.toLowerCase());
-              const dailyAssignment = agendaAssignments.find(a => a.installer_id === installer.id);
-              const effectiveZone = dailyAssignment ? dailyAssignment.zone : (installer.zone || 'SIN ZONA');
-              const matchesZone = activeZone === 'TODOS' || (activeZone === 'SIN ZONA' ? (effectiveZone === 'SIN ZONA' || effectiveZone === '') : effectiveZone === activeZone);
-              return (hasInstallations || !!dailyAssignment) && matchesSearch && matchesZone;
-            }).length === 0 ? (
+          ) : filteredInstallers.length === 0 ? (
             <div className="bg-white rounded-[3rem] p-20 text-center border border-slate-100 w-full">
               <p className="text-4xl mb-4">👷</p>
               <p className="text-[11px] font-black text-slate-300 uppercase tracking-widest">
                 {searchTerm ? 'No se encontraron instaladores con ese nombre' : 'No hay instalaciones ni instaladores asignados para esta zona/fecha'}
               </p>
             </div>
-          ) : installers.filter(installer => {
-              const hasInstallations = installations.some(i => i.installer_id === installer.id);
-              const matchesSearch = installer.full_name.toLowerCase().includes(searchTerm.toLowerCase());
-              const dailyAssignment = agendaAssignments.find(a => a.installer_id === installer.id);
-              const effectiveZone = dailyAssignment ? dailyAssignment.zone : (installer.zone || 'SIN ZONA');
-              const matchesZone = activeZone === 'TODOS' || (activeZone === 'SIN ZONA' ? (effectiveZone === 'SIN ZONA' || effectiveZone === '') : effectiveZone === activeZone);
-              return (hasInstallations || !!dailyAssignment) && matchesSearch && matchesZone;
-            }).map(installer => {
+          ) : filteredInstallers.map(installer => {
             const installerInstallations = sortInstallations(installations.filter(i => i.installer_id === installer.id));
             
             const dailyAssignment = agendaAssignments.find(a => a.installer_id === installer.id);

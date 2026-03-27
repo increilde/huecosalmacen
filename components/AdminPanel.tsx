@@ -43,14 +43,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   const [tasksView, setTasksView] = useState<'report' | 'config'>('report');
   const [loading, setLoading] = useState(true);
   
-  const todayLocal = new Date().toLocaleDateString('en-CA');
-  const startOfMonthLocal = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`;
-  const endOfYearLocal = `${new Date().getFullYear()}-12-31`;
+  const now = new Date();
+  const todayLocal = now.toLocaleDateString('en-CA');
+  const startOfMonthLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const endOfMonthLocal = lastDayOfMonth.toLocaleDateString('en-CA');
+  const endOfYearLocal = `${now.getFullYear()}-12-31`;
   
   // Periodo seleccionado - Por defecto hoy
   const [scope, setScope] = useState<ReportScope>('today');
   const [dateFrom, setDateFrom] = useState(todayLocal); 
-  const [dateTo, setDateTo] = useState(todayLocal);
+  const [dateTo, setDateTo] = useState(endOfMonthLocal);
   const [selectedOperator, setSelectedOperator] = useState<string | null>(null);
   const [cartSearch, setCartSearch] = useState('');
 
@@ -82,14 +85,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
 
   // Estados para Filtros de Historial de Tareas de Tiempo
   const [taskLogDateFrom, setTaskLogDateFrom] = useState(todayLocal);
-  const [taskLogDateTo, setTaskLogDateTo] = useState(todayLocal);
+  const [taskLogDateTo, setTaskLogDateTo] = useState(endOfMonthLocal);
   const [taskLogOperator, setTaskLogOperator] = useState<string>('todos');
   const [taskLogs, setTaskLogs] = useState<TaskLog[]>([]);
   const [loadingTaskLogs, setLoadingTaskLogs] = useState(false);
 
   // Estados para Informe de Distribución
-  const [distriReportDateFrom, setDistriReportDateFrom] = useState(startOfMonthLocal);
-  const [distriReportDateTo, setDistriReportDateTo] = useState(endOfYearLocal);
+  const [distriReportDateFrom, setDistriReportDateFrom] = useState(todayLocal);
+  const [distriReportDateTo, setDistriReportDateTo] = useState(endOfMonthLocal);
   const [distriReportOperator, setDistriReportOperator] = useState<string>('todos');
   const [distriReportData, setDistriReportData] = useState<{ 
     id: string, 

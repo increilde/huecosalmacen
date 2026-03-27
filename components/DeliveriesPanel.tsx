@@ -424,6 +424,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
   const [showHistoryId, setShowHistoryId] = useState<string | null>(null);
   const [deliveryLogs, setDeliveryLogs] = useState<DeliveryLog[]>([]);
   const [showZoneModal, setShowZoneModal] = useState(false);
+  const [showUnavailableModal, setShowUnavailableModal] = useState(false);
   const [showRouteMap, setShowRouteMap] = useState(false);
   const [routeTruckId, setRouteTruckId] = useState<string | null>(null);
   const [pendingZoneTruckId, setPendingZoneTruckId] = useState<string | null>(null);
@@ -450,6 +451,27 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
     setConfirmModalConfig({ title, message, onConfirm });
     setShowConfirmModal(true);
   };
+
+  const filteredTrucks = trucks.filter(truck => {
+    const hasDeliveries = deliveries.some(d => d.truck_id === truck.id);
+    const matchesSearch = truck.label.toLowerCase().includes(searchTerm.toLowerCase());
+    const dailyAssignment = agendaAssignments.find(a => a.truck_id === truck.id);
+    const effectiveZone = dailyAssignment ? dailyAssignment.zone : (truck.zone || 'SIN ZONA');
+    
+    if (effectiveZone === 'NO DISPONIBLE') return false;
+
+    const matchesZone = activeZone === 'TODOS' || 
+                      (activeZone === 'SIN ZONA' 
+                        ? (effectiveZone === 'SIN ZONA' || effectiveZone === '') 
+                        : effectiveZone === activeZone);
+    return (hasDeliveries || !!dailyAssignment) && matchesSearch && matchesZone;
+  });
+
+  const unavailableTrucks = trucks.filter(truck => {
+    const dailyAssignment = agendaAssignments.find(a => a.truck_id === truck.id);
+    const effectiveZone = dailyAssignment ? dailyAssignment.zone : (truck.zone || 'SIN ZONA');
+    return effectiveZone === 'NO DISPONIBLE';
+  });
 
   useEffect(() => {
     fetchTrucks();
@@ -1137,7 +1159,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
               type="text" 
               placeholder="Camión..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => setSearchTerm(e.target.value.toUpperCase())}
               className="bg-transparent text-[10px] font-bold text-slate-700 outline-none w-24 md:w-32"
             />
           </div>
@@ -1348,7 +1370,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                     <input 
                       type="text" 
                       value={postalCodeLocality}
-                      onChange={e => setPostalCodeLocality(e.target.value)}
+                      onChange={e => setPostalCodeLocality(e.target.value.toUpperCase())}
                       placeholder="Ej: Madrid"
                       className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 text-sm font-bold outline-none focus:border-indigo-500 transition-all"
                       tabIndex={2.5}
@@ -1372,7 +1394,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                 <input 
                   type="text" 
                   value={newDelivery.address || ''}
-                  onChange={e => setNewDelivery(prev => ({ ...prev, address: e.target.value }))}
+                  onChange={e => setNewDelivery(prev => ({ ...prev, address: e.target.value.toUpperCase() }))}
                   placeholder="Ej: Calle Mayor, 1"
                   className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 text-sm font-bold outline-none focus:border-indigo-500 transition-all"
                   tabIndex={2.7}
@@ -1384,7 +1406,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                 <input 
                   type="text" 
                   value={newDelivery.order_number || ''}
-                  onChange={e => setNewDelivery(prev => ({ ...prev, order_number: e.target.value }))}
+                  onChange={e => setNewDelivery(prev => ({ ...prev, order_number: e.target.value.toUpperCase() }))}
                   placeholder="Ej: 987654"
                   className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 text-sm font-bold outline-none focus:border-indigo-500 transition-all"
                   tabIndex={3}
@@ -1396,7 +1418,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                 <input 
                   type="text" 
                   value={newDelivery.merchandise_type || ''}
-                  onChange={e => setNewDelivery(prev => ({ ...prev, merchandise_type: e.target.value }))}
+                  onChange={e => setNewDelivery(prev => ({ ...prev, merchandise_type: e.target.value.toUpperCase() }))}
                   placeholder="Ej: Paletizado / Paquetería"
                   className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 text-sm font-bold outline-none focus:border-indigo-500 transition-all"
                   tabIndex={4}
@@ -1443,7 +1465,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Comentarios / Observaciones</label>
                 <textarea 
                   value={newDelivery.comments || ''}
-                  onChange={e => setNewDelivery(prev => ({ ...prev, comments: e.target.value }))}
+                  onChange={e => setNewDelivery(prev => ({ ...prev, comments: e.target.value.toUpperCase() }))}
                   placeholder="Notas para el transportista..."
                   rows={4}
                   className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 text-sm font-bold outline-none focus:border-indigo-500 transition-all resize-none"
@@ -1491,22 +1513,78 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
 
           {/* Tabs de Zonas */}
           <div className="flex flex-col gap-4 mb-2 tabs-container">
-            <div className="flex flex-wrap gap-2 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm">
-              {['TODOS', 'SIN ZONA', ...ZONES].map(zone => (
+            <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm">
+              <div className="flex flex-wrap gap-2">
+                {['TODOS', 'SIN ZONA', ...ZONES.filter(z => z !== 'NO DISPONIBLE')].map(zone => (
+                  <button
+                    key={zone}
+                    onClick={() => setActiveZone(zone)}
+                    className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                      activeZone === zone 
+                        ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' 
+                        : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
+                    }`}
+                  >
+                    {zone}
+                  </button>
+                ))}
+              </div>
+
+              {unavailableTrucks.length > 0 && (
                 <button
-                  key={zone}
-                  onClick={() => setActiveZone(zone)}
-                  className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                    activeZone === zone 
-                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' 
-                      : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
-                  }`}
+                  onClick={() => setShowUnavailableModal(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 rounded-xl border border-rose-100 hover:bg-rose-100 transition-all group"
                 >
-                  {zone}
+                  <span className="text-[10px] font-black uppercase tracking-widest">No Disponibles</span>
+                  <div className="bg-rose-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full group-hover:scale-110 transition-transform">
+                    {unavailableTrucks.length}
+                  </div>
                 </button>
-              ))}
+              )}
             </div>
           </div>
+
+          {/* Modal de Camiones No Disponibles */}
+          {showUnavailableModal && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+              <div className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                <div className="bg-rose-600 px-8 py-6 flex justify-between items-center">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">🚫</span>
+                    <h3 className="text-white font-black uppercase tracking-widest text-sm">Camiones No Disponibles</h3>
+                  </div>
+                  <button onClick={() => setShowUnavailableModal(false)} className="text-white/60 hover:text-white transition-colors">
+                    <X size={24} />
+                  </button>
+                </div>
+                <div className="p-8">
+                  <div className="flex flex-col gap-3">
+                    {unavailableTrucks.length > 0 ? (
+                      unavailableTrucks.map(truck => (
+                        <div key={truck.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                          <div className="flex items-center gap-3">
+                            <Truck size={18} className="text-rose-500" />
+                            <span className="text-sm font-bold text-slate-700 uppercase">{truck.label}</span>
+                          </div>
+                          <span className="text-[9px] font-black text-rose-500 bg-rose-50 px-2 py-1 rounded-lg uppercase tracking-widest border border-rose-100">
+                            NO DISPONIBLE
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-center text-slate-400 text-xs font-bold py-4 uppercase tracking-widest">No hay camiones marcados como no disponibles</p>
+                    )}
+                  </div>
+                  <button 
+                    onClick={() => setShowUnavailableModal(false)}
+                    className="w-full mt-8 py-4 bg-slate-900 text-white font-black rounded-2xl uppercase tracking-widest text-xs hover:bg-slate-800 transition-all active:scale-95 shadow-lg shadow-slate-200"
+                  >
+                    CERRAR
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {loading ? (
             <div className="py-20 text-center animate-pulse">
@@ -1520,17 +1598,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
               onDragEnd={handleDragEnd}
             >
               <div className="flex flex-col gap-6">
-                {trucks.filter(truck => {
-                  const hasDeliveries = deliveries.some(d => d.truck_id === truck.id);
-                  const matchesSearch = truck.label.toLowerCase().includes(searchTerm.toLowerCase());
-                  const dailyAssignment = agendaAssignments.find(a => a.truck_id === truck.id);
-                  const effectiveZone = dailyAssignment ? dailyAssignment.zone : (truck.zone || 'SIN ZONA');
-                  const matchesZone = activeZone === 'TODOS' || 
-                                    (activeZone === 'SIN ZONA' 
-                                      ? (effectiveZone === 'SIN ZONA' || effectiveZone === '') 
-                                      : effectiveZone === activeZone);
-                  return (hasDeliveries || !!dailyAssignment) && matchesSearch && matchesZone;
-                }).map(truck => {
+                {filteredTrucks.map(truck => {
                   const truckDeliveries = deliveries
                     .filter(d => d.truck_id === truck.id)
                     .sort((a, b) => {
