@@ -1,9 +1,20 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { WarehouseSlot, UserProfile, Trucker, Installer, UserRole, Machinery, Task, Role, MachineryMaintenance } from '../types';
 import UserManagement from './UserManagement';
 import CustomDatePicker from './CustomDatePicker';
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  Legend, 
+  ResponsiveContainer,
+  Cell
+} from 'recharts';
 
 interface MovementLog {
   id: string;
@@ -52,7 +63,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   
   // Periodo seleccionado - Por defecto hoy
   const [scope, setScope] = useState<ReportScope>('today');
-  const [dateFrom, setDateFrom] = useState(todayLocal); 
+  const [dateFrom, setDateFrom] = useState(startOfMonthLocal); 
   const [dateTo, setDateTo] = useState(endOfMonthLocal);
   const [selectedOperator, setSelectedOperator] = useState<string | null>(null);
   const [cartSearch, setCartSearch] = useState('');
@@ -84,14 +95,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   });
 
   // Estados para Filtros de Historial de Tareas de Tiempo
-  const [taskLogDateFrom, setTaskLogDateFrom] = useState(todayLocal);
+  const [taskLogDateFrom, setTaskLogDateFrom] = useState(startOfMonthLocal);
   const [taskLogDateTo, setTaskLogDateTo] = useState(endOfMonthLocal);
   const [taskLogOperator, setTaskLogOperator] = useState<string>('todos');
   const [taskLogs, setTaskLogs] = useState<TaskLog[]>([]);
   const [loadingTaskLogs, setLoadingTaskLogs] = useState(false);
 
   // Estados para Informe de Distribución
-  const [distriReportDateFrom, setDistriReportDateFrom] = useState(todayLocal);
+  const [distriReportDateFrom, setDistriReportDateFrom] = useState(startOfMonthLocal);
   const [distriReportDateTo, setDistriReportDateTo] = useState(endOfMonthLocal);
   const [distriReportOperator, setDistriReportOperator] = useState<string>('todos');
   const [distriReportData, setDistriReportData] = useState<{ 
@@ -337,6 +348,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   }, [taskLogDateFrom, taskLogDateTo, taskLogOperator]);
 
   const fetchDistriReport = React.useCallback(async () => {
+    if (!distriReportDateFrom || !distriReportDateTo) return;
     setLoadingDistriReport(true);
     try {
       // 1. Fetch orders SCHEDULED in range
@@ -355,8 +367,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
       if (sInstErr) throw sInstErr;
 
       // 2. Fetch orders REGISTERED in range
-      const startTimestamp = new Date(distriReportDateFrom + 'T00:00:00Z').toISOString();
-      const endTimestamp = new Date(distriReportDateTo + 'T23:59:59Z').toISOString();
+      const startTimestamp = `${distriReportDateFrom}T00:00:00Z`;
+      const endTimestamp = `${distriReportDateTo}T23:59:59Z`;
 
       const { data: registeredDeliveries, error: rDelErr } = await supabase
         .from('deliveries')
@@ -410,7 +422,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
         registeredDailyBreakdown: Record<string, number>
       }>();
 
-      const today = new Date().toLocaleDateString('en-CA');
+      const today = new Date().toISOString().split('T')[0];
 
       // Process Scheduled Records
       scheduledRecords.forEach(r => {
@@ -449,7 +461,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
         current.registeredCount += 1;
         
         // Use created_at for registered breakdown
-        const regDate = new Date(r.created_at).toLocaleDateString('en-CA');
+        const regDate = r.created_at.split('T')[0];
         current.registeredDailyBreakdown[regDate] = (current.registeredDailyBreakdown[regDate] || 0) + 1;
 
         // Check if registered today
@@ -1049,6 +1061,37 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
     if (!coord) return null;
     return { x: coord.x_percent, y: coord.y_percent, isGPS: false };
   };
+
+  const distriChartData = useMemo(() => {
+    if (distriReportData.length === 0) return [];
+
+    const dates: string[] = [];
+    let current = new Date(distriReportDateFrom + 'T00:00:00');
+    const end = new Date(distriReportDateTo + 'T00:00:00');
+    
+    while (current <= end) {
+      const year = current.getFullYear();
+      const month = String(current.getMonth() + 1).padStart(2, '0');
+      const day = String(current.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
+      
+      dates.push(dateStr);
+      current.setDate(current.getDate() + 1);
+    }
+
+    return dates.map(date => {
+      const entry: any = { 
+        date,
+        displayDate: date.split('-').reverse().slice(0, 2).join('/') // DD/MM
+      };
+      distriReportData.forEach(operator => {
+        entry[operator.name] = operator.registeredDailyBreakdown[date] || 0;
+      });
+      return entry;
+    });
+  }, [distriReportData, distriReportDateFrom, distriReportDateTo]);
+
+  const chartColors = ['#6366f1', '#ec4899', '#8b5cf6', '#10b981', '#f59e0b', '#3b82f6', '#ef4444', '#06b6d4', '#14b8a6', '#f43f5e'];
 
   return (
     <div className="space-y-8 animate-fade-in pb-20">
@@ -2424,6 +2467,79 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                         </div>
                       ))
                     )}
+                  </div>
+                )}
+
+                {!loadingDistriReport && distriReportData.length > 0 && (
+                  <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-xl animate-fade-in">
+                    <div className="flex items-center justify-between mb-8">
+                      <div>
+                        <h4 className="text-[14px] font-black text-slate-400 uppercase tracking-[0.2em]">Distribución Diaria por Operario</h4>
+                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-1">Registros realizados cada día del periodo seleccionado</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full bg-indigo-500"></div>
+                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Registros Totales</span>
+                      </div>
+                    </div>
+                    
+                    <div className="h-[400px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={distriChartData}
+                          margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                          <XAxis 
+                            dataKey="displayDate" 
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }}
+                            dy={10}
+                          />
+                          <YAxis 
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }}
+                          />
+                          <Tooltip 
+                            cursor={{ fill: '#f8fafc' }}
+                            contentStyle={{ 
+                              borderRadius: '1.5rem', 
+                              border: 'none', 
+                              boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)',
+                              padding: '1.5rem',
+                              textTransform: 'uppercase',
+                              fontSize: '10px',
+                              fontWeight: '900',
+                              letterSpacing: '0.05em'
+                            }}
+                          />
+                          <Legend 
+                            verticalAlign="top" 
+                            align="right"
+                            iconType="circle"
+                            wrapperStyle={{ 
+                              paddingBottom: '2rem',
+                              fontSize: '10px',
+                              fontWeight: '900',
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.05em'
+                            }}
+                          />
+                          {distriReportData.map((operator, index) => (
+                            <Bar 
+                              key={operator.name} 
+                              dataKey={operator.name} 
+                              name={operator.name}
+                              fill={chartColors[index % chartColors.length]} 
+                              radius={[6, 6, 0, 0]}
+                              barSize={distriReportData.length > 5 ? 15 : 30}
+                            />
+                          ))}
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
                   </div>
                 )}
               </div>
