@@ -260,3 +260,12 @@ export interface InventoryItem {
   quantity: number;
   created_at: string;
 }
+
+export interface TheoreticalStock {
+  id: string;
+  item_code: string;
+  slot_code: string;
+  quantity: number;
+  description?: string;
+  created_at: string;
+}

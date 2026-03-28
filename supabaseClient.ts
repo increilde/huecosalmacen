@@ -218,4 +218,14 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  * -- Habilitar Realtime para Mensajería
  * ALTER PUBLICATION supabase_realtime ADD TABLE messages;
  * ALTER PUBLICATION supabase_realtime ADD TABLE conversations;
+ * 
+ * -- 14. Stock Teórico (Inventario)
+ * CREATE TABLE IF NOT EXISTS theoretical_stock (
+ *     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+ *     item_code TEXT NOT NULL,
+ *     description TEXT,
+ *     slot_code TEXT NOT NULL,
+ *     quantity NUMERIC DEFAULT 0,
+ *     created_at TIMESTAMPTZ DEFAULT now()
+ * );
  */

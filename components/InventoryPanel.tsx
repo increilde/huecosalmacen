@@ -11,6 +11,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
   const [step, setStep] = useState<'location' | 'items'>('location');
   const [location, setLocation] = useState('');
   const [items, setItems] = useState<{ code: string, quantity: number }[]>([]);
+  const [activeReadingId, setActiveReadingId] = useState<string | null>(null);
   const [currentItemCode, setCurrentItemCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ text: string, type: 'success' | 'error' | 'info' } | null>(null);
@@ -19,8 +20,13 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
   const [pendingReadings, setPendingReadings] = useState<(InventoryReading & { items: InventoryItem[] })[]>([]);
   const [completedReadings, setCompletedReadings] = useState<(InventoryReading & { items: InventoryItem[] })[]>([]);
   const [missingSlots, setMissingSlots] = useState<WarehouseSlot[]>([]);
-  const [adminTab, setAdminTab] = useState<'pending' | 'completed' | 'missing'>('pending');
+  const [allTheoreticalStock, setAllTheoreticalStock] = useState<any[]>([]);
+  const [adminTab, setAdminTab] = useState<'pending' | 'completed' | 'missing' | 'theoretical'>('pending');
   const [adminSearch, setAdminSearch] = useState('');
+  const [theoreticalItems, setTheoreticalItems] = useState<{ item_code: string, quantity: number }[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [csvPreviewData, setCsvPreviewData] = useState<any[]>([]);
+  const [showCsvPreview, setShowCsvPreview] = useState(false);
   
   const [showCapacityModal, setShowCapacityModal] = useState(false);
   const [showSizeModal, setShowSizeModal] = useState(false);
@@ -71,6 +77,14 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
       const missing = (allSlots || []).filter(s => !readSlotCodes.has(s.code));
       setMissingSlots(missing);
 
+      // 3. Fetch All Theoretical Stock
+      const { data: theoretical, error: theoreticalError } = await supabase
+        .from('theoretical_stock')
+        .select('*');
+      
+      if (theoreticalError) throw theoreticalError;
+      setAllTheoreticalStock(theoretical || []);
+
     } catch (err: any) {
       console.error('Error fetching admin data:', err.message);
     } finally {
@@ -98,18 +112,42 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
 
       // Check if already read (pending or completed today)
       const today = new Date().toISOString().split('T')[0];
+      
+      // Fetch Theoretical Stock for this slot
+      const { data: tStock, error: tError } = await supabase
+        .from('theoretical_stock')
+        .select('item_code, quantity, description')
+        .eq('slot_code', location.toUpperCase());
+      
+      if (!tError && tStock) {
+        setTheoreticalItems(tStock);
+      } else {
+        setTheoreticalItems([]);
+      }
+
       const { data: existing, error: existingError } = await supabase
         .from('inventory_readings')
-        .select('*')
+        .select('*, items:inventory_items(*)')
         .eq('slot_code', location.toUpperCase())
         .gte('created_at', `${today}T00:00:00`)
         .order('created_at', { ascending: false })
         .limit(1);
 
       if (existing && existing.length > 0) {
-        setMessage({ text: `ESTA UBICACIÓN YA HA SIDO LEÍDA HOY (${existing[0].status.toUpperCase()})`, type: 'info' });
-        setLocation('');
-        return;
+        const lastReading = existing[0];
+        if (lastReading.status === 'completed') {
+          setMessage({ text: `ESTA UBICACIÓN YA HA SIDO VALIDADA HOY`, type: 'info' });
+          setLocation('');
+          return;
+        } else {
+          // If pending, load the items and the ID so we can update it
+          setItems(lastReading.items.map((i: any) => ({ code: i.item_code, quantity: i.quantity })));
+          setActiveReadingId(lastReading.id);
+          setCapacity(lastReading.capacity_percent || 100);
+          setMessage({ text: `CARGANDO LECTURA PENDIENTE DE VALIDAR`, type: 'info' });
+        }
+      } else {
+        setActiveReadingId(null);
       }
 
       // Ask for size if not set
@@ -204,24 +242,50 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
   const saveReading = async () => {
     setLoading(true);
     try {
-      // 1. Create reading
-      const { data: reading, error: readingError } = await supabase
-        .from('inventory_readings')
-        .insert([{
-          slot_code: location.toUpperCase(),
-          operator_email: user.email,
-          operator_name: user.full_name,
-          status: 'pending',
-          capacity_percent: capacity
-        }])
-        .select()
-        .single();
+      let readingId = activeReadingId;
 
-      if (readingError) throw readingError;
+      if (readingId) {
+        // 1. Update existing reading
+        const { error: updateError } = await supabase
+          .from('inventory_readings')
+          .update({
+            capacity_percent: capacity,
+            operator_email: user.email,
+            operator_name: user.full_name,
+            created_at: new Date().toISOString() // Update timestamp to show it was touched
+          })
+          .eq('id', readingId);
 
-      // 2. Create items
+        if (updateError) throw updateError;
+
+        // 2. Delete old items
+        const { error: deleteError } = await supabase
+          .from('inventory_items')
+          .delete()
+          .eq('reading_id', readingId);
+
+        if (deleteError) throw deleteError;
+      } else {
+        // 1. Create new reading
+        const { data: reading, error: readingError } = await supabase
+          .from('inventory_readings')
+          .insert([{
+            slot_code: location.toUpperCase(),
+            operator_email: user.email,
+            operator_name: user.full_name,
+            status: 'pending',
+            capacity_percent: capacity
+          }])
+          .select()
+          .single();
+
+        if (readingError) throw readingError;
+        readingId = reading.id;
+      }
+
+      // 3. Create/Insert items
       const itemsToInsert = items.map(i => ({
-        reading_id: reading.id,
+        reading_id: readingId,
         item_code: i.code,
         quantity: i.quantity
       }));
@@ -262,6 +326,8 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
     setStep('location');
     setLocation('');
     setItems([]);
+    setTheoreticalItems([]);
+    setActiveReadingId(null);
     setCurrentItemCode('');
     setCapacity(100);
   };
@@ -284,6 +350,130 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
       alert('Error: ' + err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCSVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    setMessage({ text: 'PROCESANDO CSV...', type: 'info' });
+
+    try {
+      const text = await file.text();
+      const lines = text.split(/\r?\n/);
+      
+      // Use a map to group by slot_code + item_code to get totals
+      const groupedData = new Map<string, any>();
+
+      if (lines.length < 2) {
+        throw new Error('El archivo está vacío o no tiene suficientes líneas');
+      }
+
+      const separator = ';';
+
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        const columns: string[] = [];
+        let currentField = '';
+        let insideQuotes = false;
+        
+        for (let j = 0; j < line.length; j++) {
+          const char = line[j];
+          if (char === '"') {
+            insideQuotes = !insideQuotes;
+          } else if (char === separator && !insideQuotes) {
+            columns.push(currentField.trim().replace(/^["']|["']$/g, ''));
+            currentField = '';
+          } else {
+            currentField += char;
+          }
+        }
+        columns.push(currentField.trim().replace(/^["']|["']$/g, ''));
+        
+        if (columns.length < 14) continue;
+
+        let itemCodeRaw = columns[7] || ''; 
+        const description = columns[8] || ''; 
+        const slotCode = (columns[11] || '').toUpperCase(); 
+        const qtyRaw = columns[13] || '0'; 
+        const qty = parseFloat(qtyRaw.replace(',', '.') || '0');
+
+        if (itemCodeRaw && slotCode) {
+          if (itemCodeRaw.toLowerCase().includes('e') && /^-?\d*\.?\d+e[+-]?\d+$/i.test(itemCodeRaw)) {
+            try {
+              const num = Number(itemCodeRaw.replace(',', '.'));
+              if (!isNaN(num)) {
+                itemCodeRaw = num.toLocaleString('fullwide', { useGrouping: false });
+              }
+            } catch (e) {
+              console.error('Error parsing scientific notation:', e);
+            }
+          }
+
+          const numericCode = itemCodeRaw.replace(/\D/g, '');
+          if (numericCode) {
+            const finalItemCode = numericCode.padStart(14, '0');
+            const key = `${slotCode}|${finalItemCode}`;
+            
+            if (groupedData.has(key)) {
+              const existing = groupedData.get(key);
+              existing.quantity += qty;
+            } else {
+              groupedData.set(key, {
+                item_code: finalItemCode,
+                description: description,
+                slot_code: slotCode,
+                quantity: qty
+              });
+            }
+          }
+        }
+      }
+
+      const dataToInsert = Array.from(groupedData.values());
+
+      if (dataToInsert.length === 0) {
+        throw new Error('No se encontraron datos válidos. Verifica que el archivo tenga al menos 14 columnas.');
+      }
+
+      setCsvPreviewData(dataToInsert);
+      setShowCsvPreview(true);
+      setMessage(null);
+    } catch (err: any) {
+      console.error('CSV Error:', err);
+      setMessage({ text: 'ERROR AL CARGAR CSV: ' + err.message, type: 'error' });
+    } finally {
+      setUploading(false);
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const confirmCSVUpload = async () => {
+    setUploading(true);
+    setMessage({ text: 'GUARDANDO DATOS EN BASE DE DATOS...', type: 'info' });
+    try {
+      // Clear old stock
+      const { error: deleteError } = await supabase.from('theoretical_stock').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      if (deleteError) throw deleteError;
+
+      // Insert in chunks
+      for (let i = 0; i < csvPreviewData.length; i += 1000) {
+        const chunk = csvPreviewData.slice(i, i + 1000);
+        const { error: insertError } = await supabase.from('theoretical_stock').insert(chunk);
+        if (insertError) throw insertError;
+      }
+
+      setMessage({ text: `STOCK TEÓRICO CARGADO: ${csvPreviewData.length} REGISTROS`, type: 'success' });
+      setShowCsvPreview(false);
+      setCsvPreviewData([]);
+    } catch (err: any) {
+      setMessage({ text: 'ERROR AL GUARDAR EN BD: ' + err.message, type: 'error' });
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -347,12 +537,22 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
             </div>
           ) : (
             <div className="space-y-6">
-              <div className="bg-indigo-600 p-6 rounded-[2.5rem] text-white shadow-xl flex justify-between items-center">
-                <div>
-                  <p className="text-[8px] font-black uppercase tracking-[0.3em] opacity-60">Ubicación Actual</p>
+              <div className="bg-indigo-600 p-6 rounded-[2.5rem] text-white shadow-xl flex justify-between items-center relative overflow-hidden">
+                <div className="relative z-10">
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="text-[8px] font-black uppercase tracking-[0.3em] opacity-60">Ubicación Actual</p>
+                    {theoreticalItems.length > 0 && (
+                      <span className="bg-white/20 px-2 py-0.5 rounded-full text-[7px] font-black uppercase tracking-widest border border-white/30">Controlado CSV</span>
+                    )}
+                  </div>
                   <h3 className="text-2xl font-black tracking-tighter">{location.toUpperCase()}</h3>
                 </div>
-                <button onClick={resetScan} className="bg-white/20 p-3 rounded-2xl hover:bg-white/30 transition-all">✕</button>
+                <button onClick={resetScan} className="relative z-10 bg-white/20 p-3 rounded-2xl hover:bg-white/30 transition-all">✕</button>
+                
+                {/* Decorative background pattern for controlled slots */}
+                {theoreticalItems.length > 0 && (
+                  <div className="absolute -right-4 -bottom-4 text-white/10 text-8xl font-black select-none pointer-events-none">CSV</div>
+                )}
               </div>
 
               <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-xl space-y-6">
@@ -373,30 +573,122 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
                   />
                 </form>
 
-                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
-                  {items.map((item, idx) => (
-                    <div key={idx} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100 animate-slide-in">
-                      <span className="font-black text-slate-700 uppercase">{item.code}</span>
-                      <div className="flex items-center gap-3">
-                        <button 
-                          onClick={() => setItems(prev => prev.map(i => i.code === item.code ? { ...i, quantity: Math.max(0, i.quantity - 1) } : i).filter(i => i.quantity > 0))}
-                          className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-rose-500 transition-all"
-                        >
-                          -
-                        </button>
-                        <span className="w-8 text-center font-black text-indigo-600">{item.quantity}</span>
-                        <button 
-                          onClick={() => setItems(prev => prev.map(i => i.code === item.code ? { ...i, quantity: i.quantity + 1 } : i))}
-                          className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-emerald-500 transition-all"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                  {items.length === 0 && (
-                    <p className="text-center py-8 text-slate-300 font-black uppercase text-[10px] tracking-widest">Esperando lecturas...</p>
-                  )}
+                <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+                  {(() => {
+                    const allItemCodes = Array.from(new Set([
+                      ...theoreticalItems.map(t => t.item_code),
+                      ...items.map(i => i.code)
+                    ]));
+
+                    if (allItemCodes.length === 0) {
+                      return <p className="text-center py-8 text-slate-300 font-black uppercase text-[10px] tracking-widest">Esperando lecturas...</p>;
+                    }
+
+                    return allItemCodes.map((code) => {
+                      const tItem = theoreticalItems.find(t => t.item_code === code);
+                      const scannedItem = items.find(i => i.code === code);
+                      const scannedQty = scannedItem ? scannedItem.quantity : 0;
+                      const expectedQty = tItem ? tItem.quantity : 0;
+                      const description = tItem ? tItem.description : '';
+                      
+                      const isFromCSV = !!tItem;
+                      const isMatch = scannedQty === expectedQty;
+                      const isLess = scannedQty < expectedQty;
+                      const isMore = scannedQty > expectedQty;
+                      const isNotInCSV = !isFromCSV;
+
+                      let bgColor = 'bg-slate-50 border-slate-100';
+                      let borderColor = 'border-slate-200';
+                      let statusLabel = 'Pendiente';
+                      let statusColor = 'text-slate-400';
+
+                      if (isNotInCSV) {
+                        bgColor = 'bg-blue-50';
+                        borderColor = 'border-blue-200';
+                        statusLabel = 'No en CSV';
+                        statusColor = 'text-blue-600';
+                      } else if (isMatch) {
+                        bgColor = 'bg-emerald-50';
+                        borderColor = 'border-emerald-200';
+                        statusLabel = 'Cuadrada';
+                        statusColor = 'text-emerald-600';
+                      } else if (isLess) {
+                        bgColor = 'bg-rose-50';
+                        borderColor = 'border-rose-200';
+                        statusLabel = 'Menor';
+                        statusColor = 'text-rose-600';
+                      } else if (isMore) {
+                        bgColor = 'bg-rose-50';
+                        borderColor = 'border-rose-200';
+                        statusLabel = 'Exceso';
+                        statusColor = 'text-rose-600';
+                      }
+
+                      return (
+                        <div key={code} className={`p-4 rounded-2xl border-2 transition-all animate-slide-in ${bgColor} ${borderColor}`}>
+                          <div className="flex justify-between items-center">
+                            <div className="flex flex-col min-w-0 flex-1 mr-4">
+                              <span className="text-xs font-black text-slate-800 truncate">{code}</span>
+                              {description && (
+                                <span className="text-[9px] font-bold text-slate-500 truncate uppercase leading-tight">{description}</span>
+                              )}
+                              {isFromCSV && (
+                                <div className="mt-1 flex items-center gap-2">
+                                  <span className="text-[8px] font-black text-slate-400 uppercase">Esperado: {expectedQty}</span>
+                                </div>
+                              )}
+                            </div>
+                            
+                            <div className="flex items-center gap-4">
+                              <div className="flex flex-col items-end">
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-lg font-black ${statusColor}`}>
+                                    {scannedQty}
+                                  </span>
+                                  {isFromCSV && (
+                                    <>
+                                      <span className="text-slate-300 font-black">/</span>
+                                      <span className="text-sm font-black text-slate-400">{expectedQty}</span>
+                                    </>
+                                  )}
+                                </div>
+                                <span className={`text-[7px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${bgColor.replace('bg-', 'text-').replace('-50', '-600')} ${bgColor.replace('bg-', 'bg-').replace('-50', '-100')}`}>
+                                  {statusLabel}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-1">
+                                <button 
+                                  onClick={() => setItems(prev => {
+                                    const existing = prev.find(i => i.code === code);
+                                    if (!existing) return prev;
+                                    const updated = { ...existing, quantity: Math.max(0, existing.quantity - 1) };
+                                    if (updated.quantity === 0) return prev.filter(i => i.code !== code);
+                                    return prev.map(i => i.code === code ? updated : i);
+                                  })}
+                                  className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-rose-500 transition-all shadow-sm"
+                                >
+                                  -
+                                </button>
+                                <button 
+                                  onClick={() => setItems(prev => {
+                                    const existing = prev.find(i => i.code === code);
+                                    if (existing) {
+                                      return prev.map(i => i.code === code ? { ...i, quantity: i.quantity + 1 } : i);
+                                    }
+                                    return [...prev, { code, quantity: 1 }];
+                                  })}
+                                  className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-emerald-500 transition-all shadow-sm"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
 
                 <button 
@@ -432,6 +724,12 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
               >
                 Faltan ({missingSlots.length})
               </button>
+              <button 
+                onClick={() => setAdminTab('theoretical')}
+                className={`flex-1 md:flex-none px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${adminTab === 'theoretical' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                Stock Teórico
+              </button>
             </div>
             <div className="relative w-full md:w-64">
               <input 
@@ -458,6 +756,29 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
                 </div>
               )}
             </div>
+          ) : adminTab === 'theoretical' ? (
+            <div className="bg-white p-12 rounded-[3rem] border border-slate-100 shadow-xl text-center space-y-6">
+              <div className="text-6xl">📄</div>
+              <h3 className="text-xl font-black text-slate-800 uppercase">Cargar Stock Teórico</h3>
+              <p className="text-xs font-bold text-slate-400 uppercase max-w-md mx-auto leading-relaxed">
+                Sube un archivo CSV con el stock de tu programa para compararlo con las lecturas de los operarios.
+                <br/>
+                <span className="text-[10px] text-indigo-500 mt-2 block">Columnas requeridas: 7 (Artículo), 11 (Hueco), 13 (Cantidad)</span>
+              </p>
+              
+              <div className="pt-6">
+                <label className="inline-block bg-slate-900 text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest cursor-pointer hover:bg-indigo-600 transition-all shadow-lg active:scale-95">
+                  {uploading ? 'PROCESANDO...' : 'SELECCIONAR ARCHIVO CSV'}
+                  <input 
+                    type="file" 
+                    accept=".csv" 
+                    className="hidden" 
+                    onChange={handleCSVUpload}
+                    disabled={uploading}
+                  />
+                </label>
+              </div>
+            </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {(adminTab === 'pending' ? filteredPending : filteredCompleted).map(reading => (
@@ -474,14 +795,68 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
                   </div>
                   
                   <div className="space-y-2">
-                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Artículos Leídos</p>
-                    <div className="space-y-1">
-                      {reading.items.map(item => (
-                        <div key={item.id} className="flex justify-between text-[10px] font-bold uppercase">
-                          <span className="text-slate-600">{item.item_code}</span>
-                          <span className="text-slate-900">x{item.quantity}</span>
-                        </div>
-                      ))}
+                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Comparativa Stock</p>
+                    <div className="space-y-2">
+                      {(() => {
+                        const slotTheoretical = allTheoreticalStock.filter(t => t.slot_code === reading.slot_code);
+                        const allCodes = Array.from(new Set([
+                          ...slotTheoretical.map(t => t.item_code),
+                          ...reading.items.map(i => i.item_code)
+                        ]));
+
+                        return allCodes.map(code => {
+                          const tItem = slotTheoretical.find(t => t.item_code === code);
+                          const rItem = reading.items.find(i => i.item_code === code);
+                          const scannedQty = rItem ? rItem.quantity : 0;
+                          const expectedQty = tItem ? tItem.quantity : 0;
+                          
+                          const isFromCSV = !!tItem;
+                          const isMatch = scannedQty === expectedQty;
+                          const isLess = scannedQty < expectedQty;
+                          const isNotInCSV = !isFromCSV;
+
+                          let bgColor = 'bg-slate-50';
+                          let textColor = 'text-slate-600';
+                          let statusText = '';
+
+                          if (isNotInCSV) {
+                            bgColor = 'bg-blue-50';
+                            textColor = 'text-blue-700';
+                            statusText = '(No en CSV)';
+                          } else if (isMatch) {
+                            bgColor = 'bg-emerald-50';
+                            textColor = 'text-emerald-700';
+                            statusText = '(OK)';
+                          } else if (isLess) {
+                            bgColor = 'bg-rose-50';
+                            textColor = 'text-rose-700';
+                            statusText = `(Faltan ${expectedQty - scannedQty})`;
+                          } else {
+                            // Excess
+                            bgColor = 'bg-rose-50';
+                            textColor = 'text-rose-700';
+                            statusText = `(Exceso ${scannedQty - expectedQty})`;
+                          }
+
+                          return (
+                            <div key={code} className={`flex justify-between items-center p-2 rounded-xl text-[10px] font-bold uppercase transition-all ${bgColor} ${textColor}`}>
+                              <div className="flex flex-col">
+                                <span>{code}</span>
+                                <span className="text-[7px] opacity-70">{statusText}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs">{scannedQty}</span>
+                                {isFromCSV && (
+                                  <>
+                                    <span className="opacity-30">/</span>
+                                    <span className="opacity-50">{expectedQty}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        });
+                      })()}
                     </div>
                   </div>
 
@@ -621,6 +996,61 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
                 className="flex-1 bg-slate-900 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 transition-all"
               >
                 {loading ? 'GUARDANDO...' : 'CONFIRMAR'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CSV Preview Modal */}
+      {showCsvPreview && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-2xl rounded-[3rem] p-8 shadow-2xl animate-scale-in flex flex-col max-h-[90vh]">
+            <div className="text-center space-y-4 mb-6">
+              <div className="text-4xl">🔍</div>
+              <h3 className="text-xl font-black text-slate-800 uppercase">Vista Previa del CSV</h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Revisa los datos antes de importar ({csvPreviewData.length} registros)</p>
+            </div>
+
+            <div className="flex-1 overflow-y-auto mb-6 border border-slate-100 rounded-2xl">
+              <table className="w-full text-left border-collapse">
+                <thead className="sticky top-0 bg-slate-50">
+                  <tr>
+                    <th className="p-3 text-[8px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Artículo (14 dig)</th>
+                    <th className="p-3 text-[8px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Descripción</th>
+                    <th className="p-3 text-[8px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Hueco</th>
+                    <th className="p-3 text-[8px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Cantidad</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {csvPreviewData.slice(0, 50).map((row, idx) => (
+                    <tr key={idx} className="border-b border-slate-50">
+                      <td className="p-3 text-[10px] font-bold text-slate-600 font-mono">{row.item_code}</td>
+                      <td className="p-3 text-[10px] font-bold text-slate-500 truncate max-w-[150px]">{row.description}</td>
+                      <td className="p-3 text-[10px] font-black text-slate-800">{row.slot_code}</td>
+                      <td className="p-3 text-[10px] font-black text-indigo-600">{row.quantity}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {csvPreviewData.length > 50 && (
+                <p className="p-4 text-center text-[8px] font-bold text-slate-400 uppercase italic">Mostrando solo los primeros 50 registros...</p>
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <button 
+                onClick={() => { setShowCsvPreview(false); setCsvPreviewData([]); }}
+                className="flex-1 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest text-slate-400 hover:bg-slate-50 transition-all"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={confirmCSVUpload}
+                disabled={uploading}
+                className="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 transition-all"
+              >
+                {uploading ? 'GUARDANDO...' : 'CONFIRMAR IMPORTACIÓN'}
               </button>
             </div>
           </div>
