@@ -555,7 +555,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
                 )}
               </div>
 
-              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-xl space-y-6">
+              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-xl space-y-6 pl-[1px] pr-[25px]">
                 <div className="text-center space-y-2">
                   <div className="text-4xl">📦</div>
                   <h3 className="text-lg font-black text-slate-800 uppercase">Escanear Artículos</h3>
@@ -573,7 +573,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
                   />
                 </form>
 
-                <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+                <div className="space-y-3 max-h-[500px] overflow-y-auto pl-[5px] pr-0">
                   {(() => {
                     const allItemCodes = Array.from(new Set([
                       ...theoreticalItems.map(t => t.item_code),
@@ -625,64 +625,56 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
                       }
 
                       return (
-                        <div key={code} className={`p-4 rounded-2xl border-2 transition-all animate-slide-in ${bgColor} ${borderColor}`}>
-                          <div className="flex justify-between items-center">
-                            <div className="flex flex-col min-w-0 flex-1 mr-4">
-                              <span className="text-xs font-black text-slate-800 truncate">{code}</span>
+                        <div key={code} className={`flex flex-col p-3 rounded-2xl border-2 transition-all animate-slide-in ${bgColor} ${borderColor} gap-1 w-[250px] mx-auto`}>
+                          <div className="flex justify-between items-start gap-2">
+                            <div className="flex flex-col flex-1 min-w-0">
+                              <span className="text-[15px] font-black text-black tracking-wider font-mono break-all leading-none">{code}</span>
                               {description && (
-                                <span className="text-[9px] font-bold text-slate-500 truncate uppercase leading-tight">{description}</span>
-                              )}
-                              {isFromCSV && (
-                                <div className="mt-1 flex items-center gap-2">
-                                  <span className="text-[8px] font-black text-slate-400 uppercase">Esperado: {expectedQty}</span>
-                                </div>
+                                <p className="text-[9px] font-normal text-slate-800 uppercase leading-tight mt-1 font-sans">{description}</p>
                               )}
                             </div>
-                            
-                            <div className="flex items-center gap-4">
-                              <div className="flex flex-col items-end">
-                                <div className="flex items-center gap-2">
-                                  <span className={`text-lg font-black ${statusColor}`}>
-                                    {scannedQty}
-                                  </span>
-                                  {isFromCSV && (
-                                    <>
-                                      <span className="text-slate-300 font-black">/</span>
-                                      <span className="text-sm font-black text-slate-400">{expectedQty}</span>
-                                    </>
-                                  )}
-                                </div>
-                                <span className={`text-[7px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${bgColor.replace('bg-', 'text-').replace('-50', '-600')} ${bgColor.replace('bg-', 'bg-').replace('-50', '-100')}`}>
-                                  {statusLabel}
-                                </span>
-                              </div>
-
+                            <div className="flex flex-col items-end shrink-0">
                               <div className="flex items-center gap-1">
-                                <button 
-                                  onClick={() => setItems(prev => {
-                                    const existing = prev.find(i => i.code === code);
-                                    if (!existing) return prev;
-                                    const updated = { ...existing, quantity: Math.max(0, existing.quantity - 1) };
-                                    if (updated.quantity === 0) return prev.filter(i => i.code !== code);
-                                    return prev.map(i => i.code === code ? updated : i);
-                                  })}
-                                  className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-rose-500 transition-all shadow-sm"
-                                >
-                                  -
-                                </button>
-                                <button 
-                                  onClick={() => setItems(prev => {
-                                    const existing = prev.find(i => i.code === code);
-                                    if (existing) {
-                                      return prev.map(i => i.code === code ? { ...i, quantity: i.quantity + 1 } : i);
-                                    }
-                                    return [...prev, { code, quantity: 1 }];
-                                  })}
-                                  className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-emerald-500 transition-all shadow-sm"
-                                >
-                                  +
-                                </button>
+                                <span className={`text-xl font-black ${statusColor}`}>
+                                  {scannedQty}
+                                </span>
+                                {isFromCSV && (
+                                  <span className="text-xs font-black text-slate-300">/ {expectedQty}</span>
+                                )}
                               </div>
+                              <span className={`text-[7px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${bgColor.replace('bg-', 'text-').replace('-50', '-600')} ${bgColor.replace('bg-', 'bg-').replace('-50', '-100')}`}>
+                                {statusLabel}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex justify-between items-center mt-1 pt-1 border-t border-black/5">
+                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{statusLabel}</span>
+                            <div className="flex items-center gap-2">
+                              <button 
+                                onClick={() => setItems(prev => {
+                                  const existing = prev.find(i => i.code === code);
+                                  if (!existing) return prev;
+                                  const updated = { ...existing, quantity: Math.max(0, existing.quantity - 1) };
+                                  if (updated.quantity === 0) return prev.filter(i => i.code !== code);
+                                  return prev.map(i => i.code === code ? updated : i);
+                                })}
+                                className="w-[30px] h-[30px] rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-rose-500 transition-all shadow-sm active:scale-90"
+                              >
+                                -
+                              </button>
+                              <button 
+                                onClick={() => setItems(prev => {
+                                  const existing = prev.find(i => i.code === code);
+                                  if (existing) {
+                                    return prev.map(i => i.code === code ? { ...i, quantity: i.quantity + 1 } : i);
+                                  }
+                                  return [...prev, { code, quantity: 1 }];
+                                })}
+                                className="w-[30px] h-[30px] rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-emerald-500 transition-all shadow-sm active:scale-90"
+                              >
+                                +
+                              </button>
                             </div>
                           </div>
                         </div>
@@ -839,18 +831,23 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
                           }
 
                           return (
-                            <div key={code} className={`flex justify-between items-center p-2 rounded-xl text-[10px] font-bold uppercase transition-all ${bgColor} ${textColor}`}>
-                              <div className="flex flex-col">
-                                <span>{code}</span>
-                                <span className="text-[7px] opacity-70">{statusText}</span>
+                            <div key={code} className={`flex flex-col p-3 rounded-xl text-[10px] font-bold uppercase transition-all ${bgColor} ${textColor} gap-1`}>
+                              <div className="flex justify-between items-start gap-2">
+                                <span className="break-all flex-1">{code}</span>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className="text-xs">{scannedQty}</span>
+                                  {isFromCSV && (
+                                    <>
+                                      <span className="opacity-30">/</span>
+                                      <span className="opacity-50">{expectedQty}</span>
+                                    </>
+                                  )}
+                                </div>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs">{scannedQty}</span>
-                                {isFromCSV && (
-                                  <>
-                                    <span className="opacity-30">/</span>
-                                    <span className="opacity-50">{expectedQty}</span>
-                                  </>
+                              <div className="flex justify-between items-center">
+                                <span className="text-[7px] opacity-70">{statusText}</span>
+                                {tItem?.description && (
+                                  <span className="text-[7px] opacity-50 italic leading-tight">{tItem.description}</span>
                                 )}
                               </div>
                             </div>
