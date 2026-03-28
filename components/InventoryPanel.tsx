@@ -112,10 +112,15 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
         return;
       }
 
-      // Ask for size
-      setSelectedSize(slot.size || 'Mediano');
-      setShowSizeModal(true);
-      setMessage(null);
+      // Ask for size if not set
+      if (slot.size) {
+        setStep('items');
+        setMessage(null);
+      } else {
+        setSelectedSize('Mediano');
+        setShowSizeModal(true);
+        setMessage(null);
+      }
     } catch (err: any) {
       setMessage({ text: 'ERROR AL VALIDAR UBICACIÓN', type: 'error' });
     } finally {
@@ -171,16 +176,21 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
     e.preventDefault();
     if (!currentItemCode) return;
 
-    const code = currentItemCode.toUpperCase();
+    const code = currentItemCode.toUpperCase().trim();
     setItems(prev => {
-      const existing = prev.find(i => i.code === code);
-      if (existing) {
-        return prev.map(i => i.code === code ? { ...i, quantity: i.quantity + 1 } : i);
+      const existingIndex = prev.findIndex(i => i.code === code);
+      if (existingIndex !== -1) {
+        const updated = { ...prev[existingIndex], quantity: prev[existingIndex].quantity + 1 };
+        const filtered = prev.filter((_, idx) => idx !== existingIndex);
+        return [updated, ...filtered];
       }
-      return [...prev, { code, quantity: 1 }];
+      return [{ code, quantity: 1 }, ...prev];
     });
     setCurrentItemCode('');
-    itemInputRef.current?.focus();
+    // Use a small timeout to ensure focus happens after render
+    setTimeout(() => {
+      itemInputRef.current?.focus();
+    }, 10);
   };
 
   const handleFinishSlot = () => {
