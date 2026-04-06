@@ -155,6 +155,17 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
     if (e) e.preventDefault();
     if (!truckId || !assigningData || !isToday) return;
 
+    const isAlreadyAssigned = logs.some(l => 
+      l.status === 'loading' && 
+      l.truck_id.toUpperCase() === truckId.toUpperCase().trim() &&
+      l.id !== editingLogId
+    );
+
+    if (isAlreadyAssigned) {
+      alert("Este camión ya está asignado a otro muelle actualmente.");
+      return;
+    }
+
     setLoading(true);
     try {
       if (editingLogId) {
@@ -466,6 +477,14 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       {truckers
                         .filter(t => activeTruckIds.has(t.id))
+                        .filter(t => {
+                          const isAssigned = logs.some(l => 
+                            l.status === 'loading' && 
+                            l.truck_id.toUpperCase() === t.label.toUpperCase() &&
+                            l.id !== editingLogId
+                          );
+                          return !isAssigned;
+                        })
                         .map(t => (
                         <button
                           key={t.id}
