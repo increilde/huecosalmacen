@@ -23,6 +23,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
   const [allTheoreticalStock, setAllTheoreticalStock] = useState<any[]>([]);
   const [adminTab, setAdminTab] = useState<'pending' | 'completed' | 'missing' | 'theoretical'>('pending');
   const [adminSearch, setAdminSearch] = useState('');
+  const [itemSearch, setItemSearch] = useState('');
   const [theoreticalItems, setTheoreticalItems] = useState<{ item_code: string, quantity: number }[]>([]);
   const [uploading, setUploading] = useState(false);
   const [csvPreviewData, setCsvPreviewData] = useState<any[]>([]);
@@ -36,17 +37,31 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
 
   const locationInputRef = useRef<HTMLInputElement>(null);
   const itemInputRef = useRef<HTMLInputElement>(null);
+  
+  const isFetchingRef = useRef(false);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
 
   useEffect(() => {
     if (mode === 'scan') {
       if (step === 'location') locationInputRef.current?.focus();
       else itemInputRef.current?.focus();
-    } else {
+    }
+  }, [mode, step]);
+
+  useEffect(() => {
+    if (mode === 'admin') {
       fetchAdminData();
     }
-  }, [mode, step, adminTab]);
+  }, [mode, adminTab]);
 
   const fetchAdminData = async () => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     setLoading(true);
     try {
       const today = new Date().toISOString().split('T')[0];
@@ -63,8 +78,10 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
       const pending = (readings || []).filter(r => r.status === 'pending');
       const completed = (readings || []).filter(r => r.status === 'completed');
       
-      setPendingReadings(pending);
-      setCompletedReadings(completed);
+      if (isMountedRef.current) {
+        setPendingReadings(pending);
+        setCompletedReadings(completed);
+      }
 
       // 2. Fetch Missing Slots
       const { data: allSlots, error: slotsError } = await supabase
@@ -75,7 +92,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
 
       const readSlotCodes = new Set((readings || []).map(r => r.slot_code));
       const missing = (allSlots || []).filter(s => !readSlotCodes.has(s.code));
-      setMissingSlots(missing);
+      if (isMountedRef.current) setMissingSlots(missing);
 
       // 3. Fetch All Theoretical Stock
       const { data: theoretical, error: theoreticalError } = await supabase
@@ -83,12 +100,15 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
         .select('*');
       
       if (theoreticalError) throw theoreticalError;
-      setAllTheoreticalStock(theoretical || []);
+      if (isMountedRef.current) setAllTheoreticalStock(theoretical || []);
 
     } catch (err: any) {
-      console.error('Error fetching admin data:', err.message);
+      if (isMountedRef.current) console.error('Error fetching admin data:', err.message);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+        isFetchingRef.current = false;
+      }
     }
   };
 
@@ -477,9 +497,167 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
     }
   };
 
-  const filteredPending = pendingReadings.filter(r => r.slot_code.includes(adminSearch.toUpperCase()));
-  const filteredCompleted = completedReadings.filter(r => r.slot_code.includes(adminSearch.toUpperCase()));
-  const filteredMissing = missingSlots.filter(s => s.code.includes(adminSearch.toUpperCase()));
+  const filteredPending = React.useMemo(() => {
+    const search = adminSearch.toUpperCase();
+    const itemS = itemSearch.toUpperCase();
+    return pendingReadings.filter(r => {
+      const matchesSlot = (r.slot_code || '').toUpperCase().includes(search);
+      const matchesItem = itemSearch === '' || (r.items || []).some(i => (i.item_code || '').toUpperCase().includes(itemS));
+      return matchesSlot && matchesItem;
+    });
+  }, [pendingReadings, adminSearch, itemSearch]);
+
+  const filteredCompleted = React.useMemo(() => {
+    const search = adminSearch.toUpperCase();
+    const itemS = itemSearch.toUpperCase();
+    return completedReadings.filter(r => {
+      const matchesSlot = (r.slot_code || '').toUpperCase().includes(search);
+      const matchesItem = itemSearch === '' || (r.items || []).some(i => (i.item_code || '').toUpperCase().includes(itemS));
+      return matchesSlot && matchesItem;
+    });
+  }, [completedReadings, adminSearch, itemSearch]);
+
+  const filteredMissing = React.useMemo(() => {
+    const search = adminSearch.toUpperCase();
+    const itemS = itemSearch.toUpperCase();
+    
+    // Optimize: if itemSearch is active, create a set of slots that contain that item
+    let slotsWithItem: Set<string> | null = null;
+    if (itemSearch !== '') {
+      slotsWithItem = new Set(
+        allTheoreticalStock
+          .filter(t => (t.item_code || '').toUpperCase().includes(itemS))
+          .map(t => t.slot_code)
+      );
+    }
+
+    return (missingSlots || []).filter(s => {
+      const matchesSlot = (s.code || '').toUpperCase().includes(search);
+      const matchesItem = slotsWithItem === null || slotsWithItem.has(s.code);
+      return matchesSlot && matchesItem;
+    });
+  }, [missingSlots, allTheoreticalStock, adminSearch, itemSearch]);
+
+  const renderReadingCard = (reading: InventoryReading & { items: InventoryItem[] }) => {
+    const isPending = reading.status === 'pending';
+    return (
+      <div key={reading.id} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-md transition-all space-y-4">
+        <div className="flex justify-between items-start">
+          <div>
+            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Ubicación</p>
+            <h4 className="text-xl font-black text-slate-800 tracking-tighter">{reading.slot_code}</h4>
+          </div>
+          <div className="text-right">
+            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Capacidad</p>
+            <span className="text-xs font-black text-indigo-600">{reading.capacity_percent}%</span>
+          </div>
+        </div>
+        
+        <div className="space-y-2">
+          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Comparativa Stock</p>
+          <div className="space-y-2">
+            {(() => {
+              const slotTheoretical = allTheoreticalStock.filter(t => t.slot_code === reading.slot_code);
+              const allCodes = Array.from(new Set([
+                ...slotTheoretical.map(t => t.item_code),
+                ...(reading.items || []).map(i => i.item_code)
+              ]));
+
+              return allCodes.map(code => {
+                const tItem = slotTheoretical.find(t => t.item_code === code);
+                const rItem = (reading.items || []).find(i => i.item_code === code);
+                const scannedQty = rItem ? rItem.quantity : 0;
+                const expectedQty = tItem ? tItem.quantity : 0;
+                
+                const isFromCSV = !!tItem;
+                const isMatch = scannedQty === expectedQty;
+                const isLess = scannedQty < expectedQty;
+                const isNotInCSV = !isFromCSV;
+
+                let bgColor = 'bg-slate-50';
+                let textColor = 'text-slate-600';
+                let statusText = '';
+
+                if (isNotInCSV) {
+                  bgColor = 'bg-blue-50';
+                  textColor = 'text-blue-700';
+                  statusText = '(No en CSV)';
+                } else if (isMatch) {
+                  bgColor = 'bg-emerald-50';
+                  textColor = 'text-emerald-700';
+                  statusText = '(OK)';
+                } else if (isLess) {
+                  bgColor = 'bg-rose-50';
+                  textColor = 'text-rose-700';
+                  statusText = `(Faltan ${expectedQty - scannedQty})`;
+                } else {
+                  bgColor = 'bg-rose-50';
+                  textColor = 'text-rose-700';
+                  statusText = `(Exceso ${scannedQty - expectedQty})`;
+                }
+
+                return (
+                  <div key={code} className={`flex flex-col p-3 rounded-xl text-[10px] font-bold uppercase transition-all ${bgColor} ${textColor} gap-1`}>
+                    <div className="flex justify-between items-start gap-2">
+                      <span className="break-all flex-1">{code}</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-xs">{scannedQty}</span>
+                        {isFromCSV && (
+                          <>
+                            <span className="opacity-30">/</span>
+                            <span className="opacity-50">{expectedQty}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-[7px] opacity-70">{statusText}</span>
+                      {tItem?.description && (
+                        <span className="text-[7px] opacity-50 italic leading-tight">{tItem.description}</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        </div>
+
+        <div className="pt-4 border-t border-slate-50 flex justify-between items-end">
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
+              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">
+                Leído: <span className="text-slate-600 ml-1">{new Date(reading.created_at).toLocaleString()}</span>
+              </p>
+            </div>
+            {reading.status === 'completed' && reading.completed_at && (
+              <div className="flex items-center gap-2 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-100">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <p className="text-[9px] font-black text-emerald-700 uppercase tracking-widest">
+                  Validado: <span className="ml-1">{new Date(reading.completed_at).toLocaleString()}</span>
+                </p>
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
+              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">
+                Operario: <span className="text-slate-600 ml-1">{reading.operator_name}</span>
+              </p>
+            </div>
+          </div>
+          {isPending && (
+            <button 
+              onClick={() => markAsCompleted(reading.id)}
+              className="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-indigo-600 hover:text-white transition-all"
+            >
+              Validar
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="p-4 md:p-8 space-y-6 animate-fade-in">
@@ -723,18 +901,74 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
                 Stock Teórico
               </button>
             </div>
-            <div className="relative w-full md:w-64">
-              <input 
-                type="text"
-                placeholder="BUSCAR HUECO..."
-                value={adminSearch}
-                onChange={e => setAdminSearch(e.target.value)}
-                className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-[10px] font-black uppercase tracking-widest focus:ring-2 focus:ring-indigo-500 outline-none"
-              />
+            <div className="flex flex-wrap gap-2 w-full md:w-auto">
+              <div className="relative w-full md:w-48">
+                <input 
+                  type="text"
+                  placeholder="BUSCAR HUECO..."
+                  value={adminSearch}
+                  onChange={e => setAdminSearch(e.target.value)}
+                  className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-[10px] font-black uppercase tracking-widest focus:ring-2 focus:ring-indigo-500 outline-none"
+                />
+              </div>
+              <div className="relative w-full md:w-48">
+                <input 
+                  type="text"
+                  placeholder="BUSCAR ARTÍCULO..."
+                  value={itemSearch}
+                  onChange={e => setItemSearch(e.target.value)}
+                  className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-[10px] font-black uppercase tracking-widest focus:ring-2 focus:ring-indigo-500 outline-none"
+                />
+                {itemSearch && (
+                  <button 
+                    onClick={() => setItemSearch('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-500"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
-          {adminTab === 'missing' ? (
+          {itemSearch !== '' ? (
+            <div className="space-y-12">
+              {filteredPending.length > 0 && (
+                <div className="space-y-4">
+                  <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">Pendientes</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {filteredPending.map(renderReadingCard)}
+                  </div>
+                </div>
+              )}
+              {filteredCompleted.length > 0 && (
+                <div className="space-y-4">
+                  <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">Validados</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {filteredCompleted.map(renderReadingCard)}
+                  </div>
+                </div>
+              )}
+              {filteredMissing.length > 0 && (
+                <div className="space-y-4">
+                  <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">Faltan por leer</h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                    {filteredMissing.map(slot => (
+                      <div key={slot.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm text-center space-y-2">
+                        <span className="text-xs font-black text-slate-800 tracking-tighter">{slot.code}</span>
+                        <div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{slot.size || 'S/T'}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {filteredPending.length === 0 && filteredCompleted.length === 0 && filteredMissing.length === 0 && (
+                <div className="py-20 text-center">
+                  <p className="text-slate-300 font-black uppercase text-xs tracking-widest">No se encontraron resultados para "{itemSearch}"</p>
+                </div>
+              )}
+            </div>
+          ) : adminTab === 'missing' ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
               {filteredMissing.map(slot => (
                 <div key={slot.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm text-center space-y-2">
@@ -773,107 +1007,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {(adminTab === 'pending' ? filteredPending : filteredCompleted).map(reading => (
-                <div key={reading.id} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-md transition-all space-y-4">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Ubicación</p>
-                      <h4 className="text-xl font-black text-slate-800 tracking-tighter">{reading.slot_code}</h4>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Capacidad</p>
-                      <span className="text-xs font-black text-indigo-600">{reading.capacity_percent}%</span>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Comparativa Stock</p>
-                    <div className="space-y-2">
-                      {(() => {
-                        const slotTheoretical = allTheoreticalStock.filter(t => t.slot_code === reading.slot_code);
-                        const allCodes = Array.from(new Set([
-                          ...slotTheoretical.map(t => t.item_code),
-                          ...reading.items.map(i => i.item_code)
-                        ]));
-
-                        return allCodes.map(code => {
-                          const tItem = slotTheoretical.find(t => t.item_code === code);
-                          const rItem = reading.items.find(i => i.item_code === code);
-                          const scannedQty = rItem ? rItem.quantity : 0;
-                          const expectedQty = tItem ? tItem.quantity : 0;
-                          
-                          const isFromCSV = !!tItem;
-                          const isMatch = scannedQty === expectedQty;
-                          const isLess = scannedQty < expectedQty;
-                          const isNotInCSV = !isFromCSV;
-
-                          let bgColor = 'bg-slate-50';
-                          let textColor = 'text-slate-600';
-                          let statusText = '';
-
-                          if (isNotInCSV) {
-                            bgColor = 'bg-blue-50';
-                            textColor = 'text-blue-700';
-                            statusText = '(No en CSV)';
-                          } else if (isMatch) {
-                            bgColor = 'bg-emerald-50';
-                            textColor = 'text-emerald-700';
-                            statusText = '(OK)';
-                          } else if (isLess) {
-                            bgColor = 'bg-rose-50';
-                            textColor = 'text-rose-700';
-                            statusText = `(Faltan ${expectedQty - scannedQty})`;
-                          } else {
-                            // Excess
-                            bgColor = 'bg-rose-50';
-                            textColor = 'text-rose-700';
-                            statusText = `(Exceso ${scannedQty - expectedQty})`;
-                          }
-
-                          return (
-                            <div key={code} className={`flex flex-col p-3 rounded-xl text-[10px] font-bold uppercase transition-all ${bgColor} ${textColor} gap-1`}>
-                              <div className="flex justify-between items-start gap-2">
-                                <span className="break-all flex-1">{code}</span>
-                                <div className="flex items-center gap-2 shrink-0">
-                                  <span className="text-xs">{scannedQty}</span>
-                                  {isFromCSV && (
-                                    <>
-                                      <span className="opacity-30">/</span>
-                                      <span className="opacity-50">{expectedQty}</span>
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="flex justify-between items-center">
-                                <span className="text-[7px] opacity-70">{statusText}</span>
-                                {tItem?.description && (
-                                  <span className="text-[7px] opacity-50 italic leading-tight">{tItem.description}</span>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        });
-                      })()}
-                    </div>
-                  </div>
-
-                  <div className="pt-4 border-t border-slate-50 flex justify-between items-center">
-                    <div className="text-[8px] font-bold text-slate-400 uppercase">
-                      Por: {reading.operator_name}
-                      <br/>
-                      {new Date(reading.created_at).toLocaleString()}
-                    </div>
-                    {adminTab === 'pending' && (
-                      <button 
-                        onClick={() => markAsCompleted(reading.id)}
-                        className="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-indigo-600 hover:text-white transition-all"
-                      >
-                        Validar
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
+              {(adminTab === 'pending' ? filteredPending : filteredCompleted).map(renderReadingCard)}
               {(adminTab === 'pending' ? filteredPending : filteredCompleted).length === 0 && (
                 <div className="col-span-full py-20 text-center">
                   <p className="text-slate-300 font-black uppercase text-xs tracking-widest">No hay lecturas en esta sección</p>

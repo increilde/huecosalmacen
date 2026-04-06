@@ -221,7 +221,7 @@ const SortableDeliveryItem: React.FC<{
   };
 
   return (
-    <div ref={setNodeRef} style={style} className={`relative ${isDragging ? 'z-50' : ''}`}>
+    <div ref={setNodeRef} id={`delivery-${delivery.id}`} style={style} className={`relative ${isDragging ? 'z-50' : ''}`}>
       <div className={`p-2 px-6 rounded-xl border transition-all group flex items-center justify-between gap-3 ${
         delivery.at_dock
           ? 'bg-blue-500 border-blue-600 text-white shadow-lg shadow-blue-100'
@@ -419,6 +419,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
   const [activeTruckId, setActiveTruckId] = useState<string | null>(null);
   const [activeDeliveryId, setActiveDeliveryId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [orderSearchTerm, setOrderSearchTerm] = useState('');
   const [activeZone, setActiveZone] = useState<string>('TODOS');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showHistoryId, setShowHistoryId] = useState<string | null>(null);
@@ -673,6 +674,50 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
       else if (trucks.some(t => t.id === overId)) {
         await handleMoveDeliveryToTruck(activeId, overId);
       }
+    }
+  };
+
+  const handleOrderSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!orderSearchTerm.trim()) return;
+
+    const foundDelivery = deliveries.find(d => 
+      d.order_number.toUpperCase().includes(orderSearchTerm.toUpperCase())
+    );
+
+    if (foundDelivery) {
+      // Switch to agenda view if not already there
+      if (view !== 'agenda') {
+        setView('agenda');
+      }
+
+      // Reset zone filter if needed to ensure the truck is visible
+      if (activeZone !== 'TODOS') {
+        setActiveZone('TODOS');
+      }
+
+      // Expand the truck
+      setExpandedTrucks(prev => {
+        const next = new Set(prev);
+        next.add(foundDelivery.truck_id);
+        return next;
+      });
+
+      // Scroll to the delivery
+      setTimeout(() => {
+        const element = document.getElementById(`delivery-${foundDelivery.id}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // Highlight the element temporarily
+          element.classList.add('ring-4', 'ring-indigo-500', 'ring-offset-2', 'transition-all', 'duration-500');
+          setTimeout(() => {
+            element.classList.remove('ring-4', 'ring-indigo-500', 'ring-offset-2');
+          }, 3000);
+        }
+      }, 300);
+    } else {
+      setMessage({ type: 'error', text: `Pedido ${orderSearchTerm} no encontrado` });
+      setTimeout(() => setMessage(null), 3000);
     }
   };
 
@@ -1154,15 +1199,28 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
         
         <div className="flex flex-wrap items-center gap-2 no-print">
           <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm">
-            <span className="text-[9px] font-bold text-slate-400 uppercase">Buscar:</span>
+            <span className="text-[9px] font-bold text-slate-400 uppercase">Buscar Camión:</span>
             <input 
               type="text" 
-              placeholder="Camión..."
+              placeholder="Nombre..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value.toUpperCase())}
               className="bg-transparent text-[10px] font-bold text-slate-700 outline-none w-24 md:w-32"
             />
           </div>
+          <form onSubmit={handleOrderSearch} className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm">
+            <span className="text-[9px] font-bold text-slate-400 uppercase">Buscar Pedido:</span>
+            <input 
+              type="text" 
+              placeholder="Número..."
+              value={orderSearchTerm}
+              onChange={(e) => setOrderSearchTerm(e.target.value.toUpperCase())}
+              className="bg-transparent text-[10px] font-bold text-slate-700 outline-none w-24 md:w-32"
+            />
+            <button type="submit" className="text-indigo-600 hover:text-indigo-800">
+              <Search className="w-3 h-3" />
+            </button>
+          </form>
           <div className="flex items-center gap-3 bg-white px-5 py-2 rounded-2xl border-2 border-slate-200 shadow-md hover:border-indigo-300 transition-all no-print">
             <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Fecha Agenda:</span>
             <div className="flex items-center gap-2">

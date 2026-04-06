@@ -212,45 +212,40 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     }, 150);
   }, [playAlertBeep, audioUnlocked]);
 
+  const activePickupsRef = useRef<CustomerPickup[]>([]);
+  useEffect(() => {
+    activePickupsRef.current = activePickups;
+  }, [activePickups]);
+
   const unlockSpeech = React.useCallback((e?: any) => {
     const isUserGesture = e && (e.type === 'click' || e.type === 'touchstart' || e.type === 'keydown');
     
-    // Solo logueamos si es un gesto o si realmente necesitamos desbloquear
     if (isUserGesture || !audioUnlocked) {
       console.log(`🔓 Intento de desbloqueo (Gesto usuario: ${!!isUserGesture})...`);
     }
     
     try {
-      // Desbloquear Web Audio API
       if (!audioContextRef.current) {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
       }
       
       if (audioContextRef.current.state === 'suspended') {
-        audioContextRef.current.resume().then(() => {
-          console.log("✅ AudioContext resumido");
-        });
+        audioContextRef.current.resume();
       }
 
-      // Solo intentamos "despertar" la voz si es un gesto real
       if (isUserGesture && window.speechSynthesis) {
         window.speechSynthesis.cancel();
         const utterance = new window.SpeechSynthesisUtterance("");
         window.speechSynthesis.speak(utterance);
       }
       
-      // Solo marcamos como desbloqueado y pitamos si realmente fue un gesto de usuario Y estaba bloqueado
       if (isUserGesture && !audioUnlocked) {
         setAudioUnlocked(true);
-        requestWakeLock(); // Aprovechar el gesto para pedir Wake Lock
-        console.log("✅ Audio marcado como DESBLOQUEADO por el usuario");
-        
-        // Pitido de confirmación (SOLO UNA VEZ AL DESBLOQUEAR)
+        requestWakeLock();
         playAlertBeep();
 
-        // Si hay algo pendiente al desbloquear, anunciarlo tras un breve delay
         setTimeout(() => {
-          const waitingCount = activePickups.filter(p => p.status === 'waiting').length;
+          const waitingCount = activePickupsRef.current.filter(p => p.status === 'waiting').length;
           if (waitingCount > 0 && !isDistri) {
             speak(`Hay ${waitingCount} retira cliente pendientes.`);
           }
@@ -259,7 +254,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     } catch (e) {
       console.warn("⚠️ Error en el intento de desbloqueo:", e);
     }
-  }, [playAlertBeep, audioUnlocked, activePickups, speak, isDistri]);
+  }, [playAlertBeep, audioUnlocked, isDistri, speak]);
 
   const announcePickupEvent = React.useCallback((text: string) => {
     speak(text);
@@ -276,7 +271,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       window.speechSynthesis.onvoiceschanged = primeVoices;
     }
     
-    // Listeners de interacción real
     window.addEventListener('click', unlockSpeech);
     window.addEventListener('touchstart', unlockSpeech);
     window.addEventListener('keydown', unlockSpeech);
@@ -290,14 +284,31 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     };
     document.addEventListener('visibilitychange', handleVisibility);
 
-    // Intento automático periódico (cada 5 segundos)
+    primeVoices();
+    unlockSpeech(); 
+
+    return () => {
+      if (window.speechSynthesis) {
+        window.speechSynthesis.onvoiceschanged = null;
+      }
+      window.removeEventListener('click', unlockSpeech);
+      window.removeEventListener('touchstart', unlockSpeech);
+      window.removeEventListener('keydown', unlockSpeech);
+      window.removeEventListener('focus', unlockSpeech);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      if (wakeLockRef.current) {
+        wakeLockRef.current.release();
+      }
+    };
+  }, [primeVoices, unlockSpeech]);
+
+  useEffect(() => {
     const autoUnlockInterval = setInterval(() => {
       if (!audioUnlocked) {
         unlockSpeech();
       }
     }, 5000);
 
-    // Keep-alive: Emitir un sonido casi inaudible cada 20 segundos
     const keepAliveInterval = setInterval(() => {
       if (audioUnlocked && audioContextRef.current) {
         try {
@@ -312,30 +323,16 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
             osc.stop(ctx.currentTime + 0.1);
           }
         } catch (e) {
-          // Ignorar errores en el keep-alive
+          console.warn("Audio keep-alive error:", e);
         }
       }
     }, 20000);
-    
-    primeVoices();
-    unlockSpeech(); // Intento inicial
 
     return () => {
-      if (window.speechSynthesis) {
-        window.speechSynthesis.onvoiceschanged = null;
-      }
-      window.removeEventListener('click', unlockSpeech);
-      window.removeEventListener('touchstart', unlockSpeech);
-      window.removeEventListener('keydown', unlockSpeech);
-      window.removeEventListener('focus', unlockSpeech);
-      document.removeEventListener('visibilitychange', handleVisibility);
       clearInterval(autoUnlockInterval);
       clearInterval(keepAliveInterval);
-      if (wakeLockRef.current) {
-        wakeLockRef.current.release();
-      }
     };
-  }, [audioUnlocked, playAlertBeep, primeVoices, unlockSpeech]);
+  }, [audioUnlocked, unlockSpeech]);
 
   const slotInputRef = useRef<HTMLInputElement>(null);
   const cartInputRef = useRef<HTMLInputElement>(null);
@@ -488,7 +485,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         // Pequeño delay para asegurar que el motor de voz esté listo tras el despertar del sistema
         // y que los datos de Supabase se hayan refrescado si hubo desconexión
         setTimeout(() => {
-          const waitingCount = activePickups.filter(p => p.status === 'waiting').length;
+          const waitingCount = activePickupsRef.current.filter(p => p.status === 'waiting').length;
           if (waitingCount > 0 && !isDistri) {
             speak(`Hay ${waitingCount} retira cliente pendientes.`);
           }
@@ -498,7 +495,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [activePickups, user.role, speak, isDistri]);
+  }, [user.role, speak, isDistri]);
 
   // ==========================================
   // GESTIÓN DE RETIRA CLIENTE (REFACTORIZADO)
