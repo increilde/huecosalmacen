@@ -640,7 +640,38 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
           ? Math.round((sSlots.filter(s => (s.quantity || 0) > 0).length / total) * 100)
           : 0;
 
-        return { size, total, full, half, empty, occupancy };
+        // Desglose por calles dentro de cada tamaño
+        const range1 = sSlots.filter(s => {
+          const streetNum = parseInt(s.code.substring(3, 5), 10);
+          return streetNum >= 2 && streetNum <= 12;
+        });
+        const range2 = sSlots.filter(s => {
+          const streetNum = parseInt(s.code.substring(3, 5), 10);
+          return streetNum >= 13 && streetNum <= 21;
+        });
+
+        const getRangeStats = (rangeSlots: WarehouseSlot[]) => {
+          const rTotal = rangeSlots.length;
+          const rOccupied = rangeSlots.filter(s => (s.quantity || 0) > 0).length;
+          return {
+            total: rTotal,
+            occupied: rOccupied,
+            occupancy: rTotal > 0 ? Math.round((rOccupied / rTotal) * 100) : 0
+          };
+        };
+
+        return { 
+          size, 
+          total, 
+          full, 
+          half, 
+          empty, 
+          occupancy,
+          ranges: {
+            '02-12': getRangeStats(range1),
+            '13-21': getRangeStats(range2)
+          }
+        };
       });
 
       const totalPlant = plantSlots.length;
@@ -2718,6 +2749,27 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                                 <span className="text-sm font-semibold text-slate-800 uppercase">{sizeData.size}</span>
                                 <span className="text-base font-bold text-indigo-500">{sizeData.occupancy}%</span>
                              </div>
+
+                             {/* Desglose por calles (Solo para U01) */}
+                             {plantData.plant !== 'U02' && (
+                               <div className="grid grid-cols-2 gap-4 mb-6 border-b border-slate-50 pb-4">
+                                 <div className="space-y-1">
+                                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Calles 02-12</p>
+                                   <div className="flex items-baseline gap-2">
+                                     <span className="text-sm font-bold text-slate-700">{sizeData.ranges['02-12'].occupancy}%</span>
+                                     <span className="text-[9px] font-medium text-slate-400">({sizeData.ranges['02-12'].occupied}/{sizeData.ranges['02-12'].total})</span>
+                                   </div>
+                                 </div>
+                                 <div className="space-y-1">
+                                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Calles 13-21</p>
+                                   <div className="flex items-baseline gap-2">
+                                     <span className="text-sm font-bold text-slate-700">{sizeData.ranges['13-21'].occupancy}%</span>
+                                     <span className="text-[9px] font-medium text-slate-400">({sizeData.ranges['13-21'].occupied}/{sizeData.ranges['13-21'].total})</span>
+                                   </div>
+                                 </div>
+                               </div>
+                             )}
+
                              <div className="grid grid-cols-4 gap-2 text-center">
                                <div className="flex flex-col">
                                  <span className="text-lg font-semibold text-slate-800 leading-none">{sizeData.total}</span>
