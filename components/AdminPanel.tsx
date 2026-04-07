@@ -237,7 +237,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
         const { data: logs } = await query.order('created_at', { ascending: false });
         setAllLogs(logs || []);
 
-        if (activeSubTab === 'reports') {
+        if (activeSubTab === 'reports' || activeSubTab === 'movements') {
           let allSlots: WarehouseSlot[] = [];
           let from = 0;
           const step = 1000;
@@ -259,8 +259,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
 
           if (allSlots.length > 0) {
             setAllWarehouseSlots(allSlots);
-            const breakdown = processWarehouseReport(allSlots);
-            setWarehouseBreakdown(breakdown);
+            if (activeSubTab === 'reports') {
+              const breakdown = processWarehouseReport(allSlots);
+              setWarehouseBreakdown(breakdown);
+            }
           }
         }
         
@@ -1490,6 +1492,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                     <th className="px-6 py-5">TRABAJADOR</th>
                     <th className="px-6 py-5">CARRO</th>
                     <th className="px-6 py-5">HUECO</th>
+                    <th className="px-6 py-5">TAMAÑO</th>
                     <th className="px-6 py-5">ESTADO</th>
                     <th className="px-6 py-5 text-right">HORA</th>
                     <th className="px-6 py-5 text-right">FECHA</th>
@@ -1497,21 +1500,25 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {filteredLogs.length === 0 ? (
-                    <tr><td colSpan={6} className="py-20 text-center text-slate-300 font-black uppercase text-[10px] tracking-widest">No hay movimientos que coincidan</td></tr>
-                  ) : filteredLogs.map(log => (
-                    <tr key={log.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-4 font-bold text-slate-800 uppercase">{log.operator_name}</td>
-                      <td className="px-6 py-4 font-black text-indigo-600">{log.cart_id}</td>
-                      <td className="px-6 py-4 font-black text-slate-900">{log.slot_code}</td>
-                      <td className="px-6 py-4">
-                        <span className={`px-3 py-1 rounded-lg font-black ${log.new_quantity === 100 ? 'bg-rose-50 text-rose-600' : log.new_quantity === 50 ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                          {log.new_quantity}%
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-slate-400 font-bold text-right">{new Date(log.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</td>
-                      <td className="px-6 py-4 text-slate-400 font-bold text-right">{new Date(log.created_at).toLocaleDateString()}</td>
-                    </tr>
-                  ))}
+                    <tr><td colSpan={7} className="py-20 text-center text-slate-300 font-black uppercase text-[10px] tracking-widest">No hay movimientos que coincidan</td></tr>
+                  ) : filteredLogs.map(log => {
+                    const slot = allWarehouseSlots.find(s => s.code === log.slot_code);
+                    return (
+                      <tr key={log.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-4 font-bold text-slate-800 uppercase">{log.operator_name}</td>
+                        <td className="px-6 py-4 font-black text-indigo-600">{log.cart_id}</td>
+                        <td className="px-6 py-4 font-black text-slate-900">{log.slot_code}</td>
+                        <td className="px-6 py-4 font-bold text-slate-500 uppercase">{slot?.size || '-'}</td>
+                        <td className="px-6 py-4">
+                          <span className={`px-3 py-1 rounded-lg font-black ${log.new_quantity === 100 ? 'bg-rose-50 text-rose-600' : log.new_quantity === 50 ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                            {log.new_quantity}%
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-slate-400 font-bold text-right">{new Date(log.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</td>
+                        <td className="px-6 py-4 text-slate-400 font-bold text-right">{new Date(log.created_at).toLocaleDateString()}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
