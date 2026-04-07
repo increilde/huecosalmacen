@@ -15,6 +15,7 @@ import {
   ResponsiveContainer,
   Cell
 } from 'recharts';
+import { Printer } from 'lucide-react';
 
 interface MovementLog {
   id: string;
@@ -69,6 +70,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   const [cartSearch, setCartSearch] = useState('');
 
   const [allLogs, setAllLogs] = useState<MovementLog[]>([]);
+  const [allWarehouseSlots, setAllWarehouseSlots] = useState<WarehouseSlot[]>([]);
   const [truckers, setTruckers] = useState<Trucker[]>([]);
   const [installers, setInstallers] = useState<Installer[]>([]);
   const [machinery, setMachinery] = useState<Machinery[]>([]);
@@ -128,6 +130,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   const [showTodayOnly, setShowTodayOnly] = useState(false);
   const [loadingDistriReport, setLoadingDistriReport] = useState(false);
 
+  const [printPlant, setPrintPlant] = useState<string>('U01');
+  const [printOccupancy, setPrintOccupancy] = useState<string>('todos');
+  const [printStreetRange, setPrintStreetRange] = useState<string>('all');
+  const [printSize, setPrintSize] = useState<string>('all');
+
   const [stats, setStats] = useState({
     total: 0,
     occupied: 0,
@@ -164,6 +171,34 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   const [coordForm, setCoordForm] = useState({ street_id: '', x_percent: 50, y_percent: 50 });
   const [calibForm, setCalibForm] = useState({ point_name: 'Punto 1', latitude: 0, longitude: 0, x_percent: 50, y_percent: 50 });
   const [configMode, setConfigMode] = useState<'streets' | 'gps'>('streets');
+
+  const printableSlots = useMemo(() => {
+    return allWarehouseSlots.filter(s => {
+      const matchesPlant = s.code.startsWith(printPlant);
+      let matchesOccupancy = true;
+      if (printOccupancy === 'llenos') matchesOccupancy = s.quantity === 100;
+      else if (printOccupancy === 'medios') matchesOccupancy = s.quantity === 50;
+      else if (printOccupancy === 'libres') matchesOccupancy = s.is_scanned_once && s.quantity === 0;
+
+      let matchesStreet = true;
+      if (printStreetRange !== 'all') {
+        const streetPart = s.code.substring(3, 5);
+        const streetNum = parseInt(streetPart, 10);
+        if (printStreetRange === '1-12') {
+          matchesStreet = streetNum >= 1 && streetNum <= 12;
+        } else if (printStreetRange === '13-21') {
+          matchesStreet = streetNum >= 13 && streetNum <= 21;
+        }
+      }
+
+      let matchesSize = true;
+      if (printSize !== 'all') {
+        matchesSize = s.size === printSize;
+      }
+
+      return matchesPlant && matchesOccupancy && matchesStreet && matchesSize;
+    }).sort((a, b) => a.code.localeCompare(b.code));
+  }, [allWarehouseSlots, printPlant, printOccupancy, printStreetRange, printSize]);
 
   const fetchData = React.useCallback(async () => {
     setLoading(true);
@@ -223,6 +258,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
           }
 
           if (allSlots.length > 0) {
+            setAllWarehouseSlots(allSlots);
             const breakdown = processWarehouseReport(allSlots);
             setWarehouseBreakdown(breakdown);
           }
@@ -2586,7 +2622,7 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
 
         {activeSubTab === 'reports' && (
           <div className="space-y-12 animate-fade-in">
-             <div className="flex flex-col md:flex-row gap-6 items-end mb-8">
+             <div className="flex flex-col md:flex-row gap-6 items-end mb-8 no-print">
                <div className="flex-1 space-y-4">
                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">Periodo del Informe</label>
                  <div className="flex flex-wrap gap-2">
@@ -2599,9 +2635,67 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                     <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setScope('range'); }} className="bg-slate-50 p-4 rounded-2xl text-xs font-bold outline-none flex-1 border border-slate-100" />
                  </div>
                </div>
+               
+               <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4 flex-1">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Imprimir Listado de Huecos</h4>
+                  <div className="flex flex-wrap gap-3">
+                    <div className="flex-1 min-w-[120px]">
+                      <select 
+                        value={printPlant} 
+                        onChange={e => setPrintPlant(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-100 rounded-xl py-2 px-4 text-[10px] font-bold outline-none focus:border-indigo-500 transition-all uppercase"
+                      >
+                        <option value="U01">Planta U01</option>
+                        <option value="U02">Planta U02</option>
+                      </select>
+                    </div>
+                    <div className="flex-1 min-w-[120px]">
+                      <select 
+                        value={printOccupancy} 
+                        onChange={e => setPrintOccupancy(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-100 rounded-xl py-2 px-4 text-[10px] font-bold outline-none focus:border-indigo-500 transition-all uppercase"
+                      >
+                        <option value="todos">Todos los Huecos</option>
+                        <option value="llenos">Solo Llenos</option>
+                        <option value="medios">Solo Medios</option>
+                        <option value="libres">Solo Libres</option>
+                      </select>
+                    </div>
+                    <div className="flex-1 min-w-[120px]">
+                      <select 
+                        value={printStreetRange} 
+                        onChange={e => setPrintStreetRange(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-100 rounded-xl py-2 px-4 text-[10px] font-bold outline-none focus:border-indigo-500 transition-all uppercase"
+                      >
+                        <option value="all">Todas las Calles</option>
+                        <option value="1-12">Calles 1-12</option>
+                        <option value="13-21">Calles 13-21</option>
+                      </select>
+                    </div>
+                    <div className="flex-1 min-w-[120px]">
+                      <select 
+                        value={printSize} 
+                        onChange={e => setPrintSize(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-100 rounded-xl py-2 px-4 text-[10px] font-bold outline-none focus:border-indigo-500 transition-all uppercase"
+                      >
+                        <option value="all">Todos los Tamaños</option>
+                        <option value="Grande">Grande</option>
+                        <option value="Mediano">Mediano</option>
+                        <option value="Pequeño">Pequeño</option>
+                      </select>
+                    </div>
+                    <button 
+                      onClick={() => window.print()}
+                      className="bg-slate-800 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-slate-100 active:scale-95 transition-all hover:bg-slate-900 flex items-center gap-2"
+                    >
+                      <Printer className="w-4 h-4" />
+                      Imprimir
+                    </button>
+                  </div>
+               </div>
             </div>
 
-            <section className="space-y-6">
+            <section className="space-y-6 no-print">
               <h3 className="text-lg font-semibold text-slate-800 uppercase tracking-tight ml-2">Desglose Ocupación por Planta y Tamaño (Huecos)</h3>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                  {warehouseBreakdown.map((plantData: any) => (
@@ -2654,7 +2748,7 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
               </div>
             </section>
 
-            <section className="space-y-6">
+            <section className="space-y-6 no-print">
               <h3 className="text-lg font-semibold text-slate-800 uppercase tracking-tight ml-2">Rendimiento Operarios (Promedio en Periodo Seleccionado)</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {getOperatorStats().map(([key, op]) => (
@@ -2674,6 +2768,53 @@ CREATE TABLE IF NOT EXISTS warehouse_map_calibration (
                 ))}
               </div>
             </section>
+          </div>
+        )}
+        {activeSubTab === 'reports' && (
+          <div className="hidden print:block w-full">
+            <div className="mb-8 border-b-2 border-slate-900 pb-4 flex justify-between items-end">
+              <div>
+                <h1 className="text-2xl font-black uppercase tracking-tighter">Listado de Huecos - {printPlant}</h1>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                  Filtro: {printOccupancy === 'todos' ? 'Todos' : printOccupancy === 'llenos' ? 'Llenos' : printOccupancy === 'medios' ? 'Medios' : 'Libres'}
+                  {printStreetRange !== 'all' && ` | Calles: ${printStreetRange}`}
+                  {printSize !== 'all' && ` | Tamaño: ${printSize}`}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-bold uppercase tracking-widest">{new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest opacity-60">Total: {printableSlots.length} huecos</p>
+              </div>
+            </div>
+
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="border-b-2 border-slate-200">
+                  <th className="py-3 px-4 text-left text-[10px] font-black uppercase tracking-widest">Código</th>
+                  <th className="py-3 px-4 text-left text-[10px] font-black uppercase tracking-widest">Estado</th>
+                  <th className="py-3 px-4 text-left text-[10px] font-black uppercase tracking-widest">Ocupación</th>
+                  <th className="py-3 px-4 text-left text-[10px] font-black uppercase tracking-widest">Tamaño</th>
+                  <th className="py-3 px-4 text-left text-[10px] font-black uppercase tracking-widest">Últ. Act.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {printableSlots.map((slot) => (
+                  <tr key={slot.id} className="border-b border-slate-100">
+                    <td className="py-3 px-4 text-xs font-bold font-mono">{slot.code}</td>
+                    <td className="py-3 px-4 text-[10px] font-bold uppercase tracking-widest">
+                      {slot.status === 'empty' ? 'Libre' : slot.status === 'occupied' ? 'Ocupado' : 'Reservado'}
+                    </td>
+                    <td className="py-3 px-4 text-xs font-bold">
+                      {slot.quantity || 0}%
+                    </td>
+                    <td className="py-3 px-4 text-[10px] font-bold uppercase tracking-widest">{slot.size}</td>
+                    <td className="py-3 px-4 text-[10px] font-bold font-mono opacity-60">
+                      {new Date(slot.last_updated).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
