@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserProfile, ExpeditionLog, DailyNote, Trucker } from '../types';
-import { Truck, Printer, Save, Trash2, ChevronRight } from 'lucide-react';
+import { Truck, Printer, Save, Trash2, ChevronRight, Plus } from 'lucide-react';
 
 interface ExpeditionPanelProps {
   user: UserProfile;
@@ -98,6 +98,10 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
   // Estados para creación rápida de camión
   const [showTruckerModal, setShowTruckerModal] = useState(false);
   const [newTruckerName, setNewTruckerName] = useState('');
+  
+  const [showObservationModal, setShowObservationModal] = useState(false);
+  const [observationTruckId, setObservationTruckId] = useState('');
+  const [observationText, setObservationText] = useState('');
 
   // Permitir edición si la fecha es hoy o futura
   const isToday = historyDate >= getTodayStr();
@@ -118,16 +122,34 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
     }
   };
 
-  const saveNote = async () => {
+  const saveNote = async (newContent?: string) => {
+    const contentToSave = newContent !== undefined ? newContent : dailyNote;
     const { error } = await supabase.from('daily_notes').upsert({
       note_date: historyDate,
-      content: dailyNote,
+      content: contentToSave,
       updated_at: new Date().toISOString()
     }, { onConflict: 'note_date' });
     
     if (!error) {
-      alert("Nota del día guardada");
+      if (newContent === undefined) alert("Nota del día guardada");
+      setDailyNote(contentToSave);
     }
+  };
+
+  const handleAddObservation = async () => {
+    if (!observationText.trim() || !observationTruckId) return;
+
+    const truck = truckers.find(t => t.id === observationTruckId);
+    const truckLabel = truck ? truck.label : observationTruckId;
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const newEntry = `[${timestamp}] [${user.full_name.toUpperCase()}] ${truckLabel}: ${observationText.trim().toUpperCase()}`;
+    
+    const updatedNote = dailyNote ? `${dailyNote}\n${newEntry}` : newEntry;
+    
+    await saveNote(updatedNote);
+    setObservationText('');
+    setObservationTruckId('');
+    setShowObservationModal(false);
   };
 
   const handleCreateQuickTrucker = async (e: React.FormEvent) => {
@@ -353,19 +375,23 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
       </div>
 
       <div className="bg-white p-5 md:p-6 rounded-[2.5rem] border-2 border-slate-100 shadow-sm">
-        <div className="flex justify-between items-center mb-3 px-2">
+        <div className="flex justify-between items-center mb-4 px-2">
           <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">📝 Observaciones Turno</label>
           {isToday && (
-            <button onClick={saveNote} className="text-[8px] font-black text-indigo-600 uppercase tracking-widest bg-indigo-50 px-4 py-2 rounded-xl">Guardar</button>
+            <div className="flex gap-2">
+              <button 
+                onClick={() => setShowObservationModal(true)} 
+                className="text-[8px] font-black text-white uppercase tracking-widest bg-indigo-600 px-6 py-2.5 rounded-xl shadow-lg shadow-indigo-100 active:scale-95 transition-all flex items-center gap-2"
+              >
+                <Plus className="w-3 h-3" /> Nueva
+              </button>
+            </div>
           )}
         </div>
-        <textarea 
-          readOnly={!isToday}
-          className={`w-full border-2 rounded-[2rem] p-5 text-xs font-medium text-slate-700 outline-none transition-all min-h-[80px] resize-none ${isToday ? 'bg-slate-50 border-slate-100 focus:border-indigo-500' : 'bg-slate-50/50 border-transparent text-slate-400'}`}
-          placeholder={isToday ? "Escribe incidencias del turno..." : "Sin notas."}
-          value={dailyNote}
-          onChange={e => setDailyNote(e.target.value)}
-        />
+        
+        <div className={`w-full border-2 rounded-[2rem] p-6 text-xs font-medium text-slate-700 transition-all min-h-[100px] whitespace-pre-wrap ${isToday ? 'bg-slate-50 border-slate-100' : 'bg-slate-50/50 border-transparent text-slate-400'}`}>
+          {dailyNote || (isToday ? "No hay observaciones registradas aún." : "Sin notas.")}
+        </div>
       </div>
 
       {activeTab === 'current' && (
@@ -547,6 +573,75 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
                   </button>
                   <button onClick={closeModal} className="w-full py-3 text-slate-400 font-black text-[8px] uppercase tracking-widest">Cerrar</button>
                 </div>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {showObservationModal && (
+        <div className="fixed inset-0 z-[300] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4">
+           <div className="bg-white w-full max-w-lg rounded-[3.5rem] p-8 md:p-10 shadow-2xl space-y-6 animate-fade-in border border-white flex flex-col max-h-[90vh]">
+              <div className="text-center shrink-0">
+                 <h3 className="text-xl font-black text-slate-800 uppercase">Nueva Observación</h3>
+                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">Registrar incidencia de turno</p>
+              </div>
+
+              <div className="space-y-4 flex-1 overflow-y-auto pr-1 min-h-0">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Seleccionar Camión</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {truckers
+                      .filter(t => activeTruckIds.has(t.id))
+                      .map(t => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setObservationTruckId(t.id)}
+                        className={`p-3 rounded-xl border-2 transition-all flex flex-col items-center justify-center text-center gap-1 ${
+                          observationTruckId === t.id 
+                          ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-100' 
+                          : 'bg-slate-50 border-slate-100 text-slate-500 hover:bg-white'
+                        }`}
+                      >
+                        <span className="text-[9px] font-black uppercase leading-tight">{t.label}</span>
+                      </button>
+                    ))}
+                    {truckers.filter(t => activeTruckIds.has(t.id)).length === 0 && (
+                      <div className="col-span-full py-4 text-center">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase italic">No hay camiones con agenda para este día</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Observación</label>
+                  <textarea 
+                    autoFocus 
+                    placeholder="Escribe aquí la incidencia..." 
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 font-bold text-xs outline-none focus:border-indigo-500 uppercase resize-none" 
+                    rows={4}
+                    value={observationText} 
+                    onChange={e => setObservationText(e.target.value)} 
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3 shrink-0">
+                 <button 
+                  onClick={handleAddObservation}
+                  disabled={loading || !observationText.trim() || !observationTruckId} 
+                  className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-xl uppercase tracking-widest text-[10px] disabled:opacity-50"
+                 >
+                   Guardar Observación
+                 </button>
+                 <button 
+                  type="button" 
+                  onClick={() => { setShowObservationModal(false); setObservationText(''); setObservationTruckId(''); }} 
+                  className="w-full py-4 text-slate-400 font-black text-[9px] uppercase tracking-[0.2em]"
+                 >
+                   Cancelar
+                 </button>
               </div>
            </div>
         </div>
