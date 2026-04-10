@@ -142,14 +142,47 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
     const truck = truckers.find(t => t.id === observationTruckId);
     const truckLabel = truck ? truck.label : observationTruckId;
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const newEntry = `[${timestamp}] [${user.full_name.toUpperCase()}] ${truckLabel}: ${observationText.trim().toUpperCase()}`;
     
-    const updatedNote = dailyNote ? `${dailyNote}\n${newEntry}` : newEntry;
+    const newObservation = {
+      id: Math.random().toString(36).substring(2, 9) + Date.now(),
+      user_name: user.full_name.toUpperCase(),
+      user_email: user.email,
+      truck_label: truckLabel,
+      text: observationText.trim().toUpperCase(),
+      timestamp
+    };
+
+    let observations = [];
+    try {
+      if (dailyNote) {
+        const parsed = JSON.parse(dailyNote);
+        observations = Array.isArray(parsed) ? parsed : [];
+      }
+    } catch (e) {
+      // Fallback: if it was plain text, we start fresh with JSON
+      observations = [];
+    }
+
+    const updatedObservations = [...observations, newObservation];
+    await saveNote(JSON.stringify(updatedObservations));
     
-    await saveNote(updatedNote);
     setObservationText('');
     setObservationTruckId('');
     setShowObservationModal(false);
+  };
+
+  const handleDeleteObservation = async (obsId: string) => {
+    if (!confirm("¿Estás seguro de que deseas eliminar esta observación?")) return;
+    
+    try {
+      const observations = JSON.parse(dailyNote);
+      if (!Array.isArray(observations)) return;
+      
+      const filtered = observations.filter((o: any) => o.id !== obsId);
+      await saveNote(JSON.stringify(filtered));
+    } catch (e) {
+      console.error("Error deleting observation", e);
+    }
   };
 
   const handleCreateQuickTrucker = async (e: React.FormEvent) => {
@@ -389,8 +422,35 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
           )}
         </div>
         
-        <div className={`w-full border-2 rounded-[2rem] p-6 text-xs font-medium text-slate-700 transition-all min-h-[100px] whitespace-pre-wrap ${isToday ? 'bg-slate-50 border-slate-100' : 'bg-slate-50/50 border-transparent text-slate-400'}`}>
-          {dailyNote || (isToday ? "No hay observaciones registradas aún." : "Sin notas.")}
+        <div className={`w-full border-2 rounded-[2rem] p-6 text-xs font-medium text-slate-700 transition-all min-h-[100px] flex flex-col gap-3 ${isToday ? 'bg-slate-50 border-slate-100' : 'bg-slate-50/50 border-transparent text-slate-400'}`}>
+          {(() => {
+            try {
+              if (!dailyNote) return isToday ? "No hay observaciones registradas aún." : "Sin notas.";
+              const observations = JSON.parse(dailyNote);
+              if (Array.isArray(observations)) {
+                if (observations.length === 0) return isToday ? "No hay observaciones registradas aún." : "Sin notas.";
+                return observations.map((obs: any) => (
+                  <div key={obs.id} className="flex justify-between items-start gap-4 group border-b border-slate-100 pb-2 last:border-0 last:pb-0">
+                    <span className="flex-1 leading-relaxed">
+                      <span className="font-black text-indigo-600">[{obs.timestamp}] [{obs.user_name}]</span> <span className="font-bold text-slate-900">{obs.truck_label}:</span> {obs.text}
+                    </span>
+                    {isToday && obs.user_email === user.email && (
+                      <button 
+                        onClick={() => handleDeleteObservation(obs.id)}
+                        className="text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-rose-50 rounded-lg shrink-0"
+                        title="Eliminar mi observación"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ));
+              }
+              return dailyNote;
+            } catch (e) {
+              return dailyNote || (isToday ? "No hay observaciones registradas aún." : "Sin notas.");
+            }
+          })()}
         </div>
       </div>
 
