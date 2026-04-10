@@ -375,7 +375,8 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
 
   return (
     <div className="space-y-6 animate-fade-in pb-24" style={{ fontFamily: 'Inter, sans-serif' }}>
-      <div className="bg-white p-6 md:p-8 rounded-[3rem] border-2 border-slate-100 shadow-sm flex flex-col md:flex-row justify-between items-center relative overflow-hidden">
+      <div className="print:hidden space-y-6">
+        <div className="bg-white p-6 md:p-8 rounded-[3rem] border-2 border-slate-100 shadow-sm flex flex-col md:flex-row justify-between items-center relative overflow-hidden">
         <div className="absolute -right-4 -bottom-4 text-indigo-50 text-8xl font-bold opacity-30">🚛</div>
         <div className="relative z-10 w-full md:w-auto">
           <h2 className="text-lg md:text-xl font-black text-slate-800 uppercase tracking-tighter">Control de Expedición</h2>
@@ -408,9 +409,17 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
              {historyDate < getTodayStr() && <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded-lg text-[7px] font-black uppercase tracking-widest">MODO CONSULTA</span>}
           </div>
         </div>
-        <div className="flex bg-slate-900 p-1.5 rounded-2xl mt-4 md:mt-0 relative z-10 shadow-lg shrink-0">
-          <button onClick={() => setActiveTab('current')} className={`px-4 md:px-6 py-2 rounded-xl text-[8px] font-bold uppercase tracking-widest transition-all ${activeTab === 'current' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}>Vista Muelles</button>
-          <button onClick={() => setActiveTab('history')} className={`px-4 md:px-6 py-2 rounded-xl text-[8px] font-bold uppercase tracking-widest transition-all ${activeTab === 'history' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}>Listado Diario</button>
+        <div className="flex flex-col md:flex-row gap-3 mt-4 md:mt-0 relative z-10 shrink-0">
+          <button 
+            onClick={() => window.print()}
+            className="flex items-center gap-2 px-6 py-2.5 bg-white text-slate-900 rounded-xl text-[8px] font-black uppercase tracking-widest shadow-lg hover:bg-slate-50 transition-all print:hidden"
+          >
+            <Printer className="w-3.5 h-3.5" /> Imprimir Informe
+          </button>
+          <div className="flex bg-slate-900 p-1.5 rounded-2xl shadow-lg">
+            <button onClick={() => setActiveTab('current')} className={`px-4 md:px-6 py-2 rounded-xl text-[8px] font-bold uppercase tracking-widest transition-all ${activeTab === 'current' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}>Vista Muelles</button>
+            <button onClick={() => setActiveTab('history')} className={`px-4 md:px-6 py-2 rounded-xl text-[8px] font-bold uppercase tracking-widest transition-all ${activeTab === 'history' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}>Listado Diario</button>
+          </div>
         </div>
       </div>
 
@@ -552,7 +561,7 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
       )}
 
       {assigningData && isToday && (
-        <div className="fixed inset-0 z-[200] bg-slate-900/95 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[200] bg-slate-900/95 backdrop-blur-md flex items-center justify-center p-4 print:hidden">
            <div className="bg-white w-full max-lg rounded-[3.5rem] p-6 md:p-10 shadow-2xl animate-fade-in relative overflow-hidden flex flex-col max-h-[90vh]">
               <div className="absolute -right-8 -top-8 text-slate-50 text-9xl font-bold opacity-30 pointer-events-none">🚛</div>
               
@@ -654,7 +663,7 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
       )}
 
       {showObservationModal && (
-        <div className="fixed inset-0 z-[300] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[300] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4 print:hidden">
            <div className="bg-white w-full max-w-lg rounded-[3.5rem] p-8 md:p-10 shadow-2xl space-y-6 animate-fade-in border border-white flex flex-col max-h-[90vh]">
               <div className="text-center shrink-0">
                  <h3 className="text-xl font-black text-slate-800 uppercase">Nueva Observación</h3>
@@ -723,7 +732,7 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
       )}
 
       {showTruckerModal && (
-        <div className="fixed inset-0 z-[300] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[300] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4 print:hidden">
            <form onSubmit={handleCreateQuickTrucker} className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl space-y-6 animate-fade-in border border-white">
               <div className="text-center">
                  <h3 className="text-xl font-black text-slate-800 uppercase">Nuevo Transportista</h3>
@@ -743,6 +752,80 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
            </form>
         </div>
       )}
+
+      </div>
+
+      {/* Informe para Impresión */}
+      <div className="hidden print:block bg-white p-8 space-y-8">
+        <div className="border-b-4 border-slate-900 pb-6 flex justify-between items-end">
+          <div>
+            <h1 className="text-4xl font-black uppercase tracking-tighter">Informe de Expedición</h1>
+            <p className="text-sm font-bold text-slate-500 uppercase tracking-[0.3em] mt-2">Control de Muelles y Salidas</p>
+          </div>
+          <div className="text-right">
+            <p className="text-2xl font-black text-slate-900">{new Date(historyDate).toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).toUpperCase()}</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Impreso el: {new Date().toLocaleString('es-ES')}</p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <h3 className="text-lg font-black uppercase tracking-widest border-l-4 border-indigo-600 pl-4">Observaciones del Turno</h3>
+          <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-3">
+            {(() => {
+              try {
+                if (!dailyNote) return <p className="text-xs text-slate-400 italic">No hay observaciones registradas.</p>;
+                const observations = JSON.parse(dailyNote);
+                if (Array.isArray(observations) && observations.length > 0) {
+                  const sorted = [...observations].sort((a, b) => {
+                    if (a.truck_label === 'GENERAL' && b.truck_label !== 'GENERAL') return -1;
+                    if (a.truck_label !== 'GENERAL' && b.truck_label === 'GENERAL') return 1;
+                    return 0;
+                  });
+                  return sorted.map((obs: any) => (
+                    <div key={obs.id} className="text-xs border-b border-slate-200 pb-2 last:border-0">
+                      <span className="font-black text-indigo-600">[{obs.timestamp}] [{obs.user_name}]</span> <span className="font-bold text-slate-900">{obs.truck_label}:</span> {obs.text}
+                    </div>
+                  ));
+                }
+                return <p className="text-xs text-slate-700">{dailyNote}</p>;
+              } catch (e) {
+                return <p className="text-xs text-slate-700">{dailyNote}</p>;
+              }
+            })()}
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <h3 className="text-lg font-black uppercase tracking-widest border-l-4 border-indigo-600 pl-4">Estado de Muelles (Actual)</h3>
+          <div className="grid grid-cols-2 gap-4">
+            {MUELLES.map(muelle => {
+              const dockLogs = getActiveLogsForDock(muelle);
+              return (
+                <div key={muelle} className="border-2 border-slate-100 p-4 rounded-2xl">
+                  <h4 className="font-black text-slate-900 text-xs uppercase tracking-widest mb-3 border-b border-slate-50 pb-2">{muelle}</h4>
+                  <div className="space-y-2">
+                    {dockLogs.length === 0 ? (
+                      <p className="text-[10px] text-slate-300 font-bold uppercase">DISPONIBLE</p>
+                    ) : dockLogs.map(log => (
+                      <div key={log.id} className="flex justify-between items-center bg-slate-50 p-2 rounded-lg">
+                        <span className="text-xs font-black text-slate-800 uppercase">{log.truck_id}</span>
+                        <span className="text-[8px] font-bold text-slate-400 uppercase">
+                          {log.side === 'single' ? 'COMPLETO' : log.side === 'left' ? 'IZQ' : 'DER'} | {new Date(log.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="pt-12 mt-12 border-t border-slate-100 flex justify-between text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">
+          <span>Control de Expedición - Warehouse Pro</span>
+          <span>Firma Responsable: ___________________________</span>
+        </div>
+      </div>
     </div>
   );
 };
