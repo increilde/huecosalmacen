@@ -798,15 +798,13 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
         <div className="space-y-2">
           <h3 className="text-sm font-black uppercase tracking-widest border-l-4 border-indigo-600 pl-3">Estado de Muelles (Actual)</h3>
           <div className="grid grid-cols-2 gap-3">
-            {MUELLES.map(muelle => {
+            {MUELLES.filter(muelle => getActiveLogsForDock(muelle).length > 0).map(muelle => {
               const dockLogs = getActiveLogsForDock(muelle);
               return (
                 <div key={muelle} className="border border-slate-200 p-3 rounded-xl">
                   <h4 className="font-black text-slate-900 text-[10px] uppercase tracking-widest mb-2 border-b border-slate-50 pb-1">{muelle}</h4>
                   <div className="space-y-1">
-                    {dockLogs.length === 0 ? (
-                      <p className="text-[9px] text-slate-300 font-bold uppercase">DISPONIBLE</p>
-                    ) : dockLogs.map(log => (
+                    {dockLogs.map(log => (
                       <div key={log.id} className="flex justify-between items-center bg-slate-50 p-1.5 rounded-lg">
                         <span className="text-[10px] font-black text-slate-800 uppercase">{log.truck_id}</span>
                         <span className="text-[7px] font-bold text-slate-400 uppercase">
@@ -818,6 +816,11 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
                 </div>
               );
             })}
+            {MUELLES.filter(muelle => getActiveLogsForDock(muelle).length > 0).length === 0 && (
+              <div className="col-span-2 py-4 text-center">
+                <p className="text-[10px] font-bold text-slate-400 uppercase italic">No hay camiones en muelles en este momento.</p>
+              </div>
+            )}
           </div>
         </div>
 
