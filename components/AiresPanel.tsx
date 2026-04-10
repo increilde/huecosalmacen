@@ -31,6 +31,12 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 
 const ZONES = ['GRANADA', 'COSTA 1', 'COSTA 2', 'ANTEQUERA', 'ALMERÍA', 'SIN ZONA', 'NO DISPONIBLE'];
+
+const isSpecialInstaller = (name: string) => {
+  const n = (name || '').toUpperCase();
+  return n.includes('12 ABEL') || n.includes('ABEL 12');
+};
+
 const WAREHOUSES = [
   { id: '2', label: '2 MOTRIL' },
   { id: '3', label: '3 CENTRAL' },
@@ -79,16 +85,24 @@ const DraggableInstallerItem = ({ installer }: { installer: any }) => {
     zIndex: isDragging ? 100 : 1,
   } : undefined;
 
+  const isSpecial = isSpecialInstaller(installer?.full_name);
+
   return (
     <div 
       ref={setNodeRef} 
       style={style} 
       {...attributes} 
       {...listeners}
-      className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex items-center gap-2 cursor-grab active:cursor-grabbing hover:border-indigo-300 transition-all group"
+      className={`p-3 rounded-xl border shadow-sm flex items-center gap-2 cursor-grab active:cursor-grabbing transition-all group ${
+        isSpecial 
+          ? 'bg-rose-50 border-rose-200 hover:border-rose-400' 
+          : 'bg-white border-slate-200 hover:border-indigo-300'
+      }`}
     >
-      <User className="w-4 h-4 text-slate-400 group-hover:text-indigo-500" />
-      <span className="text-[10px] font-bold text-slate-700 uppercase truncate">{installer.full_name}</span>
+      <User className={`w-4 h-4 ${isSpecial ? 'text-rose-500' : 'text-slate-400 group-hover:text-indigo-500'}`} />
+      <span className={`text-[10px] font-bold uppercase truncate ${isSpecial ? 'text-rose-700' : 'text-slate-700'}`}>
+        {installer?.full_name}
+      </span>
     </div>
   );
 };
@@ -111,6 +125,8 @@ const DraggableAssignedInstaller = ({ assignment, installer, onRemove }: { assig
     zIndex: isDragging ? 100 : 1,
   } : undefined;
 
+  const isSpecial = isSpecialInstaller(installer?.full_name);
+
   return (
     <div 
       ref={setNodeRef}
@@ -118,12 +134,16 @@ const DraggableAssignedInstaller = ({ assignment, installer, onRemove }: { assig
       {...attributes}
       {...listeners}
       className={`p-3 rounded-xl border shadow-sm flex items-center justify-between group animate-in fade-in slide-in-from-bottom-2 cursor-grab active:cursor-grabbing ${
-        isVirtual ? 'bg-indigo-50/50 border-indigo-100 border-dashed' : 'bg-white border-slate-200'
+        isSpecial 
+          ? 'bg-rose-50 border-rose-200' 
+          : isVirtual 
+            ? 'bg-indigo-50/50 border-indigo-100 border-dashed' 
+            : 'bg-white border-slate-200'
       }`}
     >
       <div className="flex items-center gap-2 overflow-hidden">
-        <User className={`w-3 h-3 ${isVirtual ? 'text-indigo-300' : 'text-indigo-500'}`} />
-        <span className={`text-[10px] font-bold uppercase truncate ${isVirtual ? 'text-slate-400' : 'text-slate-700'}`}>
+        <User className={`w-3 h-3 ${isSpecial ? 'text-rose-500' : isVirtual ? 'text-indigo-300' : 'text-indigo-500'}`} />
+        <span className={`text-[10px] font-bold uppercase truncate ${isSpecial ? 'text-rose-700' : isVirtual ? 'text-slate-400' : 'text-slate-700'}`}>
           {installer?.full_name || 'Desconocido'}
           {isVirtual && <span className="ml-1 text-[7px] opacity-50">(DEF)</span>}
         </span>
@@ -201,17 +221,16 @@ const DroppableAvailableArea = ({ children }: { children: React.ReactNode }) => 
 };
 
 const DraggableInstallation = ({ inst, onClick }: { inst: Installation, onClick: () => void }) => {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: inst.id,
     data: { type: 'installation', installation: inst }
   });
 
-  const style = {
+  const style = transform ? {
     transform: CSS.Translate.toString(transform),
-    transition,
     opacity: isDragging ? 0.3 : 1,
     zIndex: isDragging ? 100 : 1,
-  };
+  } : undefined;
 
   return (
     <div 
@@ -597,7 +616,7 @@ const AiresPanel: React.FC<AiresPanelProps> = ({ user }) => {
   };
 
   const filteredInstallers = useMemo(() => {
-    return installers.filter(installer => {
+    const filtered = installers.filter(installer => {
       const matchesName = (installer.full_name || installer.label || '').toLowerCase().includes(searchTerm.toLowerCase());
       
       let matchesOrder = true;
@@ -609,6 +628,17 @@ const AiresPanel: React.FC<AiresPanelProps> = ({ user }) => {
       }
       
       return matchesName && matchesOrder;
+    });
+
+    // Sort: Special installer last, others alphabetical
+    return [...filtered].sort((a, b) => {
+      const aSpecial = isSpecialInstaller(a?.full_name);
+      const bSpecial = isSpecialInstaller(b?.full_name);
+      
+      if (aSpecial && !bSpecial) return 1;
+      if (!aSpecial && bSpecial) return -1;
+      
+      return (a?.full_name || '').localeCompare(b?.full_name || '');
     });
   }, [installers, searchTerm, orderSearchTerm, installations]);
 
@@ -725,6 +755,13 @@ const AiresPanel: React.FC<AiresPanelProps> = ({ user }) => {
                   .filter(i => !dailyAssignments.some(a => a.installer_id === i.id))
                   .filter(i => !i.zone || !ZONES.includes(i.zone.toUpperCase()))
                   .filter(i => (i.full_name || '').toLowerCase().includes(searchTerm.toLowerCase()))
+                  .sort((a, b) => {
+                    const aSpecial = isSpecialInstaller(a.full_name);
+                    const bSpecial = isSpecialInstaller(b.full_name);
+                    if (aSpecial && !bSpecial) return 1;
+                    if (!aSpecial && bSpecial) return -1;
+                    return (a.full_name || '').localeCompare(b.full_name || '');
+                  })
                   .map(installer => (
                     <DraggableInstallerItem key={installer.id} installer={installer} />
                   ))}
@@ -1011,53 +1048,62 @@ const AiresPanel: React.FC<AiresPanelProps> = ({ user }) => {
                       </td>
                     </tr>
                   ) : (
-                    filteredInstallers.map(installer => (
-                      <tr key={installer.id} className="group">
-                        <td className="sticky left-0 z-20 bg-white p-2 border-r-2 border-slate-100 font-black text-slate-700 text-[10px] uppercase shadow-[4px_0_10px_rgba(0,0,0,0.03)] group-hover:bg-slate-50 transition-colors">
-                          <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 border border-indigo-100 group-hover:scale-110 transition-transform">
-                              <User className="w-3 h-3" />
-                            </div>
-                            <div className="flex flex-col">
-                              <span className="leading-none truncate max-w-[150px]">{installer.full_name || installer.label}</span>
-                              {installer.zone && (
-                                <span className="text-[6px] text-indigo-400 mt-0.5 tracking-widest">{installer.zone}</span>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                        {dates.map((date, idx) => {
-                          const cellInstallations = getInstallationsForCell(installer.id, date);
-                          const isWeekend = date.getDay() === 0 || date.getDay() === 6;
-                          const isToday = date.toDateString() === new Date().toDateString();
-                          
-                          return (
-                            <DroppableCell 
-                              key={idx} 
-                              installerId={installer.id} 
-                              date={date} 
-                              isToday={isToday} 
-                              isWeekend={isWeekend}
-                            >
-                              <div className="space-y-1 min-h-[50px]">
-                                {cellInstallations.map(inst => (
-                                  <DraggableInstallation 
-                                    key={inst.id} 
-                                    inst={inst} 
-                                    onClick={() => setSelectedInstallation(inst)} 
-                                  />
-                                ))}
-                                {cellInstallations.length === 0 && (
-                                  <div className="h-full w-full flex items-center justify-center opacity-0 group-hover:opacity-10 transition-opacity">
-                                    <Plus className="w-4 h-4 text-slate-400" />
-                                  </div>
+                    filteredInstallers.map(installer => {
+                      const isSpecial = isSpecialInstaller(installer?.full_name);
+                      return (
+                        <tr key={installer.id} className="group">
+                          <td className={`sticky left-0 z-20 p-2 border-r-2 border-slate-100 font-black text-[10px] uppercase shadow-[4px_0_10px_rgba(0,0,0,0.03)] transition-colors ${
+                            isSpecial ? 'bg-rose-50 text-rose-700 group-hover:bg-rose-100' : 'bg-white text-slate-700 group-hover:bg-slate-50'
+                          }`}>
+                            <div className="flex items-center gap-2">
+                              <div className={`w-6 h-6 rounded-lg flex items-center justify-center border group-hover:scale-110 transition-transform ${
+                                isSpecial ? 'bg-rose-100 text-rose-600 border-rose-200' : 'bg-indigo-50 text-indigo-600 border-indigo-100'
+                              }`}>
+                                <User className="w-3 h-3" />
+                              </div>
+                              <div className="flex flex-col">
+                                <span className="leading-none truncate max-w-[150px]">{installer?.full_name || installer?.label}</span>
+                                {installer?.zone && (
+                                  <span className={`text-[6px] mt-0.5 tracking-widest ${isSpecial ? 'text-rose-400' : 'text-indigo-400'}`}>
+                                    {installer.zone}
+                                  </span>
                                 )}
                               </div>
-                            </DroppableCell>
-                          );
-                        })}
-                      </tr>
-                    ))
+                            </div>
+                          </td>
+                          {dates.map((date, idx) => {
+                            const cellInstallations = getInstallationsForCell(installer.id, date);
+                            const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                            const isToday = date.toDateString() === new Date().toDateString();
+                            
+                            return (
+                              <DroppableCell 
+                                key={idx} 
+                                installerId={installer.id} 
+                                date={date} 
+                                isToday={isToday} 
+                                isWeekend={isWeekend}
+                              >
+                                <div className="space-y-1 min-h-[50px]">
+                                  {cellInstallations.map(inst => (
+                                    <DraggableInstallation 
+                                      key={inst.id} 
+                                      inst={inst} 
+                                      onClick={() => setSelectedInstallation(inst)} 
+                                    />
+                                  ))}
+                                  {cellInstallations.length === 0 && (
+                                    <div className="h-full w-full flex items-center justify-center opacity-0 group-hover:opacity-10 transition-opacity">
+                                      <Plus className="w-4 h-4 text-slate-400" />
+                                    </div>
+                                  )}
+                                </div>
+                              </DroppableCell>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
