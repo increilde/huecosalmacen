@@ -407,7 +407,7 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
   const [pendingZoneInstallerId, setPendingZoneInstallerId] = useState<string | null>(null);
   const [pendingInstallationId, setPendingInstallationId] = useState<string | null>(null);
   const [isCreatingAfterZone, setIsCreatingAfterZone] = useState(false);
-  const [expandedInstallers, setExpandedInstallers] = useState<Set<string>>(new Set());
+  const [collapsedInstallers, setCollapsedInstallers] = useState<Set<string>>(new Set());
   
   const [newInstallation, setNewInstallation] = useState<Partial<Installation>>({
     warehouse_origin: '3',
@@ -756,7 +756,7 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
   };
 
   const toggleInstallerExpand = (installerId: string) => {
-    setExpandedInstallers(prev => {
+    setCollapsedInstallers(prev => {
       const next = new Set(prev);
       if (next.has(installerId)) next.delete(installerId);
       else next.add(installerId);
@@ -1467,8 +1467,8 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
                 <div className="bg-slate-900 px-6 py-3 flex justify-between items-center cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => toggleInstallerExpand(installer.id)}>
                   <div className="flex items-center gap-6">
                     <div className="flex items-center gap-3">
-                      <span className={`text-xl text-white/70 transition-transform duration-300 ${expandedInstallers.has(installer.id) ? 'rotate-0' : '-rotate-90'}`}>
-                        {expandedInstallers.has(installer.id) ? '▼' : '▶'}
+                      <span className={`text-xl text-white/70 transition-transform duration-300 ${!collapsedInstallers.has(installer.id) ? 'rotate-0' : '-rotate-90'}`}>
+                        {!collapsedInstallers.has(installer.id) ? '▼' : '▶'}
                       </span>
                       <span className="text-xl">👷</span>
                       <h4 className="text-white text-sm font-black uppercase tracking-widest">{installer.full_name}</h4>
@@ -1540,7 +1540,7 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
                   </div>
                 </div>
                 
-                <div className={`grid transition-all duration-500 ease-in-out ${expandedInstallers.has(installer.id) ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
+                <div className={`grid transition-all duration-500 ease-in-out ${!collapsedInstallers.has(installer.id) ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
                   <div className="overflow-hidden">
                     <div className="p-3 space-y-2">
                       <InstallerDroppable id={installer.id}>

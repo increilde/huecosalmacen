@@ -29,6 +29,19 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
   const [csvPreviewData, setCsvPreviewData] = useState<any[]>([]);
   const [showCsvPreview, setShowCsvPreview] = useState(false);
   
+  const [validationWarnings, setValidationWarnings] = useState<{slot: string, date: string}[]>([]);
+  const [showWarningModal, setShowWarningModal] = useState(false);
+
+  const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
+  const [csvRows, setCsvRows] = useState<string[][]>([]);
+  const [mapping, setMapping] = useState({
+    itemCode: -1,
+    slotCode: -1,
+    quantity: -1,
+    description: -1
+  });
+  const [showMappingModal, setShowMappingModal] = useState(false);
+  
   const [showCapacityModal, setShowCapacityModal] = useState(false);
   const [showSizeModal, setShowSizeModal] = useState(false);
   const [showCreateSlotModal, setShowCreateSlotModal] = useState(false);
@@ -66,16 +79,17 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
     try {
       const today = new Date().toISOString().split('T')[0];
 
-      // 1. Fetch Readings
+      // 1. Fetch Readings (All history for validated, but we can filter in memory)
       const { data: readings, error: readingsError } = await supabase
         .from('inventory_readings')
         .select('*, items:inventory_items(*)')
-        .gte('created_at', `${today}T00:00:00`)
         .order('created_at', { ascending: false });
 
       if (readingsError) throw readingsError;
       
-      const pending = (readings || []).filter(r => r.status === 'pending');
+      // Pending: only from today (to avoid cluttering with old unfinished ones)
+      // Validated: all history
+      const pending = (readings || []).filter(r => r.status === 'pending' && r.created_at.startsWith(today));
       const completed = (readings || []).filter(r => r.status === 'completed');
       
       if (isMountedRef.current) {
@@ -83,15 +97,15 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
         setCompletedReadings(completed);
       }
 
-      // 2. Fetch Missing Slots
+      // 2. Fetch Missing Slots (Only compared to today's readings)
       const { data: allSlots, error: slotsError } = await supabase
         .from('warehouse_slots')
         .select('*');
       
       if (slotsError) throw slotsError;
 
-      const readSlotCodes = new Set((readings || []).map(r => r.slot_code));
-      const missing = (allSlots || []).filter(s => !readSlotCodes.has(s.code));
+      const readTodaySlotCodes = new Set((readings || []).filter(r => r.created_at.startsWith(today)).map(r => r.slot_code));
+      const missing = (allSlots || []).filter(s => !readTodaySlotCodes.has(s.code));
       if (isMountedRef.current) setMissingSlots(missing);
 
       // 3. Fetch All Theoretical Stock
@@ -384,16 +398,15 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
       const text = await file.text();
       const lines = text.split(/\r?\n/);
       
-      // Use a map to group by slot_code + item_code to get totals
-      const groupedData = new Map<string, any>();
-
       if (lines.length < 2) {
         throw new Error('El archivo está vacío o no tiene suficientes líneas');
       }
 
       const separator = ';';
+      const parsedRows: string[][] = [];
+      let headers: string[] = [];
 
-      for (let i = 1; i < lines.length; i++) {
+      for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
         if (!line) continue;
 
@@ -414,15 +427,45 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
         }
         columns.push(currentField.trim().replace(/^["']|["']$/g, ''));
         
-        if (columns.length < 14) continue;
+        if (i === 0) {
+          headers = columns;
+        } else {
+          parsedRows.push(columns);
+        }
+      }
 
-        let itemCodeRaw = columns[7] || ''; 
-        const description = columns[8] || ''; 
-        const slotCode = (columns[11] || '').toUpperCase(); 
-        const qtyRaw = columns[13] || '0'; 
+      setCsvHeaders(headers);
+      setCsvRows(parsedRows);
+      setShowMappingModal(true);
+      setMessage(null);
+    } catch (err: any) {
+      console.error('CSV Error:', err);
+      setMessage({ text: 'ERROR AL CARGAR CSV: ' + err.message, type: 'error' });
+    } finally {
+      setUploading(false);
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const processMappedCSV = async () => {
+    if (mapping.itemCode === -1 || mapping.slotCode === -1 || mapping.quantity === -1) {
+      alert('Por favor, define las columnas para Artículo, Hueco y Cantidad');
+      return;
+    }
+
+    setUploading(true);
+    const groupedData = new Map<string, any>();
+
+    try {
+      for (const columns of csvRows) {
+        let itemCodeRaw = columns[mapping.itemCode] || ''; 
+        const description = mapping.description !== -1 ? (columns[mapping.description] || '') : ''; 
+        const slotCode = (columns[mapping.slotCode] || '').toUpperCase(); 
+        const qtyRaw = columns[mapping.quantity] || '0'; 
         const qty = parseFloat(qtyRaw.replace(',', '.') || '0');
 
         if (itemCodeRaw && slotCode) {
+          // Handle scientific notation
           if (itemCodeRaw.toLowerCase().includes('e') && /^-?\d*\.?\d+e[+-]?\d+$/i.test(itemCodeRaw)) {
             try {
               const num = Number(itemCodeRaw.replace(',', '.'));
@@ -430,7 +473,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
                 itemCodeRaw = num.toLocaleString('fullwide', { useGrouping: false });
               }
             } catch (e) {
-              console.error('Error parsing scientific notation:', e);
+              // Ignore parsing errors for scientific notation
             }
           }
 
@@ -457,18 +500,45 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
       const dataToInsert = Array.from(groupedData.values());
 
       if (dataToInsert.length === 0) {
-        throw new Error('No se encontraron datos válidos. Verifica que el archivo tenga al menos 14 columnas.');
+        throw new Error('No se encontraron datos válidos con el mapeo seleccionado.');
+      }
+
+      // Check for already validated slots in history
+      const uniqueSlots = Array.from(new Set(dataToInsert.map(d => d.slot_code)));
+      
+      // Query in chunks to avoid Supabase/Postgres limits if many slots
+      const warnings: {slot: string, date: string}[] = [];
+      for (let i = 0; i < uniqueSlots.length; i += 500) {
+        const chunk = uniqueSlots.slice(i, i + 500);
+        const { data: alreadyValidated } = await supabase
+          .from('inventory_readings')
+          .select('slot_code, completed_at')
+          .eq('status', 'completed')
+          .in('slot_code', chunk);
+        
+        if (alreadyValidated) {
+          alreadyValidated.forEach(v => {
+            warnings.push({
+              slot: v.slot_code,
+              date: new Date(v.completed_at).toLocaleString()
+            });
+          });
+        }
       }
 
       setCsvPreviewData(dataToInsert);
-      setShowCsvPreview(true);
-      setMessage(null);
+      setShowMappingModal(false);
+      
+      if (warnings.length > 0) {
+        setValidationWarnings(warnings);
+        setShowWarningModal(true);
+      } else {
+        setShowCsvPreview(true);
+      }
     } catch (err: any) {
-      console.error('CSV Error:', err);
-      setMessage({ text: 'ERROR AL CARGAR CSV: ' + err.message, type: 'error' });
+      alert('Error al procesar: ' + err.message);
     } finally {
       setUploading(false);
-      if (e.target) e.target.value = '';
     }
   };
 
@@ -987,9 +1057,9 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
               <div className="text-6xl">📄</div>
               <h3 className="text-xl font-black text-slate-800 uppercase">Cargar Stock Teórico</h3>
               <p className="text-xs font-bold text-slate-400 uppercase max-w-md mx-auto leading-relaxed">
-                Sube un archivo CSV con el stock de tu programa para compararlo con las lecturas de los operarios.
+                Sube un archivo CSV con el stock de tu programa. 
                 <br/>
-                <span className="text-[10px] text-indigo-500 mt-2 block">Columnas requeridas: 7 (Artículo), 11 (Hueco), 13 (Cantidad)</span>
+                <span className="text-[10px] text-indigo-500 mt-2 block">Podrás definir qué columna corresponde a cada campo después de subir el archivo.</span>
               </p>
               
               <div className="pt-6">
@@ -1128,6 +1198,134 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ user }) => {
               >
                 {loading ? 'GUARDANDO...' : 'CONFIRMAR'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CSV Mapping Modal */}
+      {showMappingModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-[3rem] p-8 shadow-2xl animate-scale-in flex flex-col max-h-[90vh]">
+            <div className="text-center space-y-4 mb-6">
+              <div className="text-4xl">🗺️</div>
+              <h3 className="text-xl font-black text-slate-800 uppercase">Definir Columnas</h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Asigna las columnas de tu archivo a los campos del sistema</p>
+            </div>
+
+            <div className="space-y-4 flex-1 overflow-y-auto pr-2">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Artículo (Obligatorio)</label>
+                <select 
+                  value={mapping.itemCode}
+                  onChange={e => setMapping(prev => ({ ...prev, itemCode: parseInt(e.target.value) }))}
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 text-sm font-bold outline-none focus:border-indigo-500 transition-all"
+                >
+                  <option value="-1">Seleccionar columna...</option>
+                  {csvHeaders.map((header, idx) => (
+                    <option key={idx} value={idx}>{header || `Columna ${idx + 1}`}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Hueco / Ubicación (Obligatorio)</label>
+                <select 
+                  value={mapping.slotCode}
+                  onChange={e => setMapping(prev => ({ ...prev, slotCode: parseInt(e.target.value) }))}
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 text-sm font-bold outline-none focus:border-indigo-500 transition-all"
+                >
+                  <option value="-1">Seleccionar columna...</option>
+                  {csvHeaders.map((header, idx) => (
+                    <option key={idx} value={idx}>{header || `Columna ${idx + 1}`}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Cantidad (Obligatorio)</label>
+                <select 
+                  value={mapping.quantity}
+                  onChange={e => setMapping(prev => ({ ...prev, quantity: parseInt(e.target.value) }))}
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 text-sm font-bold outline-none focus:border-indigo-500 transition-all"
+                >
+                  <option value="-1">Seleccionar columna...</option>
+                  {csvHeaders.map((header, idx) => (
+                    <option key={idx} value={idx}>{header || `Columna ${idx + 1}`}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Descripción (Opcional)</label>
+                <select 
+                  value={mapping.description}
+                  onChange={e => setMapping(prev => ({ ...prev, description: parseInt(e.target.value) }))}
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 text-sm font-bold outline-none focus:border-indigo-500 transition-all"
+                >
+                  <option value="-1">Ninguna</option>
+                  {csvHeaders.map((header, idx) => (
+                    <option key={idx} value={idx}>{header || `Columna ${idx + 1}`}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-8">
+              <button 
+                onClick={() => { setShowMappingModal(false); setCsvHeaders([]); setCsvRows([]); }}
+                className="flex-1 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest text-slate-400 hover:bg-slate-50 transition-all"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={processMappedCSV}
+                className="flex-1 bg-slate-900 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 transition-all"
+              >
+                Procesar Datos
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Validation Warning Modal */}
+      {showWarningModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-[3rem] p-8 shadow-2xl animate-scale-in flex flex-col max-h-[90vh]">
+            <div className="text-center space-y-4 mb-6">
+              <div className="text-4xl">⚠️</div>
+              <h3 className="text-xl font-black text-slate-800 uppercase">Huecos ya Validados</h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Se han detectado {validationWarnings.length} huecos en el CSV que ya fueron validados previamente.</p>
+            </div>
+
+            <div className="flex-1 overflow-y-auto mb-6 border border-rose-100 rounded-2xl bg-rose-50/30 p-4">
+              <div className="space-y-3">
+                {validationWarnings.map((w, idx) => (
+                  <div key={idx} className="flex justify-between items-center text-[10px] font-bold border-b border-rose-100 pb-2 last:border-0">
+                    <span className="text-slate-700">{w.slot}</span>
+                    <span className="text-rose-600">Validado: {w.date}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <p className="text-[9px] font-bold text-slate-500 text-center uppercase mb-2">¿Deseas continuar con la importación de todas formas?</p>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => { setShowWarningModal(false); setCsvPreviewData([]); setValidationWarnings([]); }}
+                  className="flex-1 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest text-slate-400 hover:bg-slate-50 transition-all"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={() => { setShowWarningModal(false); setShowCsvPreview(true); }}
+                  className="flex-1 bg-rose-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 transition-all"
+                >
+                  Continuar
+                </button>
+              </div>
             </div>
           </div>
         </div>
