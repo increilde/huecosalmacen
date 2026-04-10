@@ -34,6 +34,7 @@ const UserManagement: React.FC = () => {
     { id: 'expedition', label: 'Muelles / Expedición', icon: '🚛' },
     { id: 'deliveries', label: 'Repartos', icon: '📅' },
     { id: 'installations', label: 'Instalaciones', icon: '🛠️' },
+    { id: 'aires', label: 'Aires', icon: '❄️' },
     { id: 'messaging', label: 'Mensajería', icon: '💬' },
     { id: 'supplies', label: 'Suministros', icon: '🛠️' },
     { id: 'inventory', label: 'Inventario', icon: '📋' },
@@ -81,21 +82,22 @@ const UserManagement: React.FC = () => {
       }
 
       setRoles(currentRoles);
-      
-      if (currentRoles.length > 0 && !userForm.role) {
-        setUserForm(prev => ({ ...prev, role: currentRoles[0].name }));
-      }
-
     } catch (err) {
       console.error("Error al sincronizar datos:", err);
     } finally {
       setLoading(false);
     }
-  }, [userForm.role]);
+  }, []);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    if (roles.length > 0 && !userForm.role) {
+      setUserForm(prev => ({ ...prev, role: roles[0].name }));
+    }
+  }, [roles, userForm.role]);
 
   const handleCreateOrUpdateUser = async (e: React.FormEvent) => {
     e.preventDefault();

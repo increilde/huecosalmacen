@@ -10,6 +10,7 @@ import ExpeditionPanel from './components/ExpeditionPanel';
 import SuppliesPanel from './components/SuppliesPanel';
 import DeliveriesPanel from './components/DeliveriesPanel';
 import InstallationsPanel from './components/InstallationsPanel';
+import AiresPanel from './components/AiresPanel';
 import MessagingPanel from './components/MessagingPanel';
 import RTCPanel from './components/RTCPanel';
 import InventoryPanel from './components/InventoryPanel';
@@ -17,7 +18,7 @@ import LiveMapView from './components/LiveMapView';
 import { supabase } from './supabaseClient';
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'slots' | 'admin' | 'expedition' | 'supplies' | 'deliveries' | 'installations' | 'messaging' | 'rtc' | 'inventory'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'slots' | 'admin' | 'expedition' | 'supplies' | 'deliveries' | 'installations' | 'messaging' | 'rtc' | 'inventory' | 'aires'>('dashboard');
   const [dbStatus, setDbStatus] = useState<{connected: boolean | null, error: string | null}>({
     connected: null,
     error: null
@@ -154,6 +155,7 @@ const App: React.FC = () => {
         if (isDistri) {
           if (!perms.includes('deliveries')) perms.push('deliveries');
           if (!perms.includes('installations')) perms.push('installations');
+          if (!perms.includes('aires')) perms.push('aires');
           if (!perms.includes('rtc')) perms.push('rtc');
         }
 
@@ -173,6 +175,7 @@ const App: React.FC = () => {
       const hasAccess = userPermissions.some(p => p.toLowerCase() === activeTab.toLowerCase()) || 
                        (activeTab === 'deliveries' && isDistri) ||
                        (activeTab === 'installations' && isDistri) ||
+                       (activeTab === 'aires' && isDistri) ||
                        (activeTab === 'rtc' && isDistri) ||
                        (activeTab === 'inventory' && role === 'admin') ||
                        (activeTab === 'admin' && role === 'supervisor_distri') ||
@@ -265,46 +268,11 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!user) return;
 
-    let watchId: number | null = null;
-
-    const startTracking = () => {
-      if ("geolocation" in navigator) {
-        watchId = navigator.geolocation.watchPosition(
-          async (position) => {
-            const { latitude, longitude, accuracy } = position.coords;
-            // Solo enviar a Supabase si hay maquinaria asignada O si es admin (para pruebas)
-            if (sessionMachinery || user.role.toLowerCase() === 'admin') {
-              try {
-                await supabase.from('operator_locations').insert([{
-                  operator_email: user.email,
-                  latitude,
-                  longitude,
-                  accuracy,
-                  machinery_id: sessionMachinery?.forklift || 'ADMIN_TEST'
-                }]);
-              } catch (err) {
-                console.error("Error al enviar ubicación:", err);
-              }
-            }
-          },
-          (error) => {
-            console.error("Error de geolocalización:", error);
-          },
-          {
-            enableHighAccuracy: true,
-            timeout: 10000,
-            maximumAge: 0
-          }
-        );
-      }
-    };
-
-    startTracking();
-
-    return () => {
-      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-    };
-  }, [user, sessionMachinery]);
+    // Geolocalización deshabilitada por petición del usuario
+    console.log("Geolocalización deshabilitada");
+    
+    return () => {};
+  }, [user]);
 
   const fetchMachinery = async () => {
     const { data } = await supabase.from('machinery').select('*').order('identifier');
@@ -607,6 +575,7 @@ const App: React.FC = () => {
           {activeTab === 'supplies' && <SuppliesPanel />}
           {activeTab === 'deliveries' && <DeliveriesPanel user={user} />}
           {activeTab === 'installations' && <InstallationsPanel user={user} />}
+          {activeTab === 'aires' && <AiresPanel user={user} />}
           {activeTab === 'rtc' && <RTCPanel user={user} />}
           {activeTab === 'inventory' && <InventoryPanel user={user} />}
           {activeTab === 'messaging' && (
@@ -648,6 +617,11 @@ const App: React.FC = () => {
         {(userPermissions.includes('installations') || user.role.toLowerCase() === 'admin' || user.role.toLowerCase() === 'distribución' || user.role.toLowerCase() === 'distribucion') && (
           <button onClick={() => setActiveTab('installations')} className={`flex flex-col items-center gap-1 ${activeTab === 'installations' ? 'text-indigo-400' : 'text-slate-500'}`}>
             <span className="text-xl">🛠️</span>
+          </button>
+        )}
+        {(userPermissions.includes('aires') || user.role.toLowerCase() === 'admin' || user.role.toLowerCase() === 'distribución' || user.role.toLowerCase() === 'distribucion') && (
+          <button onClick={() => setActiveTab('aires')} className={`flex flex-col items-center gap-1 ${activeTab === 'aires' ? 'text-indigo-400' : 'text-slate-500'}`}>
+            <span className="text-xl">❄️</span>
           </button>
         )}
         {(userPermissions.includes('rtc') || user.role.toLowerCase() === 'admin' || user.role.toLowerCase() === 'distribución' || user.role.toLowerCase() === 'distribucion') && (

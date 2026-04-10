@@ -4,7 +4,7 @@ import { UserRole } from '../types';
 
 interface SidebarProps {
   activeTab: string;
-  setActiveTab: (tab: 'dashboard' | 'slots' | 'admin' | 'expedition' | 'supplies' | 'deliveries' | 'installations' | 'messaging' | 'rtc' | 'inventory') => void;
+  setActiveTab: (tab: 'dashboard' | 'slots' | 'admin' | 'expedition' | 'supplies' | 'deliveries' | 'installations' | 'messaging' | 'rtc' | 'inventory' | 'aires') => void;
   userRole: string;
   permissions: string[];
   hasMessagingAccess?: boolean;
@@ -33,6 +33,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     { id: 'expedition', label: 'Control Muelles', icon: '🚛' },
     { id: 'deliveries', label: 'REPARTO', icon: '📅' },
     { id: 'installations', label: 'INSTALACIONES', icon: '🛠️' },
+    { id: 'aires', label: 'AIRES', icon: '❄️' },
     { id: 'messaging', label: 'Mensajería', icon: '💬' },
     { id: 'rtc', label: 'RTC', icon: '🚛' },
     { id: 'inventory', label: 'Inventario', icon: '📋' },
@@ -50,7 +51,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     // Eliminar Dashboard para distribución
     if (isDistri && item.id === 'dashboard') return false;
 
-    if (isDistri && (item.id === 'deliveries' || item.id === 'installations' || item.id === 'rtc')) return true;
+    if (isDistri && (item.id === 'deliveries' || item.id === 'installations' || item.id === 'rtc' || item.id === 'aires')) return true;
     if (role === 'supervisor_distri' && item.id === 'admin') return true;
     if (item.id === 'messaging' && hasMessagingAccess) return true;
     return permissions.some(p => p.toLowerCase() === item.id.toLowerCase());
