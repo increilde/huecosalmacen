@@ -137,10 +137,18 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
   };
 
   const handleAddObservation = async () => {
-    if (!observationText.trim() || !observationTruckId) return;
+    if (!observationText.trim()) return;
 
-    const truck = truckers.find(t => t.id === observationTruckId);
-    const truckLabel = truck ? truck.label : observationTruckId;
+    let truckLabel = 'GENERAL';
+    if (!observationTruckId) {
+      if (!confirm("¿Realmente no deseas asociar esta observación a ningún camión?")) {
+        return;
+      }
+    } else {
+      const truck = truckers.find(t => t.id === observationTruckId);
+      truckLabel = truck ? truck.label : observationTruckId;
+    }
+
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     
     const newObservation = {
@@ -159,7 +167,6 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
         observations = Array.isArray(parsed) ? parsed : [];
       }
     } catch (e) {
-      // Fallback: if it was plain text, we start fresh with JSON
       observations = [];
     }
 
@@ -429,7 +436,15 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
               const observations = JSON.parse(dailyNote);
               if (Array.isArray(observations)) {
                 if (observations.length === 0) return isToday ? "No hay observaciones registradas aún." : "Sin notas.";
-                return observations.map((obs: any) => (
+                
+                // Sort: GENERAL first, then by timestamp (implicit in array order if we want, or explicit)
+                const sortedObservations = [...observations].sort((a, b) => {
+                  if (a.truck_label === 'GENERAL' && b.truck_label !== 'GENERAL') return -1;
+                  if (a.truck_label !== 'GENERAL' && b.truck_label === 'GENERAL') return 1;
+                  return 0; // Keep original relative order for others
+                });
+
+                return sortedObservations.map((obs: any) => (
                   <div key={obs.id} className="flex justify-between items-start gap-4 group border-b border-slate-100 pb-2 last:border-0 last:pb-0">
                     <span className="flex-1 leading-relaxed">
                       <span className="font-black text-indigo-600">[{obs.timestamp}] [{obs.user_name}]</span> <span className="font-bold text-slate-900">{obs.truck_label}:</span> {obs.text}
@@ -690,7 +705,7 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
               <div className="space-y-3 shrink-0">
                  <button 
                   onClick={handleAddObservation}
-                  disabled={loading || !observationText.trim() || !observationTruckId} 
+                  disabled={loading || !observationText.trim()} 
                   className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-xl uppercase tracking-widest text-[10px] disabled:opacity-50"
                  >
                    Guardar Observación
