@@ -805,22 +805,24 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
                   <h4 className="font-black text-slate-900 text-[10px] uppercase tracking-widest mb-2 border-b border-slate-50 pb-1">{muelle}</h4>
                   <div className="space-y-2">
                     {dockLogs.map(log => (
-                      <div key={log.id} className="flex flex-col gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-                        <div className="flex justify-between items-start">
-                          <span className="text-sm font-black text-slate-800 uppercase leading-none">{log.truck_id}</span>
+                      <div key={log.id} className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                        <div className="flex justify-between items-center mb-1">
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm font-black text-slate-800 uppercase leading-none">{log.truck_id}</span>
+                            <div className="flex gap-3">
+                              <div className="flex items-center gap-1">
+                                <div className="w-3.5 h-3.5 border border-slate-400 rounded bg-white"></div>
+                                <span className="text-[7px] font-black text-slate-500 uppercase">Papeles</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <div className="w-3.5 h-3.5 border border-slate-400 rounded bg-white"></div>
+                                <span className="text-[7px] font-black text-slate-500 uppercase">Albarán</span>
+                              </div>
+                            </div>
+                          </div>
                           <span className="text-[7px] font-bold text-slate-400 uppercase">
                             {log.side === 'single' ? 'COMPLETO' : log.side === 'left' ? 'IZQ' : 'DER'} | {new Date(log.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
                           </span>
-                        </div>
-                        <div className="flex gap-4 border-t border-slate-200 pt-1.5">
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-3.5 h-3.5 border border-slate-400 rounded bg-white"></div>
-                            <span className="text-[7px] font-black text-slate-500 uppercase">Papeles</span>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-3.5 h-3.5 border border-slate-400 rounded bg-white"></div>
-                            <span className="text-[7px] font-black text-slate-500 uppercase">Albarán</span>
-                          </div>
                         </div>
                       </div>
                     ))}

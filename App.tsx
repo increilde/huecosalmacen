@@ -571,7 +571,7 @@ const App: React.FC = () => {
       </div>
 
       <main className="flex-1 p-4 md:p-8 overflow-y-auto">
-        <header className="mb-6 flex justify-between items-center bg-white/50 p-3 rounded-2xl backdrop-blur-sm sticky top-0 z-10 border border-white">
+        <header className="mb-6 flex justify-between items-center bg-white/50 p-3 rounded-2xl backdrop-blur-sm sticky top-0 z-10 border border-white print:hidden">
           <div className="flex items-center gap-3">
             <div className="bg-indigo-600 w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-xs shadow-lg">WH</div>
             <h1 className="text-lg font-black text-slate-800 uppercase tracking-tight">WH Control <span className="text-indigo-600">by Ilde</span></h1>
