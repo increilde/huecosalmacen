@@ -757,15 +757,9 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
 
       {/* Informe para Impresión */}
       <div className="hidden print:block bg-white p-4 space-y-4">
-        <div className="border-b-2 border-slate-900 pb-3 flex justify-between items-end">
-          <div>
-            <h1 className="text-2xl font-black uppercase tracking-tighter">Informe de Expedición</h1>
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.3em] mt-1">Control de Muelles y Salidas</p>
-          </div>
-          <div className="text-right">
-            <p className="text-lg font-black text-slate-900">{new Date(historyDate).toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).toUpperCase()}</p>
-            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Impreso el: {new Date().toLocaleString('es-ES')}</p>
-          </div>
+        <div className="border-b-2 border-slate-900 pb-2 flex justify-between items-center">
+          <p className="text-xl font-black text-slate-900">{new Date(historyDate).toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).toUpperCase()}</p>
+          <span className="text-[8px] font-black text-slate-400 uppercase tracking-[0.3em]">REPARTO DIARIO</span>
         </div>
 
         <div className="space-y-2">
@@ -783,7 +777,7 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
                   });
                   return sorted.map((obs: any) => (
                     <div key={obs.id} className="text-[10px] border-b border-slate-200 pb-1 last:border-0">
-                      <span className="font-black text-indigo-600">[{obs.timestamp}] [{obs.user_name}]</span> <span className="font-bold text-slate-900">{obs.truck_label}:</span> {obs.text}
+                      <span className="font-black text-indigo-600">[{obs.timestamp}]</span> <span className="font-bold text-slate-900">{obs.truck_label}:</span> {obs.text}
                     </div>
                   ));
                 }
@@ -795,30 +789,37 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
           </div>
         </div>
 
-        <div className="space-y-2">
-          <h3 className="text-sm font-black uppercase tracking-widest border-l-4 border-indigo-600 pl-3">Estado de Muelles (Actual)</h3>
-          <div className="grid grid-cols-2 gap-3">
-            {MUELLES.filter(muelle => getActiveLogsForDock(muelle).length > 0).map(muelle => {
-              const dockLogs = getActiveLogsForDock(muelle);
-              return (
-                <div key={muelle} className="border border-slate-200 p-3 rounded-xl">
-                  <h4 className="font-black text-slate-900 text-[10px] uppercase tracking-widest mb-2 border-b border-slate-50 pb-1">{muelle}</h4>
-                  <div className="space-y-1">
-                    {dockLogs.map(log => (
-                      <div key={log.id} className="flex justify-between items-center bg-slate-50 p-1.5 rounded-lg">
-                        <span className="text-[10px] font-black text-slate-800 uppercase">{log.truck_id}</span>
-                        <span className="text-[7px] font-bold text-slate-400 uppercase">
-                          {log.side === 'single' ? 'COMPLETO' : log.side === 'left' ? 'IZQ' : 'DER'} | {new Date(log.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
-                        </span>
-                      </div>
-                    ))}
+        <div className="space-y-4">
+          <h3 className="text-sm font-black uppercase tracking-widest border-l-4 border-indigo-600 pl-3">Listado de Cargas y Salidas</h3>
+          <div className="space-y-3">
+            {[...logs].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()).map(log => (
+              <div key={log.id} className="flex justify-between items-center border-2 border-slate-100 p-4 rounded-2xl bg-slate-50/30">
+                <div className="flex flex-col gap-1">
+                  <span className="text-lg font-black text-slate-900 uppercase tracking-tight">{log.truck_id}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[8px] font-black text-indigo-600 uppercase tracking-widest bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">{log.dock_id}</span>
+                    <span className="text-[8px] font-bold text-slate-400 uppercase">
+                      LADO: {log.side === 'single' ? 'UNO' : log.side === 'left' ? 'IZQ' : 'DER'} | HORA: {new Date(log.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+                      {log.finished_at && ` | SALIDA: ${new Date(log.finished_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}`}
+                    </span>
                   </div>
                 </div>
-              );
-            })}
-            {MUELLES.filter(muelle => getActiveLogsForDock(muelle).length > 0).length === 0 && (
-              <div className="col-span-2 py-4 text-center">
-                <p className="text-[10px] font-bold text-slate-400 uppercase italic">No hay camiones en muelles en este momento.</p>
+                
+                <div className="flex gap-8 pr-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-5 h-5 border-2 border-slate-400 rounded-md bg-white"></div>
+                    <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Papeles</span>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-5 h-5 border-2 border-slate-400 rounded-md bg-white"></div>
+                    <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Albaranado</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {logs.length === 0 && (
+              <div className="py-8 text-center border-2 border-dashed border-slate-100 rounded-3xl">
+                <p className="text-[10px] font-bold text-slate-400 uppercase italic">No hay camiones registrados para esta fecha.</p>
               </div>
             )}
           </div>
