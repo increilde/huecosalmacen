@@ -58,8 +58,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   });
 
   return (
-    <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col border-r border-slate-800">
-      <div className="p-6">
+    <aside className="w-52 bg-slate-900 text-slate-300 flex flex-col border-r border-slate-800">
+      <div className="p-4">
         <div className="flex flex-col items-start gap-1 mb-8">
           <div className="flex items-center gap-3">
             <div className="bg-indigo-500 p-2 rounded-lg">
@@ -93,7 +93,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         </nav>
       </div>
 
-      <div className="mt-auto p-6 border-t border-slate-800 space-y-4">
+      <div className="mt-auto p-4 border-t border-slate-800 space-y-4">
         {onRequestNotifications && (
           <div className="space-y-2">
             <button 

@@ -122,34 +122,34 @@ const SlotGrid: React.FC<SlotGridProps> = ({ userRole }) => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col justify-center relative overflow-hidden">
           <div className="absolute -right-4 -bottom-4 text-slate-50 text-8xl font-bold opacity-30">🏢</div>
-          <p className="text-[10px] font-semibold uppercase text-slate-400 tracking-[0.2em] mb-2 z-10">Total Huecos</p>
-          <h3 className="text-4xl font-semibold text-slate-900 tracking-tight z-10">{globalStats.totalAbsolute}</h3>
+          <p className="text-xs font-semibold uppercase text-slate-400 tracking-[0.2em] mb-2 z-10">Total Huecos</p>
+          <h3 className="text-5xl font-semibold text-slate-900 tracking-tight z-10">{globalStats.totalAbsolute}</h3>
         </div>
 
         <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col justify-center relative overflow-hidden">
           <div className="absolute -right-4 -bottom-4 text-indigo-50 text-8xl font-bold opacity-30">%</div>
-          <p className="text-[10px] font-semibold uppercase text-slate-400 tracking-[0.2em] mb-2 z-10">Ocupación Almacén</p>
-          <h3 className="text-4xl font-semibold text-indigo-600 tracking-tight z-10">{globalStats.occupancyPercent}%</h3>
+          <p className="text-xs font-semibold uppercase text-slate-400 tracking-[0.2em] mb-2 z-10">Ocupación Almacén</p>
+          <h3 className="text-5xl font-semibold text-indigo-600 tracking-tight z-10">{globalStats.occupancyPercent}%</h3>
         </div>
       </div>
 
       <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm">
-        <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em] mb-4 ml-2">Ocupación por tamaño (Huecos Totales)</p>
+        <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em] mb-4 ml-2">Ocupación por tamaño (Huecos Totales)</p>
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-slate-50 p-4 rounded-2xl text-center border border-slate-100 flex flex-col justify-center">
-            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Grande</p>
-            <p className="text-xl font-black text-indigo-600 leading-none">{globalStats.sizeStats.Grande.percent}%</p>
-            <p className="text-[7px] font-bold text-slate-400 uppercase mt-2 tracking-tighter">de {globalStats.sizeStats.Grande.count} huecos</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Grande</p>
+            <p className="text-2xl font-black text-indigo-600 leading-none">{globalStats.sizeStats.Grande.percent}%</p>
+            <p className="text-[9px] font-bold text-slate-400 uppercase mt-2 tracking-tighter">de {globalStats.sizeStats.Grande.count} huecos</p>
           </div>
           <div className="bg-slate-50 p-4 rounded-2xl text-center border border-slate-100 flex flex-col justify-center">
-            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Mediano</p>
-            <p className="text-xl font-black text-indigo-600 leading-none">{globalStats.sizeStats.Mediano.percent}%</p>
-            <p className="text-[7px] font-bold text-slate-400 uppercase mt-2 tracking-tighter">de {globalStats.sizeStats.Mediano.count} huecos</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Mediano</p>
+            <p className="text-2xl font-black text-indigo-600 leading-none">{globalStats.sizeStats.Mediano.percent}%</p>
+            <p className="text-[9px] font-bold text-slate-400 uppercase mt-2 tracking-tighter">de {globalStats.sizeStats.Mediano.count} huecos</p>
           </div>
           <div className="bg-slate-50 p-4 rounded-2xl text-center border border-slate-100 flex flex-col justify-center">
-            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Pequeño</p>
-            <p className="text-xl font-black text-indigo-600 leading-none">{globalStats.sizeStats.Pequeño.percent}%</p>
-            <p className="text-[7px] font-bold text-slate-400 uppercase mt-2 tracking-tighter">de {globalStats.sizeStats.Pequeño.count} huecos</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Pequeño</p>
+            <p className="text-2xl font-black text-indigo-600 leading-none">{globalStats.sizeStats.Pequeño.percent}%</p>
+            <p className="text-[9px] font-bold text-slate-400 uppercase mt-2 tracking-tighter">de {globalStats.sizeStats.Pequeño.count} huecos</p>
           </div>
         </div>
       </div>
@@ -157,7 +157,7 @@ const SlotGrid: React.FC<SlotGridProps> = ({ userRole }) => {
       <div className="space-y-4">
         <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
           {['all', 'empty', 'occupied', 'pending'].map((id) => (
-            <button key={id} onClick={() => setOccupancyFilter(id as any)} className={`px-4 py-2 rounded-xl text-[10px] font-semibold uppercase border transition-all ${occupancyFilter === id ? 'bg-slate-900 text-white border-slate-900 shadow-md' : 'bg-white text-slate-400 border-slate-100'}`}>
+            <button key={id} onClick={() => setOccupancyFilter(id as any)} className={`px-6 py-3 rounded-xl text-xs font-semibold uppercase border transition-all ${occupancyFilter === id ? 'bg-slate-900 text-white border-slate-900 shadow-md' : 'bg-white text-slate-400 border-slate-100'}`}>
               {id === 'all' ? 'Todos' : id === 'empty' ? 'Vacíos' : id === 'occupied' ? 'Ocupados' : 'Pendientes'}
             </button>
           ))}
@@ -170,12 +170,12 @@ const SlotGrid: React.FC<SlotGridProps> = ({ userRole }) => {
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
         {filteredSlots.slice(0, 1000).map((slot) => (
-          <button key={slot.id} onClick={() => setSelectedSlot(slot)} className={`p-5 rounded-[2rem] border relative overflow-hidden text-left active:scale-95 transition-all hover:shadow-lg ${slot.is_scanned_once ? 'bg-white border-slate-100' : 'bg-slate-50 border-dashed border-slate-300'}`}>
-            <div className="flex justify-between items-center mb-4"><span className="text-[11px] font-semibold text-slate-800 tracking-tight uppercase">{slot.code}</span></div>
-            <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
+          <button key={slot.id} onClick={() => setSelectedSlot(slot)} className={`p-6 rounded-[2rem] border relative overflow-hidden text-left active:scale-95 transition-all hover:shadow-lg ${slot.is_scanned_once ? 'bg-white border-slate-100' : 'bg-slate-50 border-dashed border-slate-300'}`}>
+            <div className="flex justify-between items-center mb-4"><span className="text-sm font-semibold text-slate-800 tracking-tight uppercase">{slot.code}</span></div>
+            <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
                <div className={`h-full transition-all duration-700 ${getProgressColor(slot.quantity)}`} style={{ width: `${slot.quantity || 0}%` }} />
             </div>
-            <div className="mt-3 flex justify-between items-center"><span className="text-[8px] font-medium text-slate-400 uppercase">{slot.size}</span><span className={`text-[9px] font-semibold ${slot.quantity === 100 ? 'text-rose-500' : slot.quantity === 50 ? 'text-amber-500' : 'text-emerald-500'}`}>{slot.quantity || 0}%</span></div>
+            <div className="mt-3 flex justify-between items-center"><span className="text-[10px] font-medium text-slate-400 uppercase">{slot.size}</span><span className={`text-xs font-semibold ${slot.quantity === 100 ? 'text-rose-500' : slot.quantity === 50 ? 'text-amber-500' : 'text-emerald-500'}`}>{slot.quantity || 0}%</span></div>
           </button>
         ))}
       </div>

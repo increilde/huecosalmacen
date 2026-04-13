@@ -242,7 +242,7 @@ const DraggableInstallation = ({ inst, onClick }: { inst: Installation, onClick:
         e.stopPropagation();
         onClick();
       }}
-      className={`p-1 rounded-lg border-2 text-[8px] font-black leading-tight shadow-sm transition-all cursor-grab active:cursor-grabbing relative overflow-hidden group/item ${
+      className={`p-2 rounded-lg border-2 text-xs font-black leading-tight shadow-sm transition-all cursor-grab active:cursor-grabbing relative overflow-hidden group/item ${
         inst.at_dock 
           ? 'bg-blue-600 border-blue-700 text-white' 
           : inst.is_scheduled 
@@ -253,13 +253,13 @@ const DraggableInstallation = ({ inst, onClick }: { inst: Installation, onClick:
     >
       <div className="flex justify-between items-start gap-1 relative z-10">
         <span className="truncate">{inst.order_number}</span>
-        <span className={`text-[6px] px-1 py-0.5 rounded-md shrink-0 ${
+        <span className={`text-[10px] px-2 py-0.5 rounded-md shrink-0 ${
           inst.at_dock ? 'bg-white/20' : 'bg-slate-100 text-slate-500'
         }`}>
           {inst.start_time || (inst.installation_time === 'morning' ? 'M' : 'T')}
         </span>
       </div>
-      <div className={`text-[7px] truncate mt-0.5 relative z-10 ${
+      <div className={`text-[10px] truncate mt-1 relative z-10 ${
         inst.at_dock ? 'text-blue-100' : 'text-slate-400'
       }`}>
         {inst.locality}
@@ -662,8 +662,8 @@ const AiresPanel: React.FC<AiresPanelProps> = ({ user }) => {
             <LayoutGrid className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Panel Aires</h2>
-            <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mt-1">Planificación Visual 30 Días</p>
+            <h2 className="text-3xl font-black text-slate-800 uppercase tracking-tighter">Panel Aires</h2>
+            <p className="text-xs font-black text-indigo-400 uppercase tracking-widest mt-1">Planificación Visual 30 Días</p>
           </div>
         </div>
         
@@ -955,8 +955,8 @@ const AiresPanel: React.FC<AiresPanelProps> = ({ user }) => {
                   >
                     <ChevronLeft className="w-5 h-5" />
                   </button>
-                  <div className="px-6 flex flex-col items-center min-w-[120px]">
-                    <span className="text-[11px] font-black text-slate-800 uppercase">
+                  <div className="px-6 flex flex-col items-center min-w-[150px]">
+                    <span className="text-xs font-black text-slate-800 uppercase">
                       {dates[0].toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })} - {dates[4].toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}
                     </span>
                   </div>
@@ -1010,8 +1010,8 @@ const AiresPanel: React.FC<AiresPanelProps> = ({ user }) => {
               <table className="w-full border-separate border-spacing-0">
                 <thead className="sticky top-0 z-30">
                   <tr>
-                    <th className="sticky left-0 z-40 bg-slate-900 p-4 border-r border-slate-800 min-w-[220px] text-left">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Instalador / Fecha</span>
+                    <th className="sticky left-0 z-40 bg-slate-900 p-4 border-r border-slate-800 min-w-[200px] text-left">
+                      <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Instalador / Fecha</span>
                     </th>
                     {dates.map((date, idx) => {
                       const isToday = date.toDateString() === new Date().toDateString();
@@ -1020,15 +1020,15 @@ const AiresPanel: React.FC<AiresPanelProps> = ({ user }) => {
                       return (
                         <th 
                           key={idx} 
-                          className={`p-3 border-r border-slate-800 min-w-[140px] text-center transition-colors ${
+                          className={`p-4 border-r border-slate-800 min-w-[180px] text-center transition-colors ${
                             isToday ? 'bg-indigo-600' : isWeekend ? 'bg-slate-800' : 'bg-slate-900'
                           }`}
                         >
                           <div className="flex flex-col items-center">
-                            <span className={`text-[8px] font-black uppercase tracking-tighter ${isToday ? 'text-indigo-100' : 'text-slate-500'}`}>
+                            <span className={`text-[10px] font-black uppercase tracking-tighter ${isToday ? 'text-indigo-100' : 'text-slate-500'}`}>
                               {date.toLocaleDateString('es-ES', { weekday: 'short' })}
                             </span>
-                            <span className={`text-sm font-black ${isToday ? 'text-white' : 'text-slate-200'}`}>
+                            <span className={`text-lg font-black ${isToday ? 'text-white' : 'text-slate-200'}`}>
                               {date.getDate()} {date.toLocaleDateString('es-ES', { month: 'short' }).toUpperCase()}
                             </span>
                           </div>
@@ -1052,19 +1052,19 @@ const AiresPanel: React.FC<AiresPanelProps> = ({ user }) => {
                       const isSpecial = isSpecialInstaller(installer?.full_name);
                       return (
                         <tr key={installer.id} className="group">
-                          <td className={`sticky left-0 z-20 p-2 border-r-2 border-slate-100 font-black text-[10px] uppercase shadow-[4px_0_10px_rgba(0,0,0,0.03)] transition-colors ${
+                          <td className={`sticky left-0 z-20 p-3 border-r-2 border-slate-100 font-black text-xs uppercase shadow-[4px_0_10px_rgba(0,0,0,0.03)] transition-colors ${
                             isSpecial ? 'bg-rose-50 text-rose-700 group-hover:bg-rose-100' : 'bg-white text-slate-700 group-hover:bg-slate-50'
                           }`}>
-                            <div className="flex items-center gap-2">
-                              <div className={`w-6 h-6 rounded-lg flex items-center justify-center border group-hover:scale-110 transition-transform ${
+                            <div className="flex items-center gap-3">
+                              <div className={`w-8 h-8 rounded-lg flex items-center justify-center border group-hover:scale-110 transition-transform ${
                                 isSpecial ? 'bg-rose-100 text-rose-600 border-rose-200' : 'bg-indigo-50 text-indigo-600 border-indigo-100'
                               }`}>
-                                <User className="w-3 h-3" />
+                                <User className="w-4 h-4" />
                               </div>
                               <div className="flex flex-col">
-                                <span className="leading-none truncate max-w-[150px]">{installer?.full_name || installer?.label}</span>
+                                <span className="leading-none truncate max-w-[140px]">{installer?.full_name || installer?.label}</span>
                                 {installer?.zone && (
-                                  <span className={`text-[6px] mt-0.5 tracking-widest ${isSpecial ? 'text-rose-400' : 'text-indigo-400'}`}>
+                                  <span className={`text-[8px] mt-1 tracking-widest ${isSpecial ? 'text-rose-400' : 'text-indigo-400'}`}>
                                     {installer.zone}
                                   </span>
                                 )}

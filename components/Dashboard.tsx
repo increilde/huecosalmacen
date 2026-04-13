@@ -1031,38 +1031,38 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   };
 
   return (
-    <div className="max-w-md mx-auto space-y-6" style={{ fontFamily: 'Inter, sans-serif' }}>
-      <div className="bg-white p-10 rounded-[2.5rem] shadow-xl border border-slate-100 animate-fade-in relative overflow-hidden">
+    <div className="max-w-2xl mx-auto space-y-8" style={{ fontFamily: 'Inter, sans-serif' }}>
+      <div className="bg-white p-12 rounded-[3rem] shadow-xl border border-slate-100 animate-fade-in relative overflow-hidden">
         <div className="absolute -right-8 -top-8 text-slate-50 text-9xl font-medium opacity-10 pointer-events-none">📦</div>
         <div className="relative z-10">
           
           <div className="flex flex-col gap-3 mb-10">
             <div className="flex justify-between items-center">
-              <h2 className="text-xl font-semibold text-slate-800 tracking-tight uppercase">Entrada Datos</h2>
+              <h2 className="text-3xl font-semibold text-slate-800 tracking-tight uppercase">Entrada Datos</h2>
               <div className="flex gap-2">
                 {!audioUnlocked ? (
-                  <div className="bg-amber-50 text-amber-600 border border-amber-100 px-3 py-2 rounded-xl text-[7px] font-black uppercase tracking-widest flex items-center gap-2 animate-pulse">
-                    <span className="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
+                  <div className="bg-amber-50 text-amber-600 border border-amber-100 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2 animate-pulse">
+                    <span className="w-2 h-2 bg-amber-500 rounded-full"></span>
                     Toca para Activar Audio
                   </div>
                 ) : (
                   <button 
                     onClick={testAudio}
-                    className="bg-slate-50 text-slate-400 border border-slate-100 px-3 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest hover:bg-slate-100 transition-all flex items-center gap-2"
+                    className="bg-slate-50 text-slate-400 border border-slate-100 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-100 transition-all flex items-center gap-2"
                     title="Probar Audio"
                   >
-                    <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
+                    <span className="w-2 h-2 bg-green-500 rounded-full"></span>
                     🔊 AUDIO OK
                   </button>
                 )}
                 {(user.role.toLowerCase() === 'carretillero' || user.role.toLowerCase() === 'admin') && (
                   <button 
                     onClick={() => user.role.toLowerCase() === 'admin' ? setShowRTCAdminModal(true) : setShowPickupsModal(true)}
-                    className={`relative px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-all active:scale-95 ${waitingPickups.length > 0 ? 'bg-amber-500 text-white border-amber-600 animate-pulse' : 'bg-slate-50 text-slate-400 border-slate-100'}`}
+                    className={`relative px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest border transition-all active:scale-95 ${waitingPickups.length > 0 ? 'bg-amber-500 text-white border-amber-600 animate-pulse' : 'bg-slate-50 text-slate-400 border-slate-100'}`}
                   >
                     {user.role.toLowerCase() === 'admin' ? 'RTC' : 'Retira Cliente'}
                     {waitingPickups.length > 0 && (
-                      <span className="absolute -top-2 -right-2 bg-rose-600 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shadow-lg">
+                      <span className="absolute -top-2 -right-2 bg-rose-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shadow-lg">
                         {waitingPickups.length}
                       </span>
                     )}
@@ -1070,11 +1070,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                 )}
                 <button 
                   onClick={() => setShowTaskSelection(true)}
-                  className="relative bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border border-indigo-100 active:scale-95 transition-all"
+                  className="relative bg-indigo-50 text-indigo-600 px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest border border-indigo-100 active:scale-95 transition-all"
                 >
                   Cambio de Tarea
                   {availableTasks.length + personalTasks.length > 0 && (
-                    <span className="absolute -top-2 -right-2 bg-rose-500 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shadow-lg animate-bounce">
+                    <span className="absolute -top-2 -right-2 bg-rose-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shadow-lg animate-bounce">
                       {availableTasks.length + personalTasks.length}
                     </span>
                   )}
@@ -1086,16 +1086,16 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
               <div className="bg-indigo-600 p-6 rounded-3xl mb-4 text-white shadow-xl shadow-indigo-200 animate-fade-in">
                 <div className="flex justify-between items-start mb-4">
                   <div>
-                    <p className="text-[9px] font-black uppercase tracking-widest opacity-70">Pedido en Curso</p>
-                    <h3 className="text-2xl font-black tracking-tighter">#{myActivePickup.order_number}</h3>
+                    <p className="text-xs font-black uppercase tracking-widest opacity-70">Pedido en Curso</p>
+                    <h3 className="text-4xl font-black tracking-tighter">#{myActivePickup.order_number}</h3>
                   </div>
-                  <div className="bg-white/20 px-3 py-1 rounded-full">
-                    <p className="text-[10px] font-black">{getWorkTime(myActivePickup.accepted_at!)}</p>
+                  <div className="bg-white/20 px-4 py-2 rounded-full">
+                    <p className="text-sm font-black">{getWorkTime(myActivePickup.accepted_at!)}</p>
                   </div>
                 </div>
                 <button 
                   onClick={handleFinishPickup}
-                  className="w-full bg-white text-indigo-600 font-black py-3 rounded-2xl uppercase text-[10px] tracking-widest shadow-lg active:scale-95 transition-all"
+                  className="w-full bg-white text-indigo-600 font-black py-4 rounded-2xl uppercase text-xs tracking-widest shadow-lg active:scale-95 transition-all"
                 >
                   Finalizar Retira Cliente
                 </button>
@@ -1124,26 +1124,26 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
           {activeTask?.is_timed ? (
             <div className="py-10 text-center space-y-8 animate-fade-in">
-              <div className="space-y-2">
-                <div className="flex items-center justify-center gap-2 mb-1">
-                  <span className="w-2 h-2 bg-rose-500 rounded-full animate-pulse"></span>
-                  <p className="text-[10px] font-black text-rose-500 uppercase tracking-[0.3em]">TAREA ACTIVA</p>
+              <div className="space-y-4">
+                <div className="flex items-center justify-center gap-3 mb-1">
+                  <span className="w-3 h-3 bg-rose-500 rounded-full animate-pulse"></span>
+                  <p className="text-xs font-black text-rose-500 uppercase tracking-[0.3em]">TAREA ACTIVA</p>
                 </div>
-                <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tight">{activeTask.name}</h3>
+                <h3 className="text-4xl font-black text-slate-800 uppercase tracking-tight">{activeTask.name}</h3>
               </div>
               
               <div className="relative inline-block">
-                <div className="w-48 h-48 rounded-full border-4 border-indigo-600 flex items-center justify-center shadow-2xl shadow-indigo-100 bg-white">
-                   <p className="text-4xl font-black text-indigo-600 tracking-tighter">{elapsedTime}</p>
+                <div className="w-64 h-64 rounded-full border-8 border-indigo-600 flex items-center justify-center shadow-2xl shadow-indigo-100 bg-white">
+                   <p className="text-6xl font-black text-indigo-600 tracking-tighter">{elapsedTime}</p>
                 </div>
-                <div className="absolute -top-2 -right-2 w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center animate-pulse shadow-lg">
-                  <span className="text-sm text-white">⏱️</span>
+                <div className="absolute -top-4 -right-4 w-14 h-14 bg-indigo-600 rounded-full flex items-center justify-center animate-pulse shadow-lg">
+                  <span className="text-xl text-white">⏱️</span>
                 </div>
               </div>
 
               <button 
                 onClick={handleFinishTask}
-                className="w-full bg-slate-900 text-white font-black py-5 rounded-[2rem] shadow-xl uppercase tracking-widest text-xs active:scale-95 transition-all"
+                className="w-full bg-slate-900 text-white font-black py-6 rounded-[2.5rem] shadow-xl uppercase tracking-widest text-sm active:scale-95 transition-all"
               >
                 Finalizar Tarea
               </button>
