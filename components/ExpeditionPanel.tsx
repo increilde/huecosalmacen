@@ -241,6 +241,10 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
 
         if (error) throw error;
       } else {
+        const now = new Date();
+        const [y, m, d] = historyDate.split('-').map(Number);
+        const createdAt = new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds());
+
         const { error } = await supabase
           .from('expedition_logs')
           .insert([{
@@ -249,7 +253,7 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
             truck_id: truckId.toUpperCase().trim(),
             operator_name: user.full_name,
             status: 'loading',
-            created_at: `${historyDate}T${new Date().toLocaleTimeString('en-GB')}` 
+            created_at: createdAt.toISOString()
           }]);
 
         if (error) throw error;
