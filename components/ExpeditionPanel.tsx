@@ -756,24 +756,24 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
       </div>
 
       {/* Informe para Impresión */}
-      <div className="hidden print:block bg-white p-4 space-y-4">
-        <div className="border-b-2 border-slate-900 pb-3 flex justify-between items-end">
+      <div className="hidden print:block bg-white p-2 space-y-2">
+        <div className="border-b border-slate-900 pb-1 flex justify-between items-end">
           <div>
-            <h1 className="text-2xl font-black uppercase tracking-tighter">Informe de Expedición</h1>
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.3em] mt-1">Control de Muelles y Salidas</p>
+            <h1 className="text-xl font-black uppercase tracking-tighter">Informe de Expedición</h1>
+            <p className="text-[8px] font-bold text-slate-500 uppercase tracking-[0.3em]">Control de Muelles y Salidas</p>
           </div>
           <div className="text-right">
-            <p className="text-lg font-black text-slate-900">{new Date(historyDate).toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).toUpperCase()}</p>
-            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Impreso el: {new Date().toLocaleString('es-ES')}</p>
+            <p className="text-base font-black text-slate-900">{new Date(historyDate).toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).toUpperCase()}</p>
+            <p className="text-[7px] font-bold text-slate-400 uppercase tracking-widest">Impreso el: {new Date().toLocaleString('es-ES')}</p>
           </div>
         </div>
 
-        <div className="space-y-2">
-          <h3 className="text-sm font-black uppercase tracking-widest border-l-4 border-indigo-600 pl-3">Observaciones del Turno</h3>
-          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-1.5">
+        <div className="space-y-1">
+          <h3 className="text-[10px] font-black uppercase tracking-widest border-l-2 border-indigo-600 pl-2">Observaciones del Turno</h3>
+          <div className="bg-slate-50 p-2 rounded-xl border border-slate-100 space-y-1">
             {(() => {
               try {
-                if (!dailyNote) return <p className="text-[10px] text-slate-400 italic">No hay observaciones registradas.</p>;
+                if (!dailyNote) return <p className="text-[9px] text-slate-400 italic">No hay observaciones registradas.</p>;
                 const observations = JSON.parse(dailyNote);
                 if (Array.isArray(observations) && observations.length > 0) {
                   const sorted = [...observations].sort((a, b) => {
@@ -782,45 +782,45 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
                     return 0;
                   });
                   return sorted.map((obs: any) => (
-                    <div key={obs.id} className="text-[10px] border-b border-slate-200 pb-1 last:border-0">
+                    <div key={obs.id} className="text-[9px] border-b border-slate-200 pb-0.5 last:border-0">
                       <span className="font-black text-indigo-600">[{obs.timestamp}] [{obs.user_name}]</span> <span className="font-bold text-slate-900">{obs.truck_label}:</span> {obs.text}
                     </div>
                   ));
                 }
-                return <p className="text-[10px] text-slate-700">{dailyNote}</p>;
+                return <p className="text-[9px] text-slate-700">{dailyNote}</p>;
               } catch (e) {
-                return <p className="text-[10px] text-slate-700">{dailyNote}</p>;
+                return <p className="text-[9px] text-slate-700">{dailyNote}</p>;
               }
             })()}
           </div>
         </div>
 
-        <div className="space-y-2">
-          <h3 className="text-sm font-black uppercase tracking-widest border-l-4 border-indigo-600 pl-3">Estado de Muelles (Actual)</h3>
-          <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <h3 className="text-[10px] font-black uppercase tracking-widest border-l-2 border-indigo-600 pl-2">Estado de Muelles (Actual)</h3>
+          <div className="grid grid-cols-2 gap-2">
             {MUELLES.filter(muelle => getActiveLogsForDock(muelle).length > 0).map(muelle => {
               const dockLogs = getActiveLogsForDock(muelle);
               return (
-                <div key={muelle} className="border border-slate-200 p-3 rounded-xl">
-                  <h4 className="font-black text-slate-900 text-[10px] uppercase tracking-widest mb-2 border-b border-slate-50 pb-1">{muelle}</h4>
-                  <div className="space-y-2">
+                <div key={muelle} className="border border-slate-200 p-2 rounded-lg">
+                  <h4 className="font-black text-slate-900 text-[9px] uppercase tracking-widest mb-1 border-b border-slate-50 pb-0.5">{muelle}</h4>
+                  <div className="space-y-1">
                     {dockLogs.map(log => (
-                      <div key={log.id} className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-                        <div className="flex justify-between items-center mb-1">
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm font-black text-slate-800 uppercase leading-none">{log.truck_id}</span>
-                            <div className="flex gap-3">
+                      <div key={log.id} className="bg-slate-50 p-1.5 rounded-md border border-slate-100">
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-slate-800 uppercase leading-none">{log.truck_id}</span>
+                            <div className="flex gap-2">
                               <div className="flex items-center gap-1">
-                                <div className="w-3.5 h-3.5 border border-slate-400 rounded bg-white"></div>
-                                <span className="text-[7px] font-black text-slate-500 uppercase">Papeles</span>
+                                <div className="w-3 h-3 border border-slate-400 rounded bg-white"></div>
+                                <span className="text-[6px] font-black text-slate-500 uppercase">Papeles</span>
                               </div>
                               <div className="flex items-center gap-1">
-                                <div className="w-3.5 h-3.5 border border-slate-400 rounded bg-white"></div>
-                                <span className="text-[7px] font-black text-slate-500 uppercase">Albarán</span>
+                                <div className="w-3 h-3 border border-slate-400 rounded bg-white"></div>
+                                <span className="text-[6px] font-black text-slate-500 uppercase">Albarán</span>
                               </div>
                             </div>
                           </div>
-                          <span className="text-[7px] font-bold text-slate-400 uppercase">
+                          <span className="text-[6px] font-bold text-slate-400 uppercase">
                             {log.side === 'single' ? 'COMPLETO' : log.side === 'left' ? 'IZQ' : 'DER'} | {new Date(log.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
                           </span>
                         </div>
@@ -831,14 +831,14 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
               );
             })}
             {MUELLES.filter(muelle => getActiveLogsForDock(muelle).length > 0).length === 0 && (
-              <div className="col-span-2 py-4 text-center">
-                <p className="text-[10px] font-bold text-slate-400 uppercase italic">No hay camiones en muelles en este momento.</p>
+              <div className="col-span-2 py-2 text-center">
+                <p className="text-[9px] font-bold text-slate-400 uppercase italic">No hay camiones en muelles en este momento.</p>
               </div>
             )}
           </div>
         </div>
 
-        <div className="pt-6 mt-6 border-t border-slate-100 flex justify-between text-[8px] font-bold text-slate-400 uppercase tracking-[0.2em]">
+        <div className="pt-2 mt-2 border-t border-slate-100 flex justify-between text-[7px] font-bold text-slate-400 uppercase tracking-[0.2em]">
           <span>Control de Expedición - Warehouse Pro</span>
           <span>Firma Responsable: ___________________________</span>
         </div>

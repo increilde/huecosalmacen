@@ -429,6 +429,7 @@ const App: React.FC = () => {
 
           if (isMember) {
             fetchUnreadCount();
+            playNotificationSound();
             
             // Show notification if not in messaging tab OR if the document is hidden
             if (activeTab !== 'messaging' || document.hidden) {
@@ -443,8 +444,6 @@ const App: React.FC = () => {
 
               // Trigger System Notification immediately if hidden
               if (document.hidden) {
-                playNotificationSound();
-
                 if ("Notification" in window && window.Notification.permission === "granted") {
                   const options = {
                     body: messageText,

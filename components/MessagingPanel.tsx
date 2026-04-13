@@ -31,6 +31,9 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user, targetConversatio
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showChatMenu, setShowChatMenu] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [isRenaming, setIsRenaming] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -58,6 +61,7 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user, targetConversatio
         .from('conversations')
         .select('*')
         .in('id', conversationIds)
+        .not('last_message_at', 'is', null)
         .order('last_message_at', { ascending: false });
 
       // Fetch ALL members for these conversations to get names
@@ -235,6 +239,12 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user, targetConversatio
 
       if (error) throw error;
       
+      // Update last_message_at to null to hide from sidebar
+      await supabase
+        .from('conversations')
+        .update({ last_message_at: null })
+        .eq('id', activeConversation.id);
+      
       setMessages([]);
       fetchConversations();
       alert('Chat vaciado correctamente.');
@@ -244,6 +254,31 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user, targetConversatio
     } finally {
       setIsDeleting(false);
       setShowClearConfirm(false);
+      setShowChatMenu(false);
+    }
+  };
+
+  const renameGroup = async () => {
+    if (!activeConversation || !newGroupName.trim() || user.role !== 'admin') return;
+    
+    setIsRenaming(true);
+    try {
+      const { error } = await supabase
+        .from('conversations')
+        .update({ name: newGroupName.trim() })
+        .eq('id', activeConversation.id);
+
+      if (error) throw error;
+      
+      setActiveConversation(prev => prev ? { ...prev, name: newGroupName.trim() } : null);
+      fetchConversations();
+      alert('Nombre del grupo actualizado correctamente.');
+    } catch (err) {
+      console.error("Error renaming group:", err);
+      alert('Error al renombrar el grupo.');
+    } finally {
+      setIsRenaming(false);
+      setShowRenameModal(false);
       setShowChatMenu(false);
     }
   };
@@ -345,7 +380,7 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user, targetConversatio
       // Create new conversation
       const { data: newConv, error: convError } = await supabase.from('conversations').insert([{
         is_group: false,
-        last_message_at: new Date().toISOString()
+        last_message_at: null
       }]).select().single();
 
       if (convError) throw convError;
@@ -371,7 +406,7 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user, targetConversatio
       const { data: newConv, error: convError } = await supabase.from('conversations').insert([{
         name: groupName.trim(),
         is_group: true,
-        last_message_at: new Date().toISOString()
+        last_message_at: null
       }]).select().single();
 
       if (convError) throw convError;
@@ -577,6 +612,18 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user, targetConversatio
 
                 {showChatMenu && (
                   <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-[50] animate-fade-in">
+                    {activeConversation.is_group && user.role === 'admin' && (
+                      <button 
+                        onClick={() => {
+                          setNewGroupName(activeConversation.name || '');
+                          setShowRenameModal(true);
+                        }}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-50 transition-all text-xs font-black uppercase tracking-widest border-b border-slate-50"
+                      >
+                        <ImageIcon className="w-4 h-4" />
+                        Renombrar Grupo
+                      </button>
+                    )}
                     {!activeConversation.is_group && (
                       <button 
                         onClick={() => setShowClearConfirm(true)}
@@ -854,6 +901,43 @@ const MessagingPanel: React.FC<MessagingPanelProps> = ({ user, targetConversatio
                 CREAR GRUPO ({selectedUsers.length})
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Rename Group Modal */}
+      {showRenameModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl animate-scale-in">
+            <div className="w-16 h-16 bg-indigo-100 rounded-3xl flex items-center justify-center mb-6">
+              <Users className="w-8 h-8 text-indigo-600" />
+            </div>
+            <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tight mb-2">Renombrar Grupo</h3>
+            <p className="text-slate-500 text-sm font-medium leading-relaxed mb-8">
+              Introduce el nuevo nombre para el grupo "{activeConversation?.name}".
+            </p>
+            <input 
+              type="text" 
+              placeholder="NUEVO NOMBRE" 
+              value={newGroupName}
+              onChange={(e) => setNewGroupName(e.target.value)}
+              className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 font-black text-xs outline-none focus:border-indigo-500 transition-all uppercase text-center mb-6"
+            />
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setShowRenameModal(false)}
+                className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-600 text-xs font-black uppercase tracking-widest hover:bg-slate-200 transition-all"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={renameGroup}
+                disabled={isRenaming || !newGroupName.trim()}
+                className="flex-1 py-4 rounded-2xl bg-indigo-600 text-white text-xs font-black uppercase tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all disabled:opacity-50"
+              >
+                {isRenaming ? 'Guardando...' : 'Guardar'}
+              </button>
+            </div>
           </div>
         </div>
       )}
