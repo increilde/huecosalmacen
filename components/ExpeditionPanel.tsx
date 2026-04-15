@@ -100,8 +100,18 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
   const [newTruckerName, setNewTruckerName] = useState('');
   
   const [showObservationModal, setShowObservationModal] = useState(false);
+  const [observationStep, setObservationStep] = useState<'type' | 'truck' | 'text'>('type');
   const [observationTruckId, setObservationTruckId] = useState('');
   const [observationText, setObservationText] = useState('');
+
+  const OBSERVATION_TYPES = [
+    'Falta Documentación por imprimir',
+    'Falta mercancía (no sacada)',
+    'Faltan bultos',
+    'Mercancía en otro muelle.',
+    'Mercancia dañada',
+    'Otros'
+  ];
 
   // Permitir edición si la fecha es hoy o futura
   const isToday = historyDate >= getTodayStr();
@@ -175,6 +185,7 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
     
     setObservationText('');
     setObservationTruckId('');
+    setObservationStep('type');
     setShowObservationModal(false);
   };
 
@@ -433,7 +444,12 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
           {isToday && (
             <div className="flex gap-2">
               <button 
-                onClick={() => setShowObservationModal(true)} 
+                onClick={() => {
+                  setObservationStep('type');
+                  setObservationText('');
+                  setObservationTruckId('');
+                  setShowObservationModal(true);
+                }} 
                 className="text-[10px] font-black text-white uppercase tracking-widest bg-indigo-600 px-6 py-3 rounded-xl shadow-lg shadow-indigo-100 active:scale-95 transition-all flex items-center gap-2"
               >
                 <Plus className="w-4 h-4" /> Nueva
@@ -671,66 +687,114 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
            <div className="bg-white w-full max-w-lg rounded-[3.5rem] p-8 md:p-10 shadow-2xl space-y-6 animate-fade-in border border-white flex flex-col max-h-[90vh]">
               <div className="text-center shrink-0">
                  <h3 className="text-xl font-black text-slate-800 uppercase">Nueva Observación</h3>
-                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">Registrar incidencia de turno</p>
+                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">
+                   {observationStep === 'type' ? 'Paso 1: Tipo de incidencia' : 
+                    observationStep === 'truck' ? 'Paso 2: Seleccionar Camión' : 
+                    'Paso 3: Detalles finales'}
+                 </p>
               </div>
 
-              <div className="space-y-4 flex-1 overflow-y-auto pr-1 min-h-0">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Seleccionar Camión</label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {truckers
-                      .filter(t => activeTruckIds.has(t.id))
-                      .map(t => (
+              <div className="flex-1 overflow-y-auto pr-1 min-h-0">
+                {observationStep === 'type' && (
+                  <div className="grid grid-cols-1 gap-3 animate-fade-in">
+                    {OBSERVATION_TYPES.map(type => (
                       <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => setObservationTruckId(t.id)}
-                        className={`p-3 rounded-xl border-2 transition-all flex flex-col items-center justify-center text-center gap-1 ${
-                          observationTruckId === t.id 
-                          ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-100' 
-                          : 'bg-slate-50 border-slate-100 text-slate-500 hover:bg-white'
-                        }`}
+                        key={type}
+                        onClick={() => {
+                          setObservationText(type === 'Otros' ? '' : type);
+                          setObservationStep('truck');
+                        }}
+                        className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl text-left hover:border-indigo-500 hover:bg-indigo-50 transition-all group"
                       >
-                        <span className="text-[9px] font-black uppercase leading-tight">{t.label}</span>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-black text-slate-700 uppercase tracking-tight group-hover:text-indigo-600">{type}</span>
+                          <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-400" />
+                        </div>
                       </button>
                     ))}
-                    {truckers.filter(t => activeTruckIds.has(t.id)).length === 0 && (
-                      <div className="col-span-full py-4 text-center">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase italic">No hay camiones con agenda para este día</p>
-                      </div>
-                    )}
                   </div>
-                </div>
+                )}
 
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Observación</label>
-                  <textarea 
-                    autoFocus 
-                    placeholder="Escribe aquí la incidencia..." 
-                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 font-bold text-xs outline-none focus:border-indigo-500 uppercase resize-none" 
-                    rows={4}
-                    value={observationText} 
-                    onChange={e => setObservationText(e.target.value)} 
-                  />
-                </div>
+                {observationStep === 'truck' && (
+                  <div className="space-y-6 animate-fade-in">
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Seleccionar Camión (Opcional)</label>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {truckers
+                          .filter(t => activeTruckIds.has(t.id))
+                          .map(t => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => setObservationTruckId(t.id)}
+                            className={`p-3 rounded-xl border-2 transition-all flex flex-col items-center justify-center text-center gap-1 ${
+                              observationTruckId === t.id 
+                              ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-100' 
+                              : 'bg-slate-50 border-slate-100 text-slate-500 hover:bg-white'
+                            }`}
+                          >
+                            <span className="text-[9px] font-black uppercase leading-tight">{t.label}</span>
+                          </button>
+                        ))}
+                        {truckers.filter(t => activeTruckIds.has(t.id)).length === 0 && (
+                          <div className="col-span-full py-4 text-center">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase italic">No hay camiones con agenda para este día</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => setObservationStep('text')}
+                      className="w-full bg-slate-900 text-white font-black py-4 rounded-2xl shadow-xl uppercase tracking-widest text-[10px] active:scale-95 transition-all"
+                    >
+                      Continuar a Observaciones
+                    </button>
+                  </div>
+                )}
+
+                {observationStep === 'text' && (
+                  <div className="space-y-4 animate-fade-in">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Detalles de la Observación</label>
+                      <textarea 
+                        autoFocus 
+                        placeholder="Escribe aquí la incidencia..." 
+                        className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 font-bold text-xs outline-none focus:border-indigo-500 uppercase resize-none" 
+                        rows={6}
+                        value={observationText} 
+                        onChange={e => setObservationText(e.target.value)} 
+                      />
+                    </div>
+                    <div className="flex gap-3">
+                      <button 
+                        onClick={() => setObservationStep('truck')}
+                        className="flex-1 py-4 text-slate-400 font-black text-[9px] uppercase tracking-widest bg-slate-50 rounded-2xl border-2 border-slate-100"
+                      >
+                        Volver
+                      </button>
+                      <button 
+                        onClick={handleAddObservation}
+                        disabled={loading || !observationText.trim()} 
+                        className="flex-[2] bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-xl uppercase tracking-widest text-[10px] disabled:opacity-50"
+                      >
+                        Guardar Observación
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div className="space-y-3 shrink-0">
-                 <button 
-                  onClick={handleAddObservation}
-                  disabled={loading || !observationText.trim()} 
-                  className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl shadow-xl uppercase tracking-widest text-[10px] disabled:opacity-50"
-                 >
-                   Guardar Observación
-                 </button>
-                 <button 
-                  type="button" 
-                  onClick={() => { setShowObservationModal(false); setObservationText(''); setObservationTruckId(''); }} 
-                  className="w-full py-4 text-slate-400 font-black text-[9px] uppercase tracking-[0.2em]"
-                 >
-                   Cancelar
-                 </button>
-              </div>
+              {observationStep !== 'text' && (
+                <div className="shrink-0">
+                   <button 
+                    type="button" 
+                    onClick={() => { setShowObservationModal(false); setObservationText(''); setObservationTruckId(''); setObservationStep('type'); }} 
+                    className="w-full py-4 text-slate-400 font-black text-[9px] uppercase tracking-[0.2em]"
+                   >
+                     Cancelar
+                   </button>
+                </div>
+              )}
            </div>
         </div>
       )}

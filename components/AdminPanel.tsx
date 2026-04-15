@@ -40,7 +40,7 @@ interface TaskLog {
   profiles?: { full_name: string };
 }
 
-type AdminTab = 'movements' | 'operators' | 'sectors' | 'reports' | 'machinery' | 'tasks' | 'map' | 'map_config' | 'truckers' | 'installers' | 'distribution';
+type AdminTab = 'movements' | 'operators' | 'sectors' | 'reports' | 'machinery' | 'tasks' | 'map' | 'map_config' | 'truckers' | 'installers' | 'distribution' | 'docks';
 type DistributionSubTab = 'truckers' | 'installers' | 'report';
 type ReportScope = 'range' | 'week' | 'today';
 
@@ -129,6 +129,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
   const [showCreatorDetailModal, setShowCreatorDetailModal] = useState(false);
   const [showTodayOnly, setShowTodayOnly] = useState(false);
   const [loadingDistriReport, setLoadingDistriReport] = useState(false);
+
+  // Estados para Informe de Muelles
+  const [docksReportDateFrom, setDocksReportDateFrom] = useState(startOfMonthLocal);
+  const [docksReportDateTo, setDocksReportDateTo] = useState(endOfMonthLocal);
+  const [docksReportData, setDocksReportData] = useState<Record<string, number>>({});
+  const [loadingDocksReport, setLoadingDocksReport] = useState(false);
 
   const [printPlant, setPrintPlant] = useState<string>('U01');
   const [printOccupancy, setPrintOccupancy] = useState<string>('todos');
@@ -384,6 +390,65 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
       setLoadingTaskLogs(false);
     }
   }, [taskLogDateFrom, taskLogDateTo, taskLogOperator]);
+
+  const fetchDocksReport = React.useCallback(async () => {
+    if (!docksReportDateFrom || !docksReportDateTo) return;
+    setLoadingDocksReport(true);
+    try {
+      const { data, error } = await supabase
+        .from('daily_notes')
+        .select('content')
+        .gte('note_date', docksReportDateFrom)
+        .lte('note_date', docksReportDateTo);
+
+      if (error) throw error;
+
+      const counts: Record<string, number> = {
+        'Falta Documentación por imprimir': 0,
+        'Falta mercancía (no sacada)': 0,
+        'Faltan bultos': 0,
+        'Mercancía en otro muelle.': 0,
+        'Mercancia dañada': 0,
+        'Otros': 0
+      };
+
+      data?.forEach(note => {
+        try {
+          const observations = JSON.parse(note.content);
+          if (Array.isArray(observations)) {
+            observations.forEach(obs => {
+              const text = obs.text || '';
+              let matched = false;
+              for (const type of Object.keys(counts)) {
+                if (text.startsWith(type)) {
+                  counts[type]++;
+                  matched = true;
+                  break;
+                }
+              }
+              if (!matched) {
+                counts['Otros']++;
+              }
+            });
+          }
+        } catch (e) {
+          // Ignorar si no es JSON
+        }
+      });
+
+      setDocksReportData(counts);
+    } catch (err) {
+      console.error("Error fetching docks report:", err);
+    } finally {
+      setLoadingDocksReport(false);
+    }
+  }, [docksReportDateFrom, docksReportDateTo]);
+
+  useEffect(() => {
+    if (activeSubTab === 'docks') {
+      fetchDocksReport();
+    }
+  }, [activeSubTab, fetchDocksReport]);
 
   const fetchDistriReport = React.useCallback(async () => {
     if (!distriReportDateFrom || !distriReportDateTo) return;
@@ -1175,11 +1240,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
             { id: 'machinery', label: 'MAQUINARIA', icon: '🛠️' },
             { id: 'tasks', label: 'TAREAS', icon: '📌' },
             { id: 'distribution', label: 'DISTRIBUCIÓN', icon: '🚛' },
+            { id: 'docks', label: 'MUELLES', icon: '⚓' },
             { id: 'map_config', label: 'CONFIG MAPA', icon: '⚙️' },
           ].filter(tab => {
             if (user.role === 'admin') return true;
             if (user.role === 'supervisor_distri') {
-              return ['map', 'movements', 'reports', 'operators', 'machinery', 'tasks', 'distribution'].includes(tab.id);
+              return ['map', 'movements', 'reports', 'operators', 'machinery', 'tasks', 'distribution', 'docks'].includes(tab.id);
             }
             return false;
           }).map((tab) => (
@@ -1200,6 +1266,118 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
       </div>
 
       <div className="bg-white p-4 md:p-8 rounded-[2.5rem] border border-slate-100 shadow-sm min-h-[500px]">
+        {activeSubTab === 'docks' && (
+          <div className="space-y-8 animate-fade-in">
+            <div className="bg-slate-50 p-8 rounded-[3rem] border border-slate-100">
+              <div className="flex flex-col md:flex-row justify-between items-center gap-6">
+                <div>
+                  <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Informe de Muelles</h3>
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">Análisis de incidencias por periodo</p>
+                </div>
+                <div className="flex flex-col md:flex-row gap-4 items-end">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Desde</label>
+                    <CustomDatePicker 
+                      selectedDate={docksReportDateFrom} 
+                      onChange={setDocksReportDateFrom} 
+                      variant="input"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Hasta</label>
+                    <CustomDatePicker 
+                      selectedDate={docksReportDateTo} 
+                      onChange={setDocksReportDateTo} 
+                      variant="input"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {loadingDocksReport ? (
+              <div className="flex flex-col items-center justify-center py-20 space-y-4">
+                <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Cargando incidencias...</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {Object.entries(docksReportData).map(([type, count]) => (
+                  <div key={type} className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm hover:shadow-xl transition-all group relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-24 h-24 -mr-8 -mt-8 rounded-full opacity-5 transition-all group-hover:scale-150 bg-indigo-600"></div>
+                    <div className="flex flex-col h-full justify-between">
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <span className="px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest bg-indigo-50 text-indigo-600">
+                            Incidencia
+                          </span>
+                          <span className="text-3xl font-black text-slate-800">{count}</span>
+                        </div>
+                        <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight leading-tight pr-8">{type}</h4>
+                      </div>
+                      <div className="mt-8 pt-6 border-t border-slate-50">
+                        <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full transition-all duration-1000 bg-indigo-600"
+                            style={{ width: `${Math.min(100, (count / (Math.max(...Object.values(docksReportData)) || 1)) * 100)}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            {!loadingDocksReport && Object.values(docksReportData).reduce((a, b) => a + b, 0) > 0 && (
+              <div className="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-xl">
+                <h4 className="text-[14px] font-black text-slate-400 uppercase tracking-[0.2em] mb-8">Distribución Visual de Incidencias</h4>
+                <div className="h-[400px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={Object.entries(docksReportData).map(([name, value]) => ({ name, value }))}
+                      margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis 
+                        dataKey="name" 
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 8, fontWeight: 700, fill: '#94a3b8' }}
+                        interval={0}
+                        angle={-45}
+                        textAnchor="end"
+                      />
+                      <YAxis 
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }}
+                      />
+                      <Tooltip 
+                        cursor={{ fill: '#f8fafc' }}
+                        contentStyle={{ 
+                          borderRadius: '1.5rem', 
+                          border: 'none', 
+                          boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)',
+                          padding: '1.5rem',
+                          textTransform: 'uppercase',
+                          fontSize: '10px',
+                          fontWeight: '900'
+                        }}
+                      />
+                      <Bar dataKey="value" fill="#4f46e5" radius={[10, 10, 0, 0]} barSize={40}>
+                        {Object.entries(docksReportData).map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={['#4f46e5', '#6366f1', '#818cf8', '#a5b4fc', '#c7d2fe', '#e0e7ff'][index % 6]} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {activeSubTab === 'map' && (
           <div className="space-y-8 animate-fade-in">
             <div className="flex justify-between items-center">
