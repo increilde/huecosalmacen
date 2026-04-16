@@ -459,7 +459,7 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
           )}
         </div>
         
-        <div className={`w-full border-2 rounded-[2rem] p-6 text-xs font-medium text-slate-700 transition-all min-h-[100px] flex flex-col gap-3 ${isToday ? 'bg-slate-50 border-slate-100' : 'bg-slate-50/50 border-transparent text-slate-400'}`}>
+        <div className={`w-full border-2 rounded-[2rem] p-6 text-xs font-medium text-slate-700 transition-all min-h-[100px] flex flex-col gap-1.5 ${isToday ? 'bg-slate-50 border-slate-100' : 'bg-slate-50/50 border-transparent text-slate-400'}`}>
           {(() => {
             try {
               if (!dailyNote) return isToday ? "No hay observaciones registradas aún." : "Sin notas.";
@@ -488,22 +488,30 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
                   return a.timestamp.localeCompare(b.timestamp);
                 });
 
-                return sortedObservations.map((obs: any) => (
-                  <div key={obs.id} className="flex justify-between items-start gap-4 group border-b border-slate-100 pb-2 last:border-0 last:pb-0">
-                    <span className="flex-1 leading-relaxed">
-                      <span className="font-black text-indigo-600">[{obs.timestamp}] [{obs.user_name}]</span> <span className="font-bold text-slate-900">{obs.truck_label}:</span> {obs.text}
-                    </span>
-                    {isToday && obs.user_email === user.email && (
-                      <button 
-                        onClick={() => handleDeleteObservation(obs.id)}
-                        className="text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-rose-50 rounded-lg shrink-0"
-                        title="Eliminar mi observación"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                ));
+                return sortedObservations.map((obs: any) => {
+                  const isAdmin = obs.user_role === 'admin' || obs.user_name === 'ILDE';
+                  return (
+                    <div 
+                      key={obs.id} 
+                      className={`flex justify-between items-start gap-4 group border-b border-slate-100 pb-1 last:border-0 last:pb-0 px-3 py-1 rounded-xl transition-colors ${
+                        isAdmin ? 'bg-amber-50 border-amber-200/50 shadow-sm' : ''
+                      }`}
+                    >
+                      <span className="flex-1 leading-relaxed">
+                        <span className={`font-black ${isAdmin ? 'text-amber-700' : 'text-indigo-600'}`}>[{obs.timestamp}] [{obs.user_name}]</span> <span className="font-bold text-slate-900">{obs.truck_label}:</span> {obs.text}
+                      </span>
+                      {isToday && obs.user_email === user.email && (
+                        <button 
+                          onClick={() => handleDeleteObservation(obs.id)}
+                          className="text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-rose-50 rounded-lg shrink-0"
+                          title="Eliminar mi observación"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                });
               }
               return dailyNote;
             } catch (e) {
@@ -878,11 +886,19 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
                     // 4. By timestamp (within the same group)
                     return a.timestamp.localeCompare(b.timestamp);
                   });
-                  return sorted.map((obs: any) => (
-                    <div key={obs.id} className="text-[9px] border-b border-slate-200 pb-0.5 last:border-0">
-                      <span className="font-black text-indigo-600">[{obs.timestamp}] [{obs.user_name}]</span> <span className="font-bold text-slate-900">{obs.truck_label}:</span> {obs.text}
-                    </div>
-                  ));
+                  return sorted.map((obs: any) => {
+                    const isAdmin = obs.user_role === 'admin' || obs.user_name === 'ILDE';
+                    return (
+                      <div 
+                        key={obs.id} 
+                        className={`text-[9px] border-b border-slate-200 pb-0.5 last:border-0 px-1 ${
+                          isAdmin ? 'bg-amber-50 font-medium' : ''
+                        }`}
+                      >
+                        <span className={`font-black ${isAdmin ? 'text-amber-800' : 'text-indigo-600'}`}>[{obs.timestamp}] [{obs.user_name}]</span> <span className="font-bold text-slate-900">{obs.truck_label}:</span> {obs.text}
+                      </div>
+                    );
+                  });
                 }
                 return <p className="text-[9px] text-slate-700">{dailyNote}</p>;
               } catch (e) {
