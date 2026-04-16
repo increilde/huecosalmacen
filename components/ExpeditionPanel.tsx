@@ -165,6 +165,7 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
       id: Math.random().toString(36).substring(2, 9) + Date.now(),
       user_name: user.full_name.toUpperCase(),
       user_email: user.email,
+      user_role: user.role,
       truck_label: truckLabel,
       text: observationText.trim().toUpperCase(),
       timestamp
@@ -466,11 +467,25 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
               if (Array.isArray(observations)) {
                 if (observations.length === 0) return isToday ? "No hay observaciones registradas aún." : "Sin notas.";
                 
-                // Sort: GENERAL first, then by timestamp (implicit in array order if we want, or explicit)
+                // Sort: Admin first, then GENERAL, then by truck, then by timestamp
                 const sortedObservations = [...observations].sort((a, b) => {
+                  // 1. Admin notes first (check role or specific name ILDE as fallback for old notes)
+                  const aIsAdmin = a.user_role === 'admin' || a.user_name === 'ILDE';
+                  const bIsAdmin = b.user_role === 'admin' || b.user_name === 'ILDE';
+                  if (aIsAdmin && !bIsAdmin) return -1;
+                  if (!aIsAdmin && bIsAdmin) return 1;
+
+                  // 2. GENERAL notes second
                   if (a.truck_label === 'GENERAL' && b.truck_label !== 'GENERAL') return -1;
                   if (a.truck_label !== 'GENERAL' && b.truck_label === 'GENERAL') return 1;
-                  return 0; // Keep original relative order for others
+
+                  // 3. By truck label (to group them)
+                  if (a.truck_label !== b.truck_label) {
+                    return a.truck_label.localeCompare(b.truck_label);
+                  }
+
+                  // 4. By timestamp (within the same group)
+                  return a.timestamp.localeCompare(b.timestamp);
                 });
 
                 return sortedObservations.map((obs: any) => (
@@ -845,9 +860,23 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
                 const observations = JSON.parse(dailyNote);
                 if (Array.isArray(observations) && observations.length > 0) {
                   const sorted = [...observations].sort((a, b) => {
+                    // 1. Admin notes first (check role or specific name ILDE as fallback for old notes)
+                    const aIsAdmin = a.user_role === 'admin' || a.user_name === 'ILDE';
+                    const bIsAdmin = b.user_role === 'admin' || b.user_name === 'ILDE';
+                    if (aIsAdmin && !bIsAdmin) return -1;
+                    if (!aIsAdmin && bIsAdmin) return 1;
+
+                    // 2. GENERAL notes second
                     if (a.truck_label === 'GENERAL' && b.truck_label !== 'GENERAL') return -1;
                     if (a.truck_label !== 'GENERAL' && b.truck_label === 'GENERAL') return 1;
-                    return 0;
+
+                    // 3. By truck label (to group them)
+                    if (a.truck_label !== b.truck_label) {
+                      return a.truck_label.localeCompare(b.truck_label);
+                    }
+
+                    // 4. By timestamp (within the same group)
+                    return a.timestamp.localeCompare(b.timestamp);
                   });
                   return sorted.map((obs: any) => (
                     <div key={obs.id} className="text-[9px] border-b border-slate-200 pb-0.5 last:border-0">
