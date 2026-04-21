@@ -1403,8 +1403,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
           <div className="bg-white w-full max-sm rounded-[3rem] p-10 shadow-2xl space-y-8 animate-fade-in border border-white">
             <div className="text-center">
                <h3 className="text-2xl font-semibold text-slate-900 tracking-tighter uppercase">{slotCode}</h3>
-               <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mt-1">
-                 {step === 'size' ? 'DEFINIR TAMAÑO' : step === 'cart_input' ? 'ID CARRO REQUERIDO' : 'ESTADO DE CARGA'}
+               {step === 'status' && (
+                 <div className="mt-2 inline-block px-4 py-1.5 rounded-full bg-slate-100 border border-slate-200">
+                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                      Capacidad Actual: <span className="text-indigo-600">{oldQuantity}%</span>
+                    </p>
+                 </div>
+               )}
+               <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mt-2">
+                 {step === 'size' ? 'DEFINIR TAMAÑO' : step === 'cart_input' ? 'ID CARRO REQUERIDO' : 'SELECCIONA NUEVA CAPACIDAD'}
                </p>
             </div>
 

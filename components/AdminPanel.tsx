@@ -1671,7 +1671,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                     <th className="px-6 py-5">CARRO</th>
                     <th className="px-6 py-5">HUECO</th>
                     <th className="px-6 py-5">TAMAÑO</th>
-                    <th className="px-6 py-5">ESTADO</th>
+                    <th className="px-6 py-5">ESTADO (ANT {">"} SIG)</th>
                     <th className="px-6 py-5 text-right">HORA</th>
                     <th className="px-6 py-5 text-right">FECHA</th>
                   </tr>
@@ -1688,9 +1688,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ user }) => {
                         <td className="px-6 py-4 font-black text-slate-900">{log.slot_code}</td>
                         <td className="px-6 py-4 font-bold text-slate-500 uppercase">{slot?.size || '-'}</td>
                         <td className="px-6 py-4">
-                          <span className={`px-3 py-1 rounded-lg font-black ${log.new_quantity === 100 ? 'bg-rose-50 text-rose-600' : log.new_quantity === 50 ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                            {log.new_quantity}%
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[9px] font-bold text-slate-400">{log.old_quantity ?? '--'}%</span>
+                            <span className="text-slate-300">→</span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-black ${log.new_quantity === 100 ? 'bg-rose-50 text-rose-600' : log.new_quantity === 50 ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                              {log.new_quantity}%
+                            </span>
+                          </div>
                         </td>
                         <td className="px-6 py-4 text-slate-400 font-bold text-right">{new Date(log.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</td>
                         <td className="px-6 py-4 text-slate-400 font-bold text-right">{new Date(log.created_at).toLocaleDateString()}</td>
