@@ -1196,6 +1196,15 @@ const AiresPanel: React.FC<AiresPanelProps> = ({ user }) => {
                     <span className="text-xs font-black uppercase">{selectedInstallation.start_time} - {selectedInstallation.end_time}</span>
                   </div>
                 </div>
+                <div className="space-y-1">
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Grabado por</span>
+                  <div className="flex items-center gap-2 text-slate-700">
+                    <div className="w-4 h-4 rounded-full bg-indigo-100 flex items-center justify-center">
+                      <User className="w-2.5 h-2.5 text-indigo-600" />
+                    </div>
+                    <span className="text-xs font-black uppercase text-indigo-600/80">{selectedInstallation.created_by_name || 'SISTEMA'}</span>
+                  </div>
+                </div>
               </div>
 
               <div className="space-y-1">
