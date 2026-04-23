@@ -493,7 +493,7 @@ const ExpeditionPanel: React.FC<ExpeditionPanelProps> = ({ user }) => {
                   return (
                     <div 
                       key={obs.id} 
-                      className={`flex justify-between items-start gap-4 group border-b border-slate-100 pb-1 last:border-0 last:pb-0 px-3 py-1 rounded-xl transition-colors ${
+                      className={`flex justify-between items-start gap-4 group border-b border-slate-100 pb-0.5 last:border-0 last:pb-0 px-3 py-0.5 rounded-xl transition-colors ${
                         isAdmin ? 'bg-amber-50 border-amber-200/50 shadow-sm' : ''
                       }`}
                     >

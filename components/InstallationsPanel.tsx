@@ -1456,15 +1456,16 @@ const InstallationsPanel: React.FC<InstallationsPanelProps> = ({ user }) => {
                 {searchTerm ? 'No se encontraron instaladores con ese nombre' : 'No hay instalaciones ni instaladores asignados para esta zona/fecha'}
               </p>
             </div>
-          ) : filteredInstallers.map(installer => {
+          ) : filteredInstallers.map((installer, idx) => {
             const installerInstallations = sortInstallations(installations.filter(i => i.installer_id === installer.id));
             
             const dailyAssignment = agendaAssignments.find(a => a.installer_id === installer.id);
             const displayZone = dailyAssignment ? dailyAssignment.zone : (installer.zone || 'SIN ZONA');
+            const isEven = idx % 2 === 0;
 
             return (
-              <div key={installer.id} className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden flex flex-col w-full">
-                <div className="bg-slate-900 px-6 py-3 flex justify-between items-center cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => toggleInstallerExpand(installer.id)}>
+              <div key={installer.id} className={`group ${isEven ? 'bg-white' : 'bg-slate-100/70'} rounded-[2rem] shadow-xl border border-slate-200 overflow-hidden flex flex-col w-full transition-all duration-300 hover:shadow-2xl hover:border-green-400 hover:bg-green-50 hover:scale-[1.002]`}>
+                <div className={`${isEven ? 'bg-slate-900 shadow-[0_4px_20px_rgba(0,0,0,0.1)]' : 'bg-slate-800'} px-6 py-3 flex justify-between items-center cursor-pointer group-hover:brightness-110 transition-all`} onClick={() => toggleInstallerExpand(installer.id)}>
                   <div className="flex items-center gap-6">
                     <div className="flex items-center gap-3">
                       <span className={`text-xl text-white/70 transition-transform duration-300 ${!collapsedInstallers.has(installer.id) ? 'rotate-0' : '-rotate-90'}`}>

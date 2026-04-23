@@ -271,7 +271,7 @@ const DraggableInstallation = ({ inst, onClick }: { inst: Installation, onClick:
   );
 };
 
-const DroppableCell = ({ installerId, date, children, isToday, isWeekend }: { installerId: string, date: Date, children: React.ReactNode, isToday: boolean, isWeekend: boolean }) => {
+const DroppableCell = ({ installerId, date, children, isToday, isWeekend, isEven }: { installerId: string, date: Date, children: React.ReactNode, isToday: boolean, isWeekend: boolean, isEven: boolean }) => {
   const dateStr = formatDate(date);
   const { setNodeRef, isOver } = useDroppable({
     id: `cell-${installerId}-${dateStr}`,
@@ -281,9 +281,17 @@ const DroppableCell = ({ installerId, date, children, isToday, isWeekend }: { in
   return (
     <td 
       ref={setNodeRef}
-      className={`p-1 border-r border-slate-100 align-top transition-colors ${
-        isOver ? 'bg-indigo-100' : isToday ? 'bg-indigo-50/30' : isWeekend ? 'bg-slate-50/80' : ''
-      }`}
+      className={`p-1 border-r border-b border-slate-100 align-top transition-colors ${
+        isOver 
+          ? 'bg-green-200' 
+          : isToday 
+            ? 'bg-indigo-50/40 shadow-inner' 
+            : isWeekend 
+              ? 'bg-slate-100/50' 
+              : isEven 
+                ? 'bg-slate-100/60 text-slate-800' 
+                : 'bg-white'
+      } group-hover:bg-green-500/10`}
     >
       {children}
     </td>
@@ -1048,12 +1056,17 @@ const AiresPanel: React.FC<AiresPanelProps> = ({ user }) => {
                       </td>
                     </tr>
                   ) : (
-                    filteredInstallers.map(installer => {
+                    filteredInstallers.map((installer, idx) => {
                       const isSpecial = isSpecialInstaller(installer?.full_name);
+                      const isEven = idx % 2 === 0;
                       return (
-                        <tr key={installer.id} className="group">
-                          <td className={`sticky left-0 z-20 p-3 border-r-2 border-slate-100 font-black text-xs uppercase shadow-[4px_0_10px_rgba(0,0,0,0.03)] transition-colors ${
-                            isSpecial ? 'bg-rose-50 text-rose-700 group-hover:bg-rose-100' : 'bg-white text-slate-700 group-hover:bg-slate-50'
+                        <tr key={installer.id} className="group border-b border-slate-200 hover:bg-green-500/5 transition-colors">
+                          <td className={`sticky left-0 z-20 p-3 border-r-2 border-slate-100 font-black text-[11px] uppercase shadow-[4px_0_10px_rgba(0,0,0,0.03)] transition-colors ${
+                            isSpecial 
+                              ? 'bg-rose-100 text-rose-800 group-hover:bg-rose-200' 
+                              : isEven 
+                                ? 'bg-slate-100 text-slate-800 group-hover:bg-green-100' 
+                                : 'bg-white text-slate-700 group-hover:bg-green-100'
                           }`}>
                             <div className="flex items-center gap-3">
                               <div className={`w-8 h-8 rounded-lg flex items-center justify-center border group-hover:scale-110 transition-transform ${
@@ -1083,8 +1096,9 @@ const AiresPanel: React.FC<AiresPanelProps> = ({ user }) => {
                                 date={date} 
                                 isToday={isToday} 
                                 isWeekend={isWeekend}
+                                isEven={isEven}
                               >
-                                <div className="space-y-1 min-h-[50px]">
+                                <div className="space-y-1 min-h-[44px]">
                                   {cellInstallations.map(inst => (
                                     <DraggableInstallation 
                                       key={inst.id} 

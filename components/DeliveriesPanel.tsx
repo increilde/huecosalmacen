@@ -1656,7 +1656,7 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
               onDragEnd={handleDragEnd}
             >
               <div className="flex flex-col gap-6">
-                {filteredTrucks.map(truck => {
+                {filteredTrucks.map((truck, idx) => {
                   const truckDeliveries = deliveries
                     .filter(d => d.truck_id === truck.id)
                     .sort((a, b) => {
@@ -1672,10 +1672,11 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
                   
                   const dailyAssignment = agendaAssignments.find(a => a.truck_id === truck.id);
                   const displayZone = dailyAssignment ? dailyAssignment.zone : (truck.zone || 'SIN ZONA');
+                  const isEven = idx % 2 === 0;
 
                   return (
-                    <div key={truck.id} className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden flex flex-col w-full truck-agenda-item">
-                      <div className="bg-slate-900 px-6 py-3 flex justify-between items-center cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => toggleTruckExpand(truck.id)}>
+                    <div key={truck.id} className={`group ${isEven ? 'bg-white' : 'bg-slate-100/70'} rounded-[2rem] shadow-xl border border-slate-200 overflow-hidden flex flex-col w-full truck-agenda-item transition-all duration-300 hover:shadow-2xl hover:border-green-400 hover:bg-green-50 hover:scale-[1.002]`}>
+                      <div className={`${isEven ? 'bg-slate-900 shadow-[0_4px_20px_rgba(0,0,0,0.1)]' : 'bg-slate-800'} px-6 py-3 flex justify-between items-center cursor-pointer group-hover:brightness-110 transition-all`} onClick={() => toggleTruckExpand(truck.id)}>
                         <div className="flex items-center gap-6">
                           <div className="flex items-center gap-3">
                             <span className={`text-xl text-white/70 transition-transform duration-300 ${expandedTrucks.has(truck.id) ? 'rotate-0' : '-rotate-90'}`}>
