@@ -432,6 +432,10 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
   const [pendingDeliveryId, setPendingDeliveryId] = useState<string | null>(null);
   const [isCreatingAfterZone, setIsCreatingAfterZone] = useState(false);
   const [expandedTrucks, setExpandedTrucks] = useState<Set<string>>(new Set());
+  const [pendingScrollToId, setPendingScrollToId] = useState<string | null>(null);
+  const [isSearchingGlobally, setIsSearchingGlobally] = useState(false);
+  const [searchResults, setSearchResults] = useState<Delivery[]>([]);
+  const [showSearchResults, setShowSearchResults] = useState(false);
   
   const [newDelivery, setNewDelivery] = useState<Partial<Delivery>>({
     warehouse_origin: '3',
@@ -677,49 +681,108 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
     }
   };
 
-  const handleOrderSearch = (e: React.FormEvent) => {
+  const handleOrderSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!orderSearchTerm.trim()) return;
 
-    const foundDelivery = deliveries.find(d => 
-      d.order_number.toUpperCase().includes(orderSearchTerm.toUpperCase())
-    );
+    setIsSearchingGlobally(true);
+    setSearchResults([]);
+    
+    try {
+      // Search globally in Supabase for all matches
+      const { data, error } = await supabase
+        .from('deliveries')
+        .select('*')
+        .ilike('order_number', `%${orderSearchTerm}%`)
+        .order('delivery_date', { ascending: false })
+        .limit(50);
 
-    if (foundDelivery) {
-      // Switch to agenda view if not already there
-      if (view !== 'agenda') {
-        setView('agenda');
-      }
+      if (error) throw error;
 
-      // Reset zone filter if needed to ensure the truck is visible
-      if (activeZone !== 'TODOS') {
-        setActiveZone('TODOS');
-      }
-
-      // Expand the truck
-      setExpandedTrucks(prev => {
-        const next = new Set(prev);
-        next.add(foundDelivery.truck_id);
-        return next;
-      });
-
-      // Scroll to the delivery
-      setTimeout(() => {
-        const element = document.getElementById(`delivery-${foundDelivery.id}`);
-        if (element) {
-          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          // Highlight the element temporarily
-          element.classList.add('ring-4', 'ring-indigo-500', 'ring-offset-2', 'transition-all', 'duration-500');
-          setTimeout(() => {
-            element.classList.remove('ring-4', 'ring-indigo-500', 'ring-offset-2');
-          }, 3000);
+      if (data && data.length > 0) {
+        if (data.length === 1) {
+          // If only one result, jump directly
+          const foundDelivery = data[0];
+          jumpToDelivery(foundDelivery);
+        } else {
+          // If multiple results, show the table
+          setSearchResults(data);
+          setShowSearchResults(true);
         }
-      }, 300);
-    } else {
-      setMessage({ type: 'error', text: `Pedido ${orderSearchTerm} no encontrado` });
+      } else {
+        setMessage({ type: 'error', text: `Pedido ${orderSearchTerm} no encontrado en ningún día` });
+        setTimeout(() => setMessage(null), 3000);
+      }
+    } catch (err) {
+      console.error("Error searching globally:", err);
+      setMessage({ type: 'error', text: "Error al realizar la búsqueda global" });
       setTimeout(() => setMessage(null), 3000);
+    } finally {
+      setIsSearchingGlobally(false);
     }
   };
+
+  const jumpToDelivery = (delivery: Delivery) => {
+    // If it's a different date, switch date
+    if (delivery.delivery_date !== selectedDate) {
+      setSelectedDate(delivery.delivery_date);
+      setPendingScrollToId(delivery.id);
+    } else {
+      // Same date, just scroll
+      performScroll(delivery.id);
+    }
+
+    // Switch to agenda view if not already there
+    if (view !== 'agenda') {
+      setView('agenda');
+    }
+
+    // Reset zone filter
+    if (activeZone !== 'TODOS') {
+      setActiveZone('TODOS');
+    }
+
+    // Expand the truck
+    setExpandedTrucks(prev => {
+      const next = new Set(prev);
+      next.add(delivery.truck_id);
+      return next;
+    });
+
+    setShowSearchResults(false);
+  };
+
+  const performScroll = (id: string) => {
+    setTimeout(() => {
+      const element = document.getElementById(`delivery-${id}`);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        element.classList.add('ring-4', 'ring-indigo-500', 'ring-offset-2', 'transition-all', 'duration-500');
+        setTimeout(() => {
+          element.classList.remove('ring-4', 'ring-indigo-500', 'ring-offset-2');
+        }, 3000);
+      }
+    }, 500);
+  };
+
+  useEffect(() => {
+    if (pendingScrollToId && deliveries.length > 0) {
+      const found = deliveries.find(d => d.id === pendingScrollToId);
+      if (found) {
+        setTimeout(() => {
+          const element = document.getElementById(`delivery-${pendingScrollToId}`);
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            element.classList.add('ring-4', 'ring-indigo-500', 'ring-offset-2', 'transition-all', 'duration-500');
+            setPendingScrollToId(null);
+            setTimeout(() => {
+              element?.classList.remove('ring-4', 'ring-indigo-500', 'ring-offset-2');
+            }, 3000);
+          }
+        }, 800);
+      }
+    }
+  }, [deliveries, pendingScrollToId]);
 
   const fetchTrucks = async () => {
     try {
@@ -1217,8 +1280,16 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
               onChange={(e) => setOrderSearchTerm(e.target.value.toUpperCase())}
               className="bg-transparent text-[10px] font-bold text-slate-700 outline-none w-24 md:w-32"
             />
-            <button type="submit" className="text-indigo-600 hover:text-indigo-800">
-              <Search className="w-3 h-3" />
+            <button 
+              type="submit" 
+              className="text-indigo-600 hover:text-indigo-800 disabled:text-slate-300"
+              disabled={isSearchingGlobally}
+            >
+              {isSearchingGlobally ? (
+                <div className="w-3 h-3 border-2 border-slate-300 border-t-indigo-600 rounded-full animate-spin" />
+              ) : (
+                <Search className="w-3 h-3" />
+              )}
             </button>
           </form>
           <div className="flex items-center gap-3 bg-white px-5 py-2 rounded-2xl border-2 border-slate-200 shadow-md hover:border-indigo-300 transition-all no-print">
@@ -1895,6 +1966,96 @@ const DeliveriesPanel: React.FC<DeliveriesPanelProps> = ({ user }) => {
           title={confirmModalConfig.title}
           message={confirmModalConfig.message}
         />
+      )}
+      {/* Search Results Modal */}
+      {showSearchResults && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-4xl max-h-[80vh] overflow-hidden flex flex-col border border-slate-200">
+            <div className="p-6 bg-slate-900 flex justify-between items-center text-white">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 flex items-center justify-center">
+                  <Search className="w-5 h-5 text-indigo-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black uppercase tracking-tight">Resultados de Búsqueda</h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    Se han encontrado {searchResults.length} coincidencias para "{orderSearchTerm}"
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowSearchResults(false)}
+                className="p-2 hover:bg-white/10 rounded-xl transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-auto p-4">
+              <table className="w-full border-separate border-spacing-y-2">
+                <thead>
+                  <tr className="text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    <th className="px-4 py-2">Fecha</th>
+                    <th className="px-4 py-2">Pedido</th>
+                    <th className="px-4 py-2">Localidad</th>
+                    <th className="px-4 py-2">Camionero</th>
+                    <th className="px-4 py-2 text-right">Acción</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {searchResults.map((result) => {
+                    const trucker = trucks.find(t => t.id === result.truck_id);
+                    return (
+                      <tr key={result.id} className="group bg-slate-50 hover:bg-slate-100 transition-colors rounded-xl overflow-hidden">
+                        <td className="px-4 py-3 rounded-l-xl">
+                          <div className="flex items-center gap-2">
+                            <Calendar className="w-3 h-3 text-indigo-500" />
+                            <span className="text-xs font-black text-slate-700">
+                              {new Date(result.delivery_date).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-lg text-[10px] font-black underline decoration-2 underline-offset-2">
+                            {result.order_number}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <MapPin className="w-3 h-3 text-indigo-500" />
+                            <span className="text-xs font-bold text-slate-600 uppercase">{result.locality}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <Truck className="w-3 h-3 text-indigo-500" />
+                            <span className="text-xs font-bold text-slate-600 uppercase">
+                              {trucker ? trucker.full_name : 'No asignado'}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right rounded-r-xl">
+                          <button 
+                            onClick={() => jumpToDelivery(result)}
+                            className="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-tight shadow-md transition-all active:scale-95"
+                          >
+                            Ir al día
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="p-4 bg-slate-50 text-center border-t border-slate-100">
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.2em]">
+                Seleccione un resultado para navegar directamente al reparto correspondiente
+              </p>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
