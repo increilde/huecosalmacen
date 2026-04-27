@@ -281,7 +281,7 @@ const DroppableCell = ({ installerId, date, children, isToday, isWeekend, isEven
   return (
     <td 
       ref={setNodeRef}
-      className={`p-1 border-r border-b border-slate-100 align-top transition-colors ${
+      className={`p-3 border-r border-slate-100 border-b-[20px] border-transparent bg-clip-padding align-top transition-colors ${
         isOver 
           ? 'bg-green-200' 
           : isToday 
@@ -1060,8 +1060,8 @@ const AiresPanel: React.FC<AiresPanelProps> = ({ user }) => {
                       const isSpecial = isSpecialInstaller(installer?.full_name);
                       const isEven = idx % 2 === 0;
                       return (
-                        <tr key={installer.id} className="group border-b border-slate-200 hover:bg-green-500/5 transition-colors">
-                          <td className={`sticky left-0 z-20 p-3 border-r-2 border-slate-100 font-black text-[11px] uppercase shadow-[4px_0_10px_rgba(0,0,0,0.03)] transition-colors ${
+                        <tr key={installer.id} className="group hover:bg-green-500/5 transition-colors">
+                          <td className={`sticky left-0 z-20 py-6 px-4 border-r-2 border-slate-100 border-b-[20px] border-transparent bg-clip-padding font-black text-[11px] uppercase shadow-[4px_0_10px_rgba(0,0,0,0.03)] transition-colors ${
                             isSpecial 
                               ? 'bg-rose-100 text-rose-800 group-hover:bg-rose-200' 
                               : isEven 
@@ -1098,7 +1098,7 @@ const AiresPanel: React.FC<AiresPanelProps> = ({ user }) => {
                                 isWeekend={isWeekend}
                                 isEven={isEven}
                               >
-                                <div className="space-y-1 min-h-[44px]">
+                                <div className="space-y-1 min-h-[60px]">
                                   {cellInstallations.map(inst => (
                                     <DraggableInstallation 
                                       key={inst.id} 
